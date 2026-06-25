@@ -1,11 +1,10 @@
 import html
-from pathlib import Path
-import sys
+import os
 
 import gradio as gr
-import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+
+from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parent
@@ -13,7 +12,6 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from qa_platform.literature import load_literature_markdown, render_markdown_document
 from qa_platform.orchestrator import OrchestratorAgent
 
 
@@ -22,7 +20,7 @@ DEFAULT_REQUIREMENTS = """Användaren måste kunna logga in med e-post och löse
 Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
 En administratör ska kunna se en översikt över registrerade användare.
 Användaren ska kunna registrera ett nytt konto via ett formulär."""
-APP_PATH = "/"
+LITERATURE_URL = "https://github.com/tomashelmfridsson/ai_agents/blob/main/docs/literature-review.md"
 
 
 def process_requirements(title: str, requirements: str) -> tuple[str, str]:
@@ -111,7 +109,7 @@ def build_demo() -> gr.Blocks:
                 <section class="hero-card" style="padding: 28px;">
                   <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                     <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
-                    <div class="doc-pill"><a href="/literature" target="_blank" rel="noreferrer">Öppna litteraturstudie</a></div>
+                    <div class="doc-pill"><a href="{LITERATURE_URL}" target="_blank" rel="noreferrer">Öppna litteraturstudie</a></div>
                   </div>
                   <h1 style="margin:14px 0 0; font-size:clamp(2.6rem, 5vw, 4.8rem); line-height:0.95;">
                     Agentisk QA-plattform för kravbaserad testdesign
@@ -120,7 +118,7 @@ def build_demo() -> gr.Blocks:
                     Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
                   </p>
                   <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
-                    Appen exponeras direkt på root-path. Öppna litteraturstudien i separat flik.
+                    Litteraturstudien öppnas i en separat flik från den publika Markdown-filen i repot.
                   </p>
                 </section>
                 """
@@ -130,10 +128,7 @@ def build_demo() -> gr.Blocks:
                 with gr.Column(scale=5):
                     with gr.Group(elem_classes=["panel-card"]):
                         gr.Markdown("## Kör agentflöde")
-                        title_input = gr.Textbox(
-                            label="Scenario",
-                            value=DEFAULT_TITLE,
-                        )
+                        title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
                         requirements_input = gr.Textbox(
                             label="Kravspecifikation",
                             value=DEFAULT_REQUIREMENTS,
@@ -158,34 +153,6 @@ def build_demo() -> gr.Blocks:
         )
 
     return demo
-
-
-def create_app() -> FastAPI:
-    app = FastAPI(title="Agentisk QA-plattform")
-
-    @app.get("/literature", response_class=HTMLResponse)
-    def literature_page() -> str:
-        return render_markdown_document(
-            title="Litteraturstudie",
-            eyebrow="Dokumentation",
-            markdown_text=load_literature_markdown(),
-        )
-
-    @app.get("/manifest.json", response_class=JSONResponse)
-    def manifest() -> JSONResponse:
-        return JSONResponse(
-            {
-                "name": "Agentisk QA-plattform",
-                "short_name": "QA-plattform",
-                "start_url": "/",
-                "display": "standalone",
-                "background_color": "#f5efe4",
-                "theme_color": "#a64524",
-            }
-        )
-
-    demo = build_demo()
-    return gr.mount_gradio_app(app, demo, path=APP_PATH)
 
 
 def build_agent_report(payload: dict) -> str:
@@ -294,8 +261,11 @@ def build_agent_card(index: int, role: str, stage_status: str, output_type: str,
     )
 
 
-app = create_app()
+demo = build_demo()
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.getenv("PORT", "7860")),
+    )

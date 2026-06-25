@@ -43,9 +43,9 @@ python3 app.py
 
 Repot använder samma Gradio-version som Hugging Face Space-byggmiljön för att undvika versionskonflikter vid deploy.
 
-Öppna sedan `http://127.0.0.1:8000`.
+Öppna sedan den lokala Gradio-adressen som skrivs ut i terminalen, normalt `http://127.0.0.1:7860`.
 
-Litteraturstudien kan öppnas i en separat flik via `/literature`, samtidigt som samma Markdown-källa visas direkt i appen.
+Litteraturstudien öppnas i en separat flik via den publika Markdown-filen i repot.
 
 Kör tester:
 
