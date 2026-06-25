@@ -5,7 +5,7 @@ import sys
 import gradio as gr
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -22,7 +22,7 @@ DEFAULT_REQUIREMENTS = """Användaren måste kunna logga in med e-post och löse
 Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
 En administratör ska kunna se en översikt över registrerade användare.
 Användaren ska kunna registrera ett nytt konto via ett formulär."""
-APP_PATH = "/app"
+APP_PATH = "/"
 
 
 def process_requirements(title: str, requirements: str) -> tuple[str, str]:
@@ -120,7 +120,7 @@ def build_demo() -> gr.Blocks:
                     Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
                   </p>
                   <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
-                    Appen körs på <code>{APP_PATH}</code>. Öppna litteraturstudien i separat flik.
+                    Appen exponeras direkt på root-path. Öppna litteraturstudien i separat flik.
                   </p>
                 </section>
                 """
@@ -163,10 +163,6 @@ def build_demo() -> gr.Blocks:
 def create_app() -> FastAPI:
     app = FastAPI(title="Agentisk QA-plattform")
 
-    @app.get("/", response_class=RedirectResponse)
-    def root() -> RedirectResponse:
-        return RedirectResponse(url=APP_PATH, status_code=307)
-
     @app.get("/literature", response_class=HTMLResponse)
     def literature_page() -> str:
         return render_markdown_document(
@@ -181,7 +177,7 @@ def create_app() -> FastAPI:
             {
                 "name": "Agentisk QA-plattform",
                 "short_name": "QA-plattform",
-                "start_url": APP_PATH,
+                "start_url": "/",
                 "display": "standalone",
                 "background_color": "#f5efe4",
                 "theme_color": "#a64524",
