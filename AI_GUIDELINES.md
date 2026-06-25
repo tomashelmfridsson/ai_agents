@@ -20,6 +20,7 @@ Detta dokument beskriver hur AI-assistenten ska arbeta i detta repo.
 4. Acceptanskriterierna ska uttryckligen godkännas av användaren innan AI-assistenten börjar implementera en lösning.
 5. Om användaren ger en enkel och tydlig uppgift kan AI-assistenten föreslå acceptanskriterier, men implementation ska ändå vänta tills användaren har godkänt dem.
 6. Acceptanskriterier ska vara testbara, konkreta och kopplade till observerbart beteende.
+7. Varje acceptanskriterium ska ha en rimlig verifieringsmetod som går att genomföra i praktiken.
 
 ## Format för acceptanskriterier
 
@@ -37,6 +38,17 @@ För varje uppgift bör AI-assistenten om möjligt börja med:
 2. Ett förslag på acceptanskriterier.
 3. Genomförande.
 4. Verifiering mot acceptanskriterierna.
+
+## Verifiering
+
+1. Verifieringsmetoden ska matcha typen av acceptanskriterium.
+2. Buildstatus, deploystatus, loggar och `curl` är inte tillräckliga som enda verifiering för UI- eller browserbeteenden.
+3. Om ett acceptanskriterium gäller klick, rendering, ny flik, navigation eller annat klientbeteende ska det verifieras i en faktisk browsermiljö när det är möjligt.
+4. Om full verifiering inte har kunnat göras ska detta sägas uttryckligen, och acceptanskriteriet ska inte beskrivas som uppfyllt.
+5. AI-assistenten ska skilja tydligt på:
+   - vad som är implementerat
+   - vad som är verifierat
+   - vad som bara är sannolikt eller preliminärt
 
 ## Eskalering
 
