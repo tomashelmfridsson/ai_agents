@@ -59,7 +59,8 @@ def build_demo() -> gr.Blocks:
     .app-shell { max-width: 1120px; margin: 0 auto; }
     .hero-card, .panel-card { border-radius: 24px; border: 1px solid rgba(35, 26, 18, 0.10); }
     .hero-card { background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,248,240,0.94)); }
-    .doc-pill a {
+    .doc-pill-button,
+    .doc-pill-button button {
       display: inline-flex; align-items: center; min-height: 42px; padding: 0 16px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
       color: #241a12; background: rgba(255,255,255,0.82); border: 1px solid rgba(166, 69, 36, 0.16);
@@ -103,34 +104,32 @@ def build_demo() -> gr.Blocks:
 
     with gr.Blocks(theme=theme, css=custom_css, title="Agentisk QA-plattform") as demo:
         with gr.Column(elem_classes=["app-shell"]):
-            gr.HTML(
-                f"""
-                <section class="hero-card" style="padding: 28px;">
-                  <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
-                    <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
-                    <div class="doc-pill">
-                      <a
-                        href="{LITERATURE_URL}"
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        onclick="window.open(this.href, '_blank', 'noopener,noreferrer'); return false;"
-                      >
-                        Öppna litteraturstudie
-                      </a>
-                    </div>
-                  </div>
-                  <h1 style="margin:14px 0 0; font-size:clamp(2.6rem, 5vw, 4.8rem); line-height:0.95;">
-                    Agentisk QA-plattform för kravbaserad testdesign
-                  </h1>
-                  <p style="max-width:72ch; margin:18px 0 0; color:#6a5646; line-height:1.7; font-size:1.04rem;">
-                    Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
-                  </p>
-                  <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
-                    Litteraturstudien öppnas i en separat flik som en renderad Markdown-vy.
-                  </p>
-                </section>
-                """
-            )
+            with gr.Group(elem_classes=["hero-card"]):
+                gr.HTML(
+                    """
+                    <section style="padding: 28px;">
+                      <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
+                        <div id="literature-button-slot"></div>
+                      </div>
+                      <h1 style="margin:14px 0 0; font-size:clamp(2.6rem, 5vw, 4.8rem); line-height:0.95;">
+                        Agentisk QA-plattform för kravbaserad testdesign
+                      </h1>
+                      <p style="max-width:72ch; margin:18px 0 0; color:#6a5646; line-height:1.7; font-size:1.04rem;">
+                        Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
+                      </p>
+                      <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
+                        Litteraturstudien öppnas i en separat flik som en renderad Markdown-vy.
+                      </p>
+                    </section>
+                    """
+                )
+                literature_button = gr.Button(
+                    "Öppna litteraturstudie",
+                    link=LITERATURE_URL,
+                    link_target="_blank",
+                    elem_classes=["doc-pill-button"],
+                )
 
             with gr.Row():
                 with gr.Column(scale=5):
