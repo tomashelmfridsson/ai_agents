@@ -1,3 +1,9 @@
+---
+layout: literature
+title: Litteraturstudie
+permalink: /literature-study/
+---
+
 # Litteraturstudie
 
 Detta dokument är en arbetsmall för litteraturstudien. Innehållet nedan är en strukturerad startpunkt, inte en färdig systematisk genomgång.

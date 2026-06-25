@@ -1,7 +1,5 @@
 import html
-import json
 import os
-from urllib.parse import quote
 
 import gradio as gr
 
@@ -14,7 +12,6 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from qa_platform.literature import load_literature_markdown, render_markdown_document
 from qa_platform.orchestrator import OrchestratorAgent
 
 
@@ -23,6 +20,7 @@ DEFAULT_REQUIREMENTS = """Användaren måste kunna logga in med e-post och löse
 Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
 En administratör ska kunna se en översikt över registrerade användare.
 Användaren ska kunna registrera ett nytt konto via ett formulär."""
+LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 
 
 def process_requirements(title: str, requirements: str) -> tuple[str, str]:
@@ -47,14 +45,6 @@ def process_requirements(title: str, requirements: str) -> tuple[str, str]:
 
 
 def build_demo() -> gr.Blocks:
-    literature_html = render_markdown_document(
-        title="Litteraturstudie",
-        eyebrow="Dokumentation",
-        markdown_text=load_literature_markdown(),
-    )
-    literature_data_url = "data:text/html;charset=utf-8," + quote(literature_html, safe="")
-    literature_data_url_json = json.dumps(literature_data_url)
-
     theme = gr.themes.Soft(
         primary_hue="amber",
         secondary_hue="orange",
@@ -119,7 +109,7 @@ def build_demo() -> gr.Blocks:
                   <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                     <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
                     <div class="doc-pill">
-                      <a href={literature_data_url_json} target="_blank" rel="noreferrer noopener">
+                      <a href="{LITERATURE_URL}" target="_blank" rel="noreferrer noopener">
                         Öppna litteraturstudie
                       </a>
                     </div>
