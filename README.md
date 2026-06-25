@@ -41,6 +41,8 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
+Repot använder samma Gradio-version som Hugging Face Space-byggmiljön för att undvika versionskonflikter vid deploy.
+
 Öppna sedan `http://127.0.0.1:8000`.
 
 Litteraturstudien kan öppnas i en separat flik via `/literature`, samtidigt som samma Markdown-källa visas direkt i appen.
