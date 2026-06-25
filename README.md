@@ -1,3 +1,10 @@
+---
+title: ai_agents
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 # Agentisk QA-plattform för kravbaserad testdesign
 
 Detta repo innehåller en startpunkt för sommarprojektet:
