@@ -1,6 +1,7 @@
 import html
 import json
 import os
+from urllib.parse import quote
 
 import gradio as gr
 
@@ -51,7 +52,8 @@ def build_demo() -> gr.Blocks:
         eyebrow="Dokumentation",
         markdown_text=load_literature_markdown(),
     )
-    literature_html_json = json.dumps(literature_html)
+    literature_data_url = "data:text/html;charset=utf-8," + quote(literature_html, safe="")
+    literature_data_url_json = json.dumps(literature_data_url)
 
     theme = gr.themes.Soft(
         primary_hue="amber",
@@ -121,11 +123,7 @@ def build_demo() -> gr.Blocks:
                       <button
                         type="button"
                         onclick='(function() {{
-                          const html = {literature_html_json};
-                          const blob = new Blob([html], {{ type: "text/html" }});
-                          const url = URL.createObjectURL(blob);
-                          window.open(url, "_blank", "noopener,noreferrer");
-                          setTimeout(() => URL.revokeObjectURL(url), 60000);
+                          window.open({literature_data_url_json}, "_blank", "noopener,noreferrer");
                         }})()'
                       >
                         Öppna litteraturstudie
