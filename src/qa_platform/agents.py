@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from .models import GeneratedArtifact, RequirementItem, ReviewReport, TestCaseDesign
+
+
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return slug or "unnamed_requirement"
+
+
+def _split_requirements(requirements_text: str) -> list[str]:
+    lines = [line.strip(" -*\t") for line in requirements_text.splitlines()]
+    items = [line for line in lines if line]
+    if items:
+        return items
+    sentences = [part.strip() for part in re.split(r"[.!?]\s+", requirements_text) if part.strip()]
+    return sentences or [requirements_text.strip()]
+
+
+@dataclass
+class RequirementsAnalystAgent:
+    name: str = "Requirements Analyst"
+
+    def analyze(self, requirements_text: str) -> list[RequirementItem]:
+        items = []
+        for index, raw_text in enumerate(_split_requirements(requirements_text), start=1):
+            requirement_id = f"REQ-{index:03d}"
+            normalized = raw_text.strip().rstrip(".")
+            criteria = self._extract_acceptance_criteria(normalized)
+            assumptions = self._build_assumptions(normalized, criteria)
+            items.append(
+                RequirementItem(
+                    requirement_id=requirement_id,
+                    original_text=raw_text,
+                    normalized_text=normalized,
+                    priority=self._classify_priority(normalized),
+                    acceptance_criteria=criteria,
+                    assumptions=assumptions,
+                )
+            )
+        return items
+
+    def _extract_acceptance_criteria(self, text: str) -> list[str]:
+        lowered = text.lower()
+        criteria = [f"Systemet ska uppfylla kravet: {text}"]
+        if any(keyword in lowered for keyword in ("login", "logga in", "autentis", "sign in")):
+            criteria.append("Användaren ska kunna autentiseras med giltiga uppgifter.")
+            criteria.append("Ogiltiga uppgifter ska ge ett tydligt felmeddelande.")
+        if any(keyword in lowered for keyword in ("visa", "display", "list", "översikt", "dashboard")):
+            criteria.append("Relevant information ska presenteras utan trasiga eller tomma tillstånd.")
+        if any(keyword in lowered for keyword in ("skapa", "save", "spara", "registrera", "submit")):
+            criteria.append("Inmatade data ska valideras innan de sparas.")
+            criteria.append("Lyckad operation ska ge en bekräftelse till användaren.")
+        if any(keyword in lowered for keyword in ("admin", "behörighet", "access", "roll")):
+            criteria.append("Otillåten åtkomst ska blockeras och loggas.")
+        return criteria
+
+    def _build_assumptions(self, text: str, criteria: list[str]) -> list[str]:
+        assumptions = []
+        if len(criteria) == 1:
+            assumptions.append("Kravet behöver sannolikt förtydligas med fler acceptanskriterier.")
+        if not any(word in text.lower() for word in ("fel", "error", "ogiltig", "invalid")):
+            assumptions.append("Felhantering är inte explicit beskriven och bör granskas.")
+        return assumptions
+
+    def _classify_priority(self, text: str) -> str:
+        lowered = text.lower()
+        if any(keyword in lowered for keyword in ("måste", "must", "critical", "viktig")):
+            return "high"
+        if any(keyword in lowered for keyword in ("bör", "should", "nice")):
+            return "medium"
+        return "normal"
+
+
+@dataclass
+class TestDesignAgent:
+    name: str = "Test Design Agent"
+
+    def design(self, requirements: list[RequirementItem]) -> list[TestCaseDesign]:
+        designs = []
+        for req in requirements:
+            test_type = self._choose_test_type(req)
+            design_id = f"TC-{req.requirement_id.split('-')[-1]}"
+            title = f"Verifiera {req.requirement_id.lower()} {_slugify(req.normalized_text)[:40]}"
+            steps = self._build_steps(req)
+            expected_results = [criterion for criterion in req.acceptance_criteria]
+            oracle = "Alla förväntade resultat uppfylls och inga otillåtna bieffekter observeras."
+            risks = self._identify_risks(req)
+            designs.append(
+                TestCaseDesign(
+                    test_case_id=design_id,
+                    requirement_id=req.requirement_id,
+                    title=title,
+                    test_type=test_type,
+                    preconditions=["Applikationen är tillgänglig.", "Testdata är initierad."],
+                    steps=steps,
+                    expected_results=expected_results,
+                    oracle=oracle,
+                    risks=risks,
+                )
+            )
+        return designs
+
+    def _choose_test_type(self, req: RequirementItem) -> str:
+        lowered = req.normalized_text.lower()
+        if any(keyword in lowered for keyword in ("ui", "gui", "knapp", "formulär", "page", "sida")):
+            return "gui/e2e"
+        if any(keyword in lowered for keyword in ("api", "endpoint", "service")):
+            return "api/integration"
+        if any(keyword in lowered for keyword in ("beräkna", "validate", "regel", "business")):
+            return "unit"
+        return "scenario"
+
+    def _build_steps(self, req: RequirementItem) -> list[str]:
+        return [
+            f"Identifiera funktion kopplad till {req.requirement_id}.",
+            "Förbered positivt testfall med giltiga data.",
+            "Exekvera huvudflödet.",
+            "Verifiera förväntat resultat mot acceptanskriterierna.",
+            "Exekvera negativt eller gränsvärdesfall om tillämpligt.",
+        ]
+
+    def _identify_risks(self, req: RequirementItem) -> list[str]:
+        risks = []
+        if req.assumptions:
+            risks.append("Kravet innehåller antaganden som kan ge feltolkad testdesign.")
+        if len(req.acceptance_criteria) < 2:
+            risks.append("Begränsad specificitet kan minska testbarheten.")
+        return risks
+
+
+@dataclass
+class TestGenerationAgent:
+    name: str = "Test Generation Agent"
+
+    def generate(
+        self, requirements: list[RequirementItem], test_designs: list[TestCaseDesign]
+    ) -> list[GeneratedArtifact]:
+        req_by_id = {req.requirement_id: req for req in requirements}
+        artifacts = []
+        for design in test_designs:
+            req = req_by_id[design.requirement_id]
+            artifacts.append(
+                GeneratedArtifact(
+                    artifact_id=f"ART-{design.test_case_id.split('-')[-1]}",
+                    requirement_id=design.requirement_id,
+                    design_id=design.test_case_id,
+                    target=design.test_type,
+                    test_name=f"test_{_slugify(req.normalized_text)[:50]}",
+                    test_data=self._build_test_data(req, design),
+                    selectors=self._suggest_selectors(req),
+                    pseudocode=self._build_pseudocode(req, design),
+                )
+            )
+        return artifacts
+
+    def _build_test_data(self, req: RequirementItem, design: TestCaseDesign) -> dict[str, str]:
+        return {
+            "positive_case": f"Giltig data för {req.requirement_id}",
+            "negative_case": f"Ogiltig data för {req.requirement_id}",
+            "notes": f"Genererad för testtyp {design.test_type}",
+        }
+
+    def _suggest_selectors(self, req: RequirementItem) -> list[str]:
+        slug = _slugify(req.normalized_text)
+        return [
+            f"[data-testid='{slug}-form']",
+            f"[data-testid='{slug}-submit']",
+            f"[data-testid='{slug}-feedback']",
+        ]
+
+    def _build_pseudocode(self, req: RequirementItem, design: TestCaseDesign) -> list[str]:
+        code = [
+            "setup_test_context()",
+            f"load_requirement_context('{req.requirement_id}')",
+        ]
+        if design.test_type == "unit":
+            code.extend(
+                [
+                    "result = execute_business_rule(valid_input)",
+                    "assert result.is_success",
+                    "assert execute_business_rule(invalid_input).is_error",
+                ]
+            )
+        elif design.test_type in {"gui/e2e", "scenario"}:
+            code.extend(
+                [
+                    "page.goto(app_url)",
+                    "page.fill(relevant_fields, positive_case_data)",
+                    "page.click(primary_action_selector)",
+                    "assert success_feedback_is_visible()",
+                ]
+            )
+        else:
+            code.extend(
+                [
+                    "response = client.post(endpoint, json=positive_case_data)",
+                    "assert response.status_code == 200",
+                    "assert response.json matches expected_contract",
+                ]
+            )
+        return code
+
+
+@dataclass
+class ReviewAgent:
+    name: str = "Review Agent"
+
+    def review(
+        self,
+        requirements: list[RequirementItem],
+        test_designs: list[TestCaseDesign],
+        artifacts: list[GeneratedArtifact],
+    ) -> ReviewReport:
+        findings = []
+        improvements = []
+
+        covered_requirements = {artifact.requirement_id for artifact in artifacts}
+        coverage_ratio = len(covered_requirements) / len(requirements) if requirements else 0.0
+
+        for requirement in requirements:
+            if requirement.requirement_id not in covered_requirements:
+                findings.append(f"{requirement.requirement_id} saknar genererad testartefakt.")
+                improvements.append(f"Generera minst ett test för {requirement.requirement_id}.")
+
+        for design in test_designs:
+            if len(design.expected_results) < 2:
+                findings.append(
+                    f"{design.test_case_id} har svag oracle-definition och behöver fler förväntade resultat."
+                )
+                improvements.append(
+                    f"Förtydliga acceptanskriterier eller lägg till negativa scenarier för {design.test_case_id}."
+                )
+
+        for requirement in requirements:
+            if requirement.assumptions:
+                findings.append(
+                    f"{requirement.requirement_id} innehåller antaganden som bör bekräftas innan automation."
+                )
+                improvements.append(
+                    f"Förtydliga kravet {requirement.requirement_id} för att minska feltolkning."
+                )
+
+        approved = coverage_ratio == 1.0 and len(findings) <= max(1, len(requirements) // 2)
+        if approved and not findings:
+            findings.append("Inga kritiska avvikelser identifierades.")
+
+        return ReviewReport(
+            approved=approved,
+            coverage_ratio=round(coverage_ratio, 2),
+            findings=findings,
+            improvement_actions=improvements,
+        )

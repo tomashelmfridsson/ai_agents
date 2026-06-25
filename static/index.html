@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentisk QA-plattform</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="hero">
+        <div class="hero-top">
+          <p class="eyebrow">Sommarprojekt</p>
+          <a class="doc-link" href="/literature" target="_blank" rel="noreferrer">
+            Öppna litteraturstudie
+          </a>
+        </div>
+        <h1>Agentisk QA-plattform för kravbaserad testdesign</h1>
+        <p class="lede">
+          Skicka in kravspecifikationer och få tillbaka strukturerad analys,
+          testdesign, testartefakter och en granskningsrapport från en agentisk pipeline.
+        </p>
+      </section>
+
+      <section class="panel">
+        <form id="qa-form">
+          <label for="title">Scenario</label>
+          <input
+            id="title"
+            name="title"
+            type="text"
+            value="Demo: webbapplikation för inloggning och registrering"
+          />
+
+          <label for="requirements">Kravspecifikation</label>
+          <textarea id="requirements" name="requirements" rows="12">
+Användaren måste kunna logga in med e-post och lösenord.
+Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
+En administratör ska kunna se en översikt över registrerade användare.
+Användaren ska kunna registrera ett nytt konto via ett formulär.
+          </textarea>
+
+          <button type="submit">Kör agentflöde</button>
+        </form>
+      </section>
+
+      <section class="panel output">
+        <div class="status-row">
+          <h2>Resultat</h2>
+          <span id="status">Väntar på indata</span>
+        </div>
+        <pre id="result">Ingen körning ännu.</pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
