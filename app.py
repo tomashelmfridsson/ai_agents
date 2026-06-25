@@ -109,7 +109,12 @@ def build_demo() -> gr.Blocks:
                   <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                     <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
                     <div class="doc-pill">
-                      <a href="{LITERATURE_URL}" target="_blank" rel="noreferrer noopener">
+                      <a
+                        href="{LITERATURE_URL}"
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        onclick="window.open(this.href, '_blank', 'noopener,noreferrer'); return false;"
+                      >
                         Öppna litteraturstudie
                       </a>
                     </div>
