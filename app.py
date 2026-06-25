@@ -121,11 +121,11 @@ def build_demo() -> gr.Blocks:
                       <button
                         type="button"
                         onclick='(function() {{
-                          const newTab = window.open("", "_blank", "noopener,noreferrer");
-                          if (!newTab) return;
-                          newTab.document.open();
-                          newTab.document.write({literature_html_json});
-                          newTab.document.close();
+                          const html = {literature_html_json};
+                          const blob = new Blob([html], {{ type: "text/html" }});
+                          const url = URL.createObjectURL(blob);
+                          window.open(url, "_blank", "noopener,noreferrer");
+                          setTimeout(() => URL.revokeObjectURL(url), 60000);
                         }})()'
                       >
                         Öppna litteraturstudie
