@@ -49,7 +49,6 @@ def build_demo() -> gr.Blocks:
         primary_hue="amber",
         secondary_hue="orange",
         neutral_hue="stone",
-        font=[gr.themes.GoogleFont("Libre Baskerville"), "Georgia", "serif"],
     )
 
     custom_css = """
