@@ -1,4 +1,5 @@
 import html
+import json
 import os
 
 import gradio as gr
@@ -12,6 +13,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from qa_platform.literature import load_literature_markdown, render_markdown_document
 from qa_platform.orchestrator import OrchestratorAgent
 
 
@@ -20,7 +22,6 @@ DEFAULT_REQUIREMENTS = """Användaren måste kunna logga in med e-post och löse
 Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
 En administratör ska kunna se en översikt över registrerade användare.
 Användaren ska kunna registrera ett nytt konto via ett formulär."""
-LITERATURE_URL = "https://github.com/tomashelmfridsson/ai_agents/blob/main/docs/literature-review.md"
 
 
 def process_requirements(title: str, requirements: str) -> tuple[str, str]:
@@ -45,6 +46,13 @@ def process_requirements(title: str, requirements: str) -> tuple[str, str]:
 
 
 def build_demo() -> gr.Blocks:
+    literature_html = render_markdown_document(
+        title="Litteraturstudie",
+        eyebrow="Dokumentation",
+        markdown_text=load_literature_markdown(),
+    )
+    literature_html_json = json.dumps(literature_html)
+
     theme = gr.themes.Soft(
         primary_hue="amber",
         secondary_hue="orange",
@@ -59,10 +67,11 @@ def build_demo() -> gr.Blocks:
     .app-shell { max-width: 1120px; margin: 0 auto; }
     .hero-card, .panel-card { border-radius: 24px; border: 1px solid rgba(35, 26, 18, 0.10); }
     .hero-card { background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,248,240,0.94)); }
-    .doc-pill a {
+    .doc-pill button {
       display: inline-flex; align-items: center; min-height: 42px; padding: 0 16px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
       color: #241a12; background: rgba(255,255,255,0.82); border: 1px solid rgba(166, 69, 36, 0.16);
+      cursor: pointer;
     }
     .result-status { font-size: 1rem; color: #6a5646; margin-bottom: 8px; }
     .report-shell { display: grid; gap: 18px; }
@@ -108,7 +117,20 @@ def build_demo() -> gr.Blocks:
                 <section class="hero-card" style="padding: 28px;">
                   <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                     <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
-                    <div class="doc-pill"><a href="{LITERATURE_URL}" target="_blank" rel="noreferrer">Öppna litteraturstudie</a></div>
+                    <div class="doc-pill">
+                      <button
+                        type="button"
+                        onclick='(function() {{
+                          const newTab = window.open("", "_blank", "noopener,noreferrer");
+                          if (!newTab) return;
+                          newTab.document.open();
+                          newTab.document.write({literature_html_json});
+                          newTab.document.close();
+                        }})()'
+                      >
+                        Öppna litteraturstudie
+                      </button>
+                    </div>
                   </div>
                   <h1 style="margin:14px 0 0; font-size:clamp(2.6rem, 5vw, 4.8rem); line-height:0.95;">
                     Agentisk QA-plattform för kravbaserad testdesign
@@ -117,7 +139,7 @@ def build_demo() -> gr.Blocks:
                     Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
                   </p>
                   <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
-                    Litteraturstudien öppnas i en separat flik från den publika Markdown-filen i repot.
+                    Litteraturstudien öppnas i en separat flik som en renderad Markdown-vy.
                   </p>
                 </section>
                 """
