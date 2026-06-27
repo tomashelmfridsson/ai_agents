@@ -210,6 +210,13 @@ def build_demo() -> gr.Blocks:
       letter-spacing: 0.12em;
       color: var(--app-accent) !important;
     }
+    .agent-config-text {
+      color: var(--app-muted) !important;
+      line-height: 1.7;
+      font-size: 0.98rem;
+      font-weight: 500;
+      margin: 0 0 12px;
+    }
     .diagram-flow {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -373,6 +380,8 @@ def build_workflow_report(payload: dict) -> str:
     requirements = payload["requirements"]
     test_designs = payload["test_designs"]
     artifacts = payload["generated_artifacts"]
+    iteration_explanation = build_iteration_explanation(payload)
+    agent_configuration = build_agent_configuration_summary()
 
     stage_sections = [
         build_stage_card(
@@ -445,10 +454,103 @@ def build_workflow_report(payload: dict) -> str:
     return (
         "<div class='report-shell'>"
         f"<div class='summary-grid'>{summary_html}</div>"
+        f"{iteration_explanation}"
+        f"{agent_configuration}"
         f"{flow_diagram}"
         "<div class='stage-grid'>"
         + "".join(stage_sections)
         + "</div></div>"
+    )
+
+
+def build_iteration_explanation(payload: dict) -> str:
+    review = payload["review"]
+    findings = review["findings"]
+    finding_items = "".join(f"<li>{html.escape(item)}</li>" for item in findings[:4])
+
+    if payload["iterations"] == 1:
+        summary = (
+            "The workflow completed in a single pass because the review step accepted the output "
+            "without requiring a rerun."
+        )
+    else:
+        summary = (
+            "Iteration 2 happened because iteration 1 was not approved by the review step. "
+            "In the current baseline there is no adaptive repair between passes, so the same "
+            "deterministic logic is executed again until the iteration limit is reached."
+        )
+
+    detail = (
+        "The review agent asks whether every requirement has generated coverage, whether expected "
+        "results are strong enough, and whether assumptions need clarification."
+    )
+
+    if payload["iterations"] > 1:
+        detail += (
+            " Since no new state, prompt, or tool output is injected between passes, an extra "
+            "iteration currently signals unresolved review findings rather than learning or refinement."
+        )
+
+    findings_block = (
+        "<ul class='log-list'>" + finding_items + "</ul>"
+        if finding_items
+        else "<p class='agent-config-text'>No review findings were recorded.</p>"
+    )
+
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Why this iteration count?</h3>"
+        f"<p class='agent-config-text'>{html.escape(summary)}</p>"
+        f"<p class='agent-config-text'>{html.escape(detail)}</p>"
+        f"{findings_block}"
+        "</section>"
+    )
+
+
+def build_agent_configuration_summary() -> str:
+    cards = [
+        (
+            "Requirements analyst",
+            "Rule-based text splitter",
+            "Splits the input into requirement statements, assigns sequential IDs, classifies priority from keywords such as 'must' and 'should', and adds acceptance criteria plus assumptions from hard-coded heuristics.",
+        ),
+        (
+            "Test designer",
+            "Keyword-driven test shaping",
+            "Maps each requirement to a coarse test type such as scenario, GUI/E2E, API/integration, or unit. It then creates preconditions, steps, expected results, an oracle, and risk notes from fixed templates.",
+        ),
+        (
+            "Artifact generator",
+            "Template artifact synthesis",
+            "Generates test names, placeholder test data, selector suggestions, and pseudocode from deterministic templates derived from the requirement text and the chosen test type.",
+        ),
+        (
+            "Review agent",
+            "Coverage and assumption gate",
+            "Checks whether every requirement produced an artifact, whether expected results are specific enough, and whether assumptions remain unresolved. Approval is calculated from hard-coded thresholds rather than an LLM judgment.",
+        ),
+        (
+            "Orchestrator",
+            "Synchronous controller",
+            "Runs the stages in a fixed order with a maximum of two passes. It does not re-plan, alter prompts, or route work dynamically between agents in the current baseline.",
+        ),
+    ]
+
+    card_html = "".join(
+        "<div class='diagram-node'>"
+        f"<strong>{html.escape(title)}</strong>"
+        f"<span><strong style='display:inline; margin:0; color:inherit;'>Configuration:</strong> {html.escape(config)}</span>"
+        f"<span>{html.escape(description)}</span>"
+        "</div>"
+        for title, config, description in cards
+    )
+    return (
+        "<section class='diagram-card'>"
+        "<h3>How the current agents are configured</h3>"
+        "<div class='diagram-flow'>"
+        f"{card_html}"
+        "</div>"
+        "</section>"
     )
 
 
