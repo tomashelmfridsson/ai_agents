@@ -217,6 +217,11 @@ def build_demo() -> gr.Blocks:
       font-weight: 500;
       margin: 0 0 12px;
     }
+    .iteration-summary + .iteration-summary {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--app-line);
+    }
     .diagram-flow {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -242,6 +247,19 @@ def build_demo() -> gr.Blocks:
     .stage-role { font-size: 1.08rem; font-weight: 700; color: var(--app-ink) !important; }
     .stage-meta { font-size: 0.92rem; color: var(--app-muted) !important; align-self: end; font-weight: 500; }
     .stage-body { padding: 16px 18px 18px; }
+    .stage-details {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(247, 238, 226, 0.78);
+      border: 1px solid var(--app-line);
+    }
+    .stage-details summary {
+      cursor: pointer;
+      color: var(--app-accent) !important;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
     .io-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -370,7 +388,7 @@ def build_workflow_report(payload: dict) -> str:
         ("Scenario", payload["title"]),
         ("Iterations", str(payload["iterations"])),
         ("Requirements", str(len(payload["requirements"]))),
-        ("Designs", str(len(payload["test_designs"]))),
+        ("Test cases", str(len(payload["test_designs"]))),
         ("Artifacts", str(len(payload["generated_artifacts"]))),
         ("Coverage", str(review["coverage_ratio"])),
     ]
@@ -387,6 +405,7 @@ def build_workflow_report(payload: dict) -> str:
     artifacts = payload["generated_artifacts"]
     iteration_explanation = build_iteration_explanation(payload)
     agent_configuration = build_agent_configuration_summary()
+    trace_overview = build_trace_overview(payload)
 
     trace_sections = build_trace_sections(payload["stage_traces"])
 
@@ -406,6 +425,7 @@ def build_workflow_report(payload: dict) -> str:
     return (
         "<div class='report-shell'>"
         f"<div class='summary-grid'>{summary_html}</div>"
+        f"{trace_overview}"
         f"{iteration_explanation}"
         f"{agent_configuration}"
         f"{flow_diagram}"
@@ -416,46 +436,38 @@ def build_workflow_report(payload: dict) -> str:
 
 
 def build_iteration_explanation(payload: dict) -> str:
-    review = payload["review"]
-    findings = review["findings"]
-    finding_items = "".join(f"<li>{html.escape(item)}</li>" for item in findings[:4])
-
-    if payload["iterations"] == 1:
-        summary = (
-            "The workflow completed in a single pass because the review step accepted the output "
-            "without requiring a rerun."
+    traces_by_iteration = group_stage_traces_by_iteration(payload["stage_traces"])
+    blocks = []
+    for iteration, traces in traces_by_iteration.items():
+        review_trace = next((trace for trace in traces if trace["agent_name"] == "Review Agent"), None)
+        orchestrator_trace = next(
+            (trace for trace in traces if trace["agent_name"] == "Orchestrator Agent"), None
         )
-    else:
-        summary = (
-            "Iteration 2 happened because iteration 1 was not approved by the review step. "
-            "In the current baseline there is no adaptive repair between passes, so the same "
-            "deterministic logic is executed again until the iteration limit is reached."
+        review_lines = "".join(
+            f"<li>{html.escape(item)}</li>"
+            for item in (review_trace["output_summary"][3:] if review_trace else [])
         )
-
-    detail = (
-        "The review agent asks whether every requirement has generated coverage, whether expected "
-        "results are strong enough, and whether assumptions need clarification."
-    )
-
-    if payload["iterations"] > 1:
-        detail += (
-            " Since no new state, prompt, or tool output is injected between passes, an extra "
-            "iteration currently signals unresolved review findings rather than learning or refinement."
+        decision_reason = orchestrator_trace["decision_explanation"] if orchestrator_trace else ""
+        outcome = orchestrator_trace["output_summary"][0] if orchestrator_trace else ""
+        blocks.append(
+            "<div class='iteration-summary'>"
+            f"<div class='log-title'>Iteration {iteration}</div>"
+            f"<p class='agent-config-text'>{html.escape(outcome)}</p>"
+            f"<p class='agent-config-text'>{html.escape(decision_reason)}</p>"
+            + (
+                f"<ul class='log-list'>{review_lines}</ul>"
+                if review_lines
+                else "<p class='agent-config-text'>No review findings were recorded in this iteration.</p>"
+            )
+            + "</div>"
         )
-
-    findings_block = (
-        "<ul class='log-list'>" + finding_items + "</ul>"
-        if finding_items
-        else "<p class='agent-config-text'>No review findings were recorded.</p>"
-    )
 
     return (
         "<section class='diagram-card'>"
         "<h3>Why this iteration count?</h3>"
-        f"<p class='agent-config-text'>{html.escape(summary)}</p>"
-        f"<p class='agent-config-text'>{html.escape(detail)}</p>"
-        f"{findings_block}"
-        "</section>"
+        "<p class='agent-config-text'>Each iteration is a full pass through all five agents. The sections below explain why each iteration continued or stopped.</p>"
+        + "".join(blocks)
+        + "</section>"
     )
 
 
@@ -499,6 +511,7 @@ def build_agent_configuration_summary() -> str:
     return (
         "<section class='diagram-card'>"
         "<h3>How the current agents are configured</h3>"
+        "<p class='agent-config-text'>These are implementation notes for the current deterministic baseline. Per-agent expandable explanations also appear inside the execution cards below.</p>"
         "<div class='diagram-flow'>"
         f"{card_html}"
         "</div>"
@@ -506,19 +519,63 @@ def build_agent_configuration_summary() -> str:
     )
 
 
-def build_trace_sections(stage_traces: list[dict]) -> str:
-    return "".join(
-        build_stage_card(
-            run_index=index,
-            iteration=trace["iteration"],
-            stage_index=trace["stage_index"],
-            role=trace["agent_name"],
-            stage_status=trace["status"],
-            input_summary=trace["input_summary"],
-            output_summary=trace["output_summary"],
+def build_trace_overview(payload: dict) -> str:
+    requirement_map = {item["requirement_id"]: item["normalized_text"] for item in payload["requirements"]}
+    rows = []
+    for test_case in payload["test_designs"]:
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(test_case['test_case_id'])}</td>"
+            f"<td>{html.escape(test_case['requirement_id'])}</td>"
+            f"<td>{html.escape(requirement_map.get(test_case['requirement_id'], ''))}</td>"
+            f"<td>{html.escape(test_case['title'])}</td>"
+            f"<td>{html.escape(test_case['test_type'])}</td>"
+            "</tr>"
         )
-        for index, trace in enumerate(stage_traces, start=1)
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Requirement to test case mapping</h3>"
+        "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created in stage 2. Each one is linked to a requirement ID before artifacts are generated in stage 3.</p>"
+        "<table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+        "</section>"
     )
+
+
+def group_stage_traces_by_iteration(stage_traces: list[dict]) -> dict[int, list[dict]]:
+    grouped: dict[int, list[dict]] = {}
+    for trace in stage_traces:
+        grouped.setdefault(trace["iteration"], []).append(trace)
+    return grouped
+
+
+def build_trace_sections(stage_traces: list[dict]) -> str:
+    sections = []
+    run_index = 1
+    for iteration, traces in group_stage_traces_by_iteration(stage_traces).items():
+        sections.append(
+            "<section class='diagram-card'>"
+            f"<h3>Iteration {iteration} execution</h3>"
+            "<p class='agent-config-text'>Below is the full sequence of agent passes for this iteration, with explicit input, output, and decision context.</p>"
+            "</section>"
+        )
+        for trace in traces:
+            sections.append(
+                build_stage_card(
+                    run_index=run_index,
+                    iteration=trace["iteration"],
+                    stage_index=trace["stage_index"],
+                    role=trace["agent_name"],
+                    stage_status=trace["status"],
+                    input_summary=trace["input_summary"],
+                    output_summary=trace["output_summary"],
+                    agent_explanation=trace.get("agent_explanation", ""),
+                    decision_explanation=trace.get("decision_explanation", ""),
+                )
+            )
+            run_index += 1
+    return "".join(sections)
 
 
 def build_stage_card(
@@ -529,9 +586,20 @@ def build_stage_card(
     stage_status: str,
     input_summary: list[str],
     output_summary: list[str],
+    agent_explanation: str,
+    decision_explanation: str,
 ) -> str:
     input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_summary)
     output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_summary)
+    explanation_block = (
+        "<details class='stage-details'>"
+        "<summary>How this agent works</summary>"
+        f"<p class='agent-config-text'>{html.escape(agent_explanation)}</p>"
+        f"<p class='agent-config-text'>{html.escape(decision_explanation)}</p>"
+        "</details>"
+        if agent_explanation or decision_explanation
+        else ""
+    )
     return (
         "<section class='stage-card'>"
         "<div class='stage-head'>"
@@ -543,6 +611,7 @@ def build_stage_card(
         f"<div class='stage-meta'><strong>Agent pass:</strong> {html.escape(role)}</div>"
         "</div>"
         "<div class='stage-body'>"
+        f"{explanation_block}"
         "<div class='io-grid'>"
         "<div>"
         "<div class='log-title'>Input</div>"

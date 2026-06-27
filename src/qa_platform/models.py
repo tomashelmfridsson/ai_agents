@@ -55,6 +55,8 @@ class StageTrace:
     input_summary: list[str]
     output_summary: list[str]
     status: str
+    agent_explanation: str = ""
+    decision_explanation: str = ""
 
 
 @dataclass
