@@ -105,7 +105,12 @@ class OrchestratorAgent:
                 f"Requirements received: {len(requirements)}",
                 f"Acceptance criteria seen: {sum(len(item.acceptance_criteria) for item in requirements)}",
                 *[
-                    f"{item.requirement_id}: {item.normalized_text}"
+                    (
+                        f"{item.requirement_id}: \"{item.normalized_text}\" | "
+                        f"priority={item.priority} | "
+                        f"acceptance criteria={'; '.join(item.acceptance_criteria)} | "
+                        f"assumptions={'; '.join(item.assumptions) if item.assumptions else 'none'}"
+                    )
                     for item in requirements[:4]
                 ],
             ],
@@ -139,10 +144,16 @@ class OrchestratorAgent:
             stage_index=3,
             agent_name="Test Generation Agent",
             input_summary=[
-                f"Designs received: {len(designs)}",
+                f"Test case designs received: {len(designs)}",
                 f"Distinct test types: {len({item.test_type for item in designs})}",
                 *[
-                    f"{item.test_case_id}: {item.title}"
+                    (
+                        f"{item.test_case_id} for {item.requirement_id}: "
+                        f"title=\"{item.title}\" | type={item.test_type} | "
+                        f"steps={' | '.join(item.steps)} | "
+                        f"expected results={' | '.join(item.expected_results)} | "
+                        f"oracle={item.oracle}"
+                    )
                     for item in designs[:4]
                 ],
             ],
@@ -178,6 +189,13 @@ class OrchestratorAgent:
             input_summary=[
                 f"Requirements inspected: {len(requirements)}",
                 f"Artifacts inspected: {len(artifacts)}",
+                *[
+                    (
+                        f"{item.requirement_id}: artifact coverage present via {item.design_id} / {item.artifact_id} | "
+                        f"test_name={item.test_name}"
+                    )
+                    for item in artifacts[:4]
+                ],
             ],
             output_summary=[
                 f"Approved={review.approved}",

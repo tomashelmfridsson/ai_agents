@@ -260,10 +260,32 @@ def build_demo() -> gr.Blocks:
       font-weight: 700;
       margin-bottom: 10px;
     }
-    .io-grid {
+    .io-stack {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 18px;
+      gap: 14px;
+    }
+    .io-section {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.68);
+      border: 1px solid var(--app-line);
+    }
+    .io-summary {
+      color: var(--app-ink) !important;
+      line-height: 1.6;
+      font-weight: 600;
+      margin: 0;
+    }
+    .io-details {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(29, 20, 13, 0.12);
+    }
+    .io-details summary {
+      cursor: pointer;
+      color: var(--app-accent) !important;
+      font-weight: 700;
+      margin-bottom: 10px;
     }
     .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--app-accent) !important; font-weight: 700; }
     .log-list { margin: 0; padding-left: 18px; color: var(--app-ink) !important; line-height: 1.7; font-weight: 500; }
@@ -321,32 +343,32 @@ def build_demo() -> gr.Blocks:
                 <section class="info-grid">
                   <article class="info-card">
                     <div class="info-label">Current baseline</div>
-                    <p>A fixed synchronous pipeline executes the same stages in order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
+                    <p>A fixed synchronous orchestrator runs the same five agent passes in the same order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Research direction</div>
-                    <p>The target application compares LLM quality, orchestration patterns, observability, local versus cloud inference, and QA-specific suitability across multiple agent frameworks.</p>
+                    <p>The target application compares LLM quality, orchestration patterns, observability, local versus cloud inference, and QA-specific suitability across multiple agent frameworks using a shared execution and reporting structure.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Iterations</div>
-                    <p>An iteration is one full pass through analysis, design, generation, and review. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
+                    <p>An iteration is one full pass through all five agents: requirements analyst, test design agent, test generation agent, review agent, and orchestrator agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Technical flow</div>
                     <ul>
-                      <li>Input parsing and requirement splitting</li>
-                      <li>Heuristic acceptance criteria extraction</li>
-                      <li>Rule-based test design and artifact generation</li>
-                      <li>Coverage and assumption review</li>
+                      <li>Requirement extraction with heuristic enrichment</li>
+                      <li>Test case design from structured requirement items</li>
+                      <li>Draft artifact generation from test case designs</li>
+                      <li>Review and orchestration decision-making</li>
                     </ul>
                   </article>
                 </section>
                 <section class="workflow-strip">
-                  <div class="workflow-step"><strong>1. Parse</strong><span>Normalize the scenario and split requirement statements.</span></div>
-                  <div class="workflow-step"><strong>2. Analyze</strong><span>Extract requirement IDs, assumptions, and acceptance criteria.</span></div>
-                  <div class="workflow-step"><strong>3. Design</strong><span>Create test-case structures, steps, expected results, and oracles.</span></div>
-                  <div class="workflow-step"><strong>4. Generate</strong><span>Produce selectors, test data, and pseudocode artifacts.</span></div>
-                  <div class="workflow-step"><strong>5. Review</strong><span>Check coverage, findings, and approval status before the next iteration.</span></div>
+                  <div class="workflow-step"><strong>1. Requirements analyst</strong><span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span></div>
+                  <div class="workflow-step"><strong>2. Test design agent</strong><span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span></div>
+                  <div class="workflow-step"><strong>3. Test generation agent</strong><span>Generate draft artifacts such as test names, selectors, test data, and pseudocode from the planned test cases.</span></div>
+                  <div class="workflow-step"><strong>4. Review agent</strong><span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span></div>
+                  <div class="workflow-step"><strong>5. Orchestrator agent</strong><span>Either stop the run or start another full iteration based on the review result and the iteration limit.</span></div>
                 </section>
                 """
             )
@@ -403,8 +425,6 @@ def build_workflow_report(payload: dict) -> str:
     requirements = payload["requirements"]
     test_designs = payload["test_designs"]
     artifacts = payload["generated_artifacts"]
-    iteration_explanation = build_iteration_explanation(payload)
-    agent_configuration = build_agent_configuration_summary()
     trace_overview = build_trace_overview(payload)
 
     trace_sections = build_trace_sections(payload["stage_traces"])
@@ -426,96 +446,10 @@ def build_workflow_report(payload: dict) -> str:
         "<div class='report-shell'>"
         f"<div class='summary-grid'>{summary_html}</div>"
         f"{trace_overview}"
-        f"{iteration_explanation}"
-        f"{agent_configuration}"
         f"{flow_diagram}"
         "<div class='stage-grid'>"
         + trace_sections
         + "</div></div>"
-    )
-
-
-def build_iteration_explanation(payload: dict) -> str:
-    traces_by_iteration = group_stage_traces_by_iteration(payload["stage_traces"])
-    blocks = []
-    for iteration, traces in traces_by_iteration.items():
-        review_trace = next((trace for trace in traces if trace["agent_name"] == "Review Agent"), None)
-        orchestrator_trace = next(
-            (trace for trace in traces if trace["agent_name"] == "Orchestrator Agent"), None
-        )
-        review_lines = "".join(
-            f"<li>{html.escape(item)}</li>"
-            for item in (review_trace["output_summary"][3:] if review_trace else [])
-        )
-        decision_reason = orchestrator_trace["decision_explanation"] if orchestrator_trace else ""
-        outcome = orchestrator_trace["output_summary"][0] if orchestrator_trace else ""
-        blocks.append(
-            "<div class='iteration-summary'>"
-            f"<div class='log-title'>Iteration {iteration}</div>"
-            f"<p class='agent-config-text'>{html.escape(outcome)}</p>"
-            f"<p class='agent-config-text'>{html.escape(decision_reason)}</p>"
-            + (
-                f"<ul class='log-list'>{review_lines}</ul>"
-                if review_lines
-                else "<p class='agent-config-text'>No review findings were recorded in this iteration.</p>"
-            )
-            + "</div>"
-        )
-
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Why this iteration count?</h3>"
-        "<p class='agent-config-text'>Each iteration is a full pass through all five agents. The sections below explain why each iteration continued or stopped.</p>"
-        + "".join(blocks)
-        + "</section>"
-    )
-
-
-def build_agent_configuration_summary() -> str:
-    cards = [
-        (
-            "Requirements analyst",
-            "Rule-based text splitter",
-            "Splits the input into requirement statements, assigns sequential IDs, classifies priority from keywords such as 'must' and 'should', and adds acceptance criteria plus assumptions from hard-coded heuristics.",
-        ),
-        (
-            "Test designer",
-            "Keyword-driven test shaping",
-            "Maps each requirement to a coarse test type such as scenario, GUI/E2E, API/integration, or unit. It then creates preconditions, steps, expected results, an oracle, and risk notes from fixed templates.",
-        ),
-        (
-            "Artifact generator",
-            "Template artifact synthesis",
-            "Generates test names, placeholder test data, selector suggestions, and pseudocode from deterministic templates derived from the requirement text and the chosen test type.",
-        ),
-        (
-            "Review agent",
-            "Coverage and assumption gate",
-            "Checks whether every requirement produced an artifact, whether expected results are specific enough, and whether assumptions remain unresolved. Approval is calculated from hard-coded thresholds rather than an LLM judgment.",
-        ),
-        (
-            "Orchestrator",
-            "Synchronous controller",
-            "Runs the stages in a fixed order with a maximum of two passes. It does not re-plan, alter prompts, or route work dynamically between agents in the current baseline.",
-        ),
-    ]
-
-    card_html = "".join(
-        "<div class='diagram-node'>"
-        f"<strong>{html.escape(title)}</strong>"
-        f"<span><strong style='display:inline; margin:0; color:inherit;'>Configuration:</strong> {html.escape(config)}</span>"
-        f"<span>{html.escape(description)}</span>"
-        "</div>"
-        for title, config, description in cards
-    )
-    return (
-        "<section class='diagram-card'>"
-        "<h3>How the current agents are configured</h3>"
-        "<p class='agent-config-text'>These are implementation notes for the current deterministic baseline. Per-agent expandable explanations also appear inside the execution cards below.</p>"
-        "<div class='diagram-flow'>"
-        f"{card_html}"
-        "</div>"
-        "</section>"
     )
 
 
@@ -589,8 +523,26 @@ def build_stage_card(
     agent_explanation: str,
     decision_explanation: str,
 ) -> str:
-    input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_summary)
-    output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_summary)
+    input_lead = input_summary[0] if input_summary else "No input recorded."
+    output_lead = output_summary[0] if output_summary else "No output recorded."
+    input_rest = input_summary[1:] if len(input_summary) > 1 else []
+    output_rest = output_summary[1:] if len(output_summary) > 1 else []
+    input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_rest)
+    output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_rest)
+    input_details = (
+        "<details class='io-details'><summary>Show input details</summary>"
+        f"<ul class='log-list'>{input_items}</ul>"
+        "</details>"
+        if input_rest
+        else ""
+    )
+    output_details = (
+        "<details class='io-details'><summary>Show output details</summary>"
+        f"<ul class='log-list'>{output_items}</ul>"
+        "</details>"
+        if output_rest
+        else ""
+    )
     explanation_block = (
         "<details class='stage-details'>"
         "<summary>How this agent works</summary>"
@@ -612,14 +564,16 @@ def build_stage_card(
         "</div>"
         "<div class='stage-body'>"
         f"{explanation_block}"
-        "<div class='io-grid'>"
-        "<div>"
+        "<div class='io-stack'>"
+        "<div class='io-section'>"
         "<div class='log-title'>Input</div>"
-        f"<ul class='log-list'>{input_items}</ul>"
+        f"<p class='io-summary'>{html.escape(input_lead)}</p>"
+        f"{input_details}"
         "</div>"
-        "<div>"
+        "<div class='io-section'>"
         "<div class='log-title'>Output</div>"
-        f"<ul class='log-list'>{output_items}</ul>"
+        f"<p class='io-summary'>{html.escape(output_lead)}</p>"
+        f"{output_details}"
         "</div>"
         "</div>"
         "</div>"
