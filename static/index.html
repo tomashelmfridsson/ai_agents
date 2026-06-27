@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deterministic QA Workflow</title>
+    <title>QA Agent Research Workbench</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
@@ -12,25 +12,39 @@
         <div class="hero-top">
           <div>
             <p class="eyebrow">Research prototype</p>
-            <h1>Deterministic QA workflow for requirements-based test design</h1>
+            <h1>QA agent research workbench for LLM and orchestration comparisons</h1>
           </div>
-          <a class="doc-link" href="/literature" target="_blank" rel="noreferrer">
-            Open literature review
-          </a>
+          <div class="doc-actions">
+            <a class="doc-link" href="/literature" target="_blank" rel="noreferrer">
+              Open literature review
+            </a>
+            <a class="doc-link" href="https://tomashelmfridsson.github.io/ai_agents/project-brief/" target="_blank" rel="noreferrer">
+              Open project brief
+            </a>
+          </div>
         </div>
         <p class="lede">
-          This implementation runs as a synchronous, rule-based workflow. It does not use LLMs,
-          autonomous tool selection, or agentic planning, even though the stages mirror common
-          agent responsibilities.
+          The broader project evaluates multiple LLMs, local versus cloud inference, and alternative
+          agentic orchestration patterns for QA. The current demo is the deterministic baseline: a
+          synchronous rule-based workflow used as a controlled reference point.
         </p>
       </section>
 
       <section class="info-grid">
         <article class="panel info-card">
-          <p class="section-label">Execution model</p>
+          <p class="section-label">Current baseline</p>
           <p>
-            A fixed synchronous pipeline executes the same stages in order on every run. The
-            current prototype is deterministic and non-agentic.
+            A fixed synchronous pipeline executes the same stages in order on every run. This
+            version is deterministic and intentionally non-agentic so future LLM and orchestration
+            variants can be compared against it.
+          </p>
+        </article>
+        <article class="panel info-card">
+          <p class="section-label">Research direction</p>
+          <p>
+            The target application compares LLM quality, orchestration patterns, observability,
+            local versus cloud inference, and QA-specific suitability across multiple agent
+            frameworks.
           </p>
         </article>
         <article class="panel info-card">

@@ -1,16 +1,16 @@
 :root {
   color-scheme: light;
   --bg: #eee5d7;
-  --paper: rgba(255, 251, 245, 0.96);
-  --paper-strong: rgba(255, 255, 255, 0.96);
-  --ink: #201811;
-  --muted: #4e3f34;
-  --soft: #6a594d;
-  --accent: #a64524;
+  --paper: rgba(255, 251, 245, 0.98);
+  --paper-strong: rgba(255, 255, 255, 0.99);
+  --ink: #1d140d;
+  --muted: #3d3027;
+  --soft: #5f4d40;
+  --accent: #8f3518;
   --accent-2: #d2a152;
-  --line: rgba(32, 24, 17, 0.12);
-  --line-strong: rgba(32, 24, 17, 0.18);
-  --shadow: 0 18px 42px rgba(74, 45, 16, 0.1);
+  --line: rgba(29, 20, 13, 0.16);
+  --line-strong: rgba(29, 20, 13, 0.24);
+  --shadow: 0 18px 42px rgba(50, 28, 8, 0.14);
 }
 
 * {
@@ -49,10 +49,18 @@ body {
 .eyebrow,
 .section-label {
   margin: 0 0 8px;
-  color: #8e5937;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .doc-link {
@@ -95,7 +103,7 @@ h1 {
 }
 
 .panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 244, 235, 0.98));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 238, 226, 0.98));
   border: 1px solid var(--line);
   border-radius: 24px;
   padding: 24px;
@@ -118,7 +126,8 @@ h1 {
 .info-card p,
 .info-card li {
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.7;
+  font-weight: 500;
 }
 
 .info-card p:last-child {
@@ -139,7 +148,7 @@ h1 {
 .workflow-step {
   border-radius: 18px;
   border: 1px solid var(--line);
-  background: rgba(255, 252, 248, 0.95);
+  background: rgba(255, 253, 249, 0.99);
   padding: 14px 16px;
 }
 
@@ -147,13 +156,15 @@ h1 {
   display: block;
   margin-bottom: 6px;
   color: var(--ink);
+  font-weight: 700;
 }
 
 .workflow-step span {
   display: block;
   color: var(--muted);
-  font-size: 0.94rem;
+  font-size: 0.95rem;
   line-height: 1.5;
+  font-weight: 500;
 }
 
 form {
@@ -224,10 +235,11 @@ button:hover {
 .empty-state {
   padding: 18px;
   border-radius: 18px;
-  background: rgba(255, 252, 247, 0.92);
+  background: rgba(255, 252, 247, 0.97);
   border: 1px dashed var(--line-strong);
   color: var(--muted);
   line-height: 1.6;
+  font-weight: 500;
 }
 
 .report-shell {
@@ -248,8 +260,8 @@ button:hover {
 .stage-card {
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(255, 252, 247, 0.95);
-  box-shadow: 0 14px 32px rgba(74, 45, 16, 0.08);
+  background: rgba(255, 253, 248, 0.99);
+  box-shadow: 0 14px 32px rgba(50, 28, 8, 0.10);
 }
 
 .metric-card {
@@ -260,7 +272,8 @@ button:hover {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #825740;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .metric-value {
@@ -279,12 +292,12 @@ button:hover {
   font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #825740;
+  color: var(--accent);
 }
 
 .diagram-node {
   padding: 14px 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 232, 220, 0.92));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(244, 232, 220, 0.96));
 }
 
 .diagram-node strong {
@@ -298,6 +311,7 @@ button:hover {
   color: var(--muted);
   font-size: 0.92rem;
   line-height: 1.45;
+  font-weight: 500;
 }
 
 .stage-grid {
@@ -314,8 +328,8 @@ button:hover {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
   gap: 12px;
   padding: 16px 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 236, 224, 0.9));
-  border-bottom: 1px solid rgba(32, 24, 17, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 236, 224, 0.96));
+  border-bottom: 1px solid var(--line);
 }
 
 .stage-index {
@@ -323,6 +337,7 @@ button:hover {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--accent);
+  font-weight: 700;
 }
 
 .stage-role {
@@ -332,9 +347,10 @@ button:hover {
 }
 
 .stage-meta {
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   color: var(--muted);
   align-self: end;
+  font-weight: 500;
 }
 
 .stage-body {
@@ -346,7 +362,8 @@ button:hover {
   font-size: 0.88rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #825740;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .log-list {
@@ -354,6 +371,7 @@ button:hover {
   padding-left: 18px;
   color: #2b211a;
   line-height: 1.6;
+  font-weight: 500;
 }
 
 .log-list li + li {
@@ -380,5 +398,9 @@ button:hover {
 
   .doc-link {
     white-space: normal;
+  }
+
+  .doc-actions {
+    justify-content: flex-start;
   }
 }

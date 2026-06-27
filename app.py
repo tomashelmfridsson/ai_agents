@@ -20,6 +20,7 @@ The system shall display a clear error message when credentials are invalid.
 An administrator shall be able to view an overview of registered users.
 The user shall be able to register a new account through a form."""
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
+PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
 
 def process_requirements(title: str, requirements: str) -> tuple[str, str]:
@@ -51,28 +52,64 @@ def build_demo() -> gr.Blocks:
     )
 
     custom_css = """
-    body {
+    :root {
+      --app-ink: #1d140d;
+      --app-muted: #3d3027;
+      --app-soft: #5f4d40;
+      --app-paper: rgba(255, 250, 244, 0.98);
+      --app-paper-2: rgba(247, 238, 226, 0.98);
+      --app-line: rgba(29, 20, 13, 0.18);
+      --app-accent: #8f3518;
+      --app-accent-2: #cb9132;
+    }
+    body, .gradio-container {
       background:
         radial-gradient(circle at top left, rgba(212, 162, 87, 0.18), transparent 24%),
         radial-gradient(circle at bottom right, rgba(166, 69, 36, 0.12), transparent 22%),
         #eee5d7;
-      color: #201811;
+      color: var(--app-ink) !important;
+    }
+    .gradio-container, .gradio-container * {
+      color: var(--app-ink);
+    }
+    .gradio-container .prose,
+    .gradio-container .prose p,
+    .gradio-container .prose li,
+    .gradio-container .prose strong,
+    .gradio-container label,
+    .gradio-container h1,
+    .gradio-container h2,
+    .gradio-container h3,
+    .gradio-container span,
+    .gradio-container div {
+      color: inherit;
     }
     .app-shell { max-width: 1160px; margin: 0 auto; }
     .hero-card, .panel-card, .info-card {
       border-radius: 24px;
-      border: 1px solid rgba(32, 24, 17, 0.12);
-      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(250,244,235,0.98));
-      box-shadow: 0 18px 42px rgba(74, 45, 16, 0.10);
+      border: 1px solid var(--app-line);
+      background: linear-gradient(180deg, var(--app-paper), var(--app-paper-2));
+      box-shadow: 0 18px 42px rgba(50, 28, 8, 0.14);
     }
     .hero-card { overflow: hidden; }
+    .panel-card, .info-card, .metric-card, .stage-card, .diagram-card, .diagram-node, .workflow-step {
+      color: var(--app-ink) !important;
+    }
     .doc-pill-button,
     .doc-pill-button button {
       display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: #1f160f; background: rgba(255,255,255,0.94); border: 1px solid rgba(166, 69, 36, 0.22);
+      color: var(--app-ink) !important;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid rgba(143, 53, 24, 0.28);
     }
     .doc-pill-button button:hover { background: #fff; }
+    .doc-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
     .info-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -83,10 +120,17 @@ def build_demo() -> gr.Blocks:
       font-size: 0.76rem;
       text-transform: uppercase;
       letter-spacing: 0.14em;
-      color: #8e5937;
+      color: var(--app-accent) !important;
       margin-bottom: 8px;
+      font-weight: 700;
     }
-    .info-card p, .info-card li { color: #3f3228; line-height: 1.6; margin: 0; }
+    .info-card p, .info-card li {
+      color: var(--app-muted) !important;
+      line-height: 1.7;
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 500;
+    }
     .info-card ul { margin: 10px 0 0 18px; padding: 0; }
     .workflow-strip {
       display: grid;
@@ -96,43 +140,75 @@ def build_demo() -> gr.Blocks:
     }
     .workflow-step {
       border-radius: 18px;
-      border: 1px solid rgba(32, 24, 17, 0.10);
-      background: rgba(255, 252, 248, 0.96);
+      border: 1px solid var(--app-line);
+      background: rgba(255, 253, 249, 0.99);
       padding: 14px 16px;
     }
     .workflow-step strong {
       display: block;
-      color: #201811;
+      color: var(--app-ink) !important;
       margin-bottom: 6px;
       font-size: 0.98rem;
+      font-weight: 700;
     }
     .workflow-step span {
       display: block;
-      color: #5b493d;
-      font-size: 0.92rem;
-      line-height: 1.45;
+      color: var(--app-muted) !important;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      font-weight: 500;
     }
-    .result-status { font-size: 1rem; color: #4e3f34; margin-bottom: 8px; }
+    .gradio-container .gr-group,
+    .gradio-container .block,
+    .gradio-container .form,
+    .gradio-container .wrap,
+    .gradio-container .container {
+      color: var(--app-ink) !important;
+    }
+    .gradio-container textarea,
+    .gradio-container input,
+    .gradio-container .scroll-hide,
+    .gradio-container .input-container {
+      background: rgba(255, 255, 255, 0.99) !important;
+      color: var(--app-ink) !important;
+      border-color: var(--app-line) !important;
+    }
+    .gradio-container textarea::placeholder,
+    .gradio-container input::placeholder {
+      color: var(--app-soft) !important;
+    }
+    .gradio-container button.primary,
+    .gradio-container button[variant="primary"] {
+      background: linear-gradient(135deg, var(--app-accent), var(--app-accent-2)) !important;
+      color: #fff !important;
+      border: none !important;
+    }
+    .result-status {
+      font-size: 1rem;
+      color: var(--app-muted) !important;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
     .report-shell { display: grid; gap: 18px; }
     .summary-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
     }
     .metric-card, .stage-card, .diagram-card {
-      border: 1px solid rgba(32, 24, 17, 0.10);
+      border: 1px solid var(--app-line);
       border-radius: 20px;
-      background: rgba(255, 252, 247, 0.95);
-      box-shadow: 0 14px 32px rgba(74, 45, 16, 0.08);
+      background: rgba(255, 253, 248, 0.99);
+      box-shadow: 0 14px 32px rgba(50, 28, 8, 0.10);
     }
     .metric-card { padding: 16px 18px; }
-    .metric-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.12em; color: #825740; }
-    .metric-value { margin-top: 8px; font-size: 1.5rem; font-weight: 700; color: #201811; }
+    .metric-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--app-accent) !important; font-weight: 700; }
+    .metric-value { margin-top: 8px; font-size: 1.5rem; font-weight: 700; color: var(--app-ink) !important; }
     .diagram-card { padding: 18px; }
     .diagram-card h3 {
       margin: 0 0 10px;
       font-size: 1rem;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      color: #825740;
+      color: var(--app-accent) !important;
     }
     .diagram-flow {
       display: grid;
@@ -142,36 +218,41 @@ def build_demo() -> gr.Blocks:
     .diagram-node {
       border-radius: 18px;
       padding: 14px 16px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,232,220,0.92));
-      border: 1px solid rgba(32, 24, 17, 0.10);
+      background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(244,232,220,0.96));
+      border: 1px solid var(--app-line);
     }
-    .diagram-node strong { display: block; margin-bottom: 6px; color: #201811; }
-    .diagram-node span { display: block; color: #5b493d; font-size: 0.9rem; line-height: 1.45; }
+    .diagram-node strong { display: block; margin-bottom: 6px; color: var(--app-ink) !important; font-weight: 700; }
+    .diagram-node span { display: block; color: var(--app-muted) !important; font-size: 0.92rem; line-height: 1.5; font-weight: 500; }
     .stage-grid { display: grid; gap: 14px; }
     .stage-card { overflow: hidden; }
     .stage-head {
       display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
       gap: 12px; padding: 16px 18px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,236,224,0.90));
-      border-bottom: 1px solid rgba(32, 24, 17, 0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(246,236,224,0.96));
+      border-bottom: 1px solid var(--app-line);
     }
-    .stage-index { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.14em; color: #a64524; }
-    .stage-role { font-size: 1.08rem; font-weight: 700; color: #201811; }
-    .stage-meta { font-size: 0.9rem; color: #4e3f34; align-self: end; }
+    .stage-index { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--app-accent) !important; font-weight: 700; }
+    .stage-role { font-size: 1.08rem; font-weight: 700; color: var(--app-ink) !important; }
+    .stage-meta { font-size: 0.92rem; color: var(--app-muted) !important; align-self: end; font-weight: 500; }
     .stage-body { padding: 16px 18px 18px; }
-    .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: #825740; }
-    .log-list { margin: 0; padding-left: 18px; color: #2b211a; line-height: 1.6; }
+    .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--app-accent) !important; font-weight: 700; }
+    .log-list { margin: 0; padding-left: 18px; color: var(--app-ink) !important; line-height: 1.7; font-weight: 500; }
     .log-list li + li { margin-top: 7px; }
     .empty-state {
-      padding: 22px; border-radius: 18px; background: rgba(255,252,247,0.92);
-      border: 1px dashed rgba(32,24,17,0.16); color: #4e3f34;
+      padding: 22px;
+      border-radius: 18px;
+      background: rgba(255,252,247,0.97);
+      border: 1px dashed rgba(32,24,17,0.26);
+      color: var(--app-muted) !important;
+      font-weight: 500;
     }
     @media (max-width: 820px) {
       .stage-head { grid-template-columns: 1fr; }
+      .doc-actions { justify-content: flex-start; }
     }
     """
 
-    with gr.Blocks(theme=theme, css=custom_css, title="Deterministic QA Workflow") as demo:
+    with gr.Blocks(theme=theme, css=custom_css, title="QA Agent Research Workbench") as demo:
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Group(elem_classes=["hero-card"]):
                 gr.HTML(
@@ -179,15 +260,15 @@ def build_demo() -> gr.Blocks:
                     <section style="padding: 28px;">
                       <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                         <div style="max-width:62ch;">
-                          <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#8e5937;">Research prototype</p>
+                          <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:var(--app-accent); font-weight:700;">Research prototype</p>
                           <h1 style="margin:12px 0 0; font-size:clamp(2.4rem, 5vw, 4.7rem); line-height:0.95;">
-                            Deterministic QA workflow for requirements-based test design
+                            QA agent research workbench for LLM and orchestration comparisons
                           </h1>
                         </div>
-                        <div id="literature-button-slot"></div>
+                        <div class="doc-actions" id="literature-button-slot"></div>
                       </div>
-                      <p style="max-width:72ch; margin:18px 0 0; color:#4e3f34; line-height:1.7; font-size:1.04rem;">
-                        This implementation runs as a synchronous, rule-based workflow. It does not use LLMs, autonomous tool selection, or agentic planning, even though the stages mirror common agent responsibilities.
+                      <p style="max-width:72ch; margin:18px 0 0; color:var(--app-muted); line-height:1.7; font-size:1.04rem; font-weight:500;">
+                        The broader project evaluates multiple LLMs, local versus cloud inference, and alternative agentic orchestration patterns for QA. The current demo is the deterministic baseline: a synchronous rule-based workflow used as a controlled reference point.
                       </p>
                     </section>
                     """
@@ -198,13 +279,23 @@ def build_demo() -> gr.Blocks:
                     link_target="_blank",
                     elem_classes=["doc-pill-button"],
                 )
+                gr.Button(
+                    "Open project brief",
+                    link=PROJECT_BRIEF_URL,
+                    link_target="_blank",
+                    elem_classes=["doc-pill-button"],
+                )
 
             gr.HTML(
                 """
                 <section class="info-grid">
                   <article class="info-card">
-                    <div class="info-label">Execution model</div>
-                    <p>A fixed synchronous pipeline executes the same stages in order on every run. The design is deterministic and non-agentic.</p>
+                    <div class="info-label">Current baseline</div>
+                    <p>A fixed synchronous pipeline executes the same stages in order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
+                  </article>
+                  <article class="info-card">
+                    <div class="info-label">Research direction</div>
+                    <p>The target application compares LLM quality, orchestration patterns, observability, local versus cloud inference, and QA-specific suitability across multiple agent frameworks.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Iterations</div>

@@ -1,80 +1,102 @@
-# Projektframework
+# Projektbrief för forskningsstudien
 
-## Forskningsfråga
+## Studiens teman
 
-Hur kan ett agentiskt QA-system med orkestrator och specialiserade agenter stödja kravbaserad testdesign och testgenerering, samt vilka agentramverk och arkitekturer är mest lämpade för detta ändamål?
+- AI Agents
+- Multi-Agent Systems
+- Agentic Software Engineering
+- Agent Orchestration
+- AI-assisted Quality Assurance
+- Verification and Validation
+- Test-Driven Development
 
-## Delmål
+## Analysfrågor per tema
 
-1. Kartlägga relevanta agentramverk och jämföra deras lämplighet för QA-arbetsflöden.
-2. Implementera en demonstrator som transformerar krav till testartefakter.
-3. Utvärdera demonstratorn med tydliga kvalitets- och effektivitetsmått.
+### AI Agents
 
-## Avgränsning
+- Hur definieras en agent i aktuell litteratur?
+- Vilka egenskaper återkommer: autonomi, planering, verktygsanvändning, minne, reflexion?
+- Hur skiljer sig enkla agentloopar från orkestrerade multi-agentmiljöer?
 
-- Fokus ligger på QA-automation och agentorkestrering, inte på generell kodgenerering.
-- Demonstratorn prioriterar spårbarhet från krav till testartefakt framför djup exekveringsintegration.
-- Initial implementation är modellagnostisk och kan senare kopplas till Ollama eller molntjänster.
+### Multi-Agent Systems
 
-## Målarkitektur
+- Vilka samarbetsmönster används: hierarki, marknadsbaserad delegation, blackboard, reviewer-loop?
+- Hur hanteras konflikter, koordinering och delat tillstånd?
+- Vilka risker finns kring felpropagering mellan agenter?
 
-### Arbetsflöde
+### Agentic Software Engineering
 
-```text
-Krav
-  -> Orkestrator
-  -> Kravanalys
-  -> Testdesign
-  -> Testgenerering
-  -> Granskning
-  -> Godkända testartefakter
-```
+- Vilka delar av utvecklingslivscykeln stöds bäst av agenter?
+- Hur mäts kvalitet, spårbarhet och produktivitet?
+- Vilka arkitekturval underlättar styrbarhet och auditability?
 
-### Agentansvar
+### AI-assisted Quality Assurance
 
-`OrchestratorAgent`
+- Hur används AI för kravanalys, testdesign och testgenerering?
+- Finns empiriskt stöd för förbättrad kravtäckning eller minskad ledtid?
+- Hur hanteras testorakel, testdata och selektorer?
 
-- styr sekvensen mellan agentsteg
-- hanterar iterationer
-- samlar slutresultatet
+### Verification and Validation
 
-`RequirementsAnalystAgent`
+- Hur knyts V&V till agentiska arbetsflöden?
+- Vilka granskningsmekanismer krävs för att begränsa hallucineringar och svag spårbarhet?
 
-- bryter ner kravtext
-- identifierar aktörer, handlingar, villkor och acceptanskriterier
-- producerar strukturerad JSON
+### TDD
 
-`TestDesignAgent`
+- Hur relaterar testdriven utveckling till kravdriven testgenerering?
+- Kan agentiska arbetssätt stödja en TDD-liknande återkopplingsloop?
 
-- väljer testtyp per krav
-- definierar teststeg och orakel
-- markerar risker och antaganden
+## Jämförelseramverk för plattformar
 
-`TestGenerationAgent`
+Bedöm varje plattform utifrån följande kriterier:
 
-- genererar konkreta testfall
-- producerar testdatautkast
-- skapar kandidater för GUI- och logiktest
+| Kriterium | Fråga |
+|---|---|
+| Orkestrering | Hur uttrycks flöden, iterationer och routing? |
+| Rollspecialisering | Hur enkelt är det att modellera flera agentroller? |
+| State management | Hur lagras mellanresultat, minne och spårbarhet? |
+| Verktygsintegration | Hur väl stöds externa verktyg, RAG och testkörning? |
+| Observability | Finns loggning, tracing och debug-stöd? |
+| Lokal modellstöd | Hur lätt kopplas Ollama eller lokal inferens in? |
+| Molnstöd | Hur väl stöds kommersiella modell-API:er? |
+| QA-lämplighet | Hur väl passar plattformen kravanalys och testdesign? |
 
-`ReviewAgent`
+## Plattformar att jämföra
 
-- granskar täckning, tydlighet och spårbarhet
-- avgör om ny iteration krävs
-- producerar förbättringsförslag
-
-## Föreslagna utvärderingsmått
-
-| Mått | Definition | Hur det kan mätas |
+| Plattform | Förväntade styrkor | Frågor att undersöka |
 |---|---|---|
-| Kravtäckning | Andel krav med minst ett testfall | Matchning mellan krav-ID och genererade tester |
-| Test Pass Rate | Andel passerande tester | Körning i CI eller lokal testrunner |
-| Exekveringstid | Tid för pipeline eller agentsteg | Tidsmätning per steg och total pipeline |
-| Iterationscykler | Antal review-loopar före godkännande | Loggas av orkestratorn |
-| Kodtäckning | Täckning om kod/tester körs mot app | Coverage-verktyg |
-| Kodkvalitet | Kvalitetsmått på genererade tester | Exempelvis SonarQube eller lint-regler |
+| OpenClaw | Kandidat för experimentell agentautomation | Mognad, dokumentation, observability |
+| Hermes Agent Framework | Fokus på agentstruktur | Hur väl lämpar den sig för QA-pipelines? |
+| CrewAI | Tydlig rollbaserad multi-agentmodell | Hur styrbar är iteration och state? |
+| LangGraph | Explicit grafbaserad orkestrering | Hur mycket boilerplate krävs? |
+| AutoGen | Stark agent-till-agent-dialog | Hur robust blir deterministisk processkontroll? |
+| OpenAI Agents SDK | Bra verktygs- och modellintegration | Hur väl stödjer den komplex flerstegsorkestrering? |
 
-## Hot mot validitet
+## Lokal vs molnbaserad modellkörning
 
-- Små demonstrationsfall riskerar att överskatta systemets generaliserbarhet.
-- Regelbaserad eller enkel heuristik i prototypen representerar inte full LLM-kapacitet.
-- Jämförelser mellan ramverk kan bli missvisande om kriterierna inte definieras konsekvent.
+### Ollama / lokala modeller
+
+Analysera:
+
+- dataskydd och lokal kontroll
+- latens och driftskostnad
+- modellkapacitet för längre kedjor av resonemang
+- begränsningar i verktygsanrop och funktionstillförlitlighet
+
+### Molnbaserade modeller
+
+Analysera:
+
+- modellkvalitet och stabilitet
+- kostnad per körning
+- skalbarhet och integrationsstöd
+- risker kring sekretess och leverantörsberoende
+
+## Föreslagen rapportstruktur för litteraturdelen
+
+- Introduktion och motiv
+- Teoretisk bakgrund
+- Jämförelse av agentramverk
+- QA-relevanta designmönster
+- Lokal kontra molnbaserad inferens
+- Slutsatser som motiverar prototypens arkitektur
