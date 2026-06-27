@@ -27,6 +27,9 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result.generated_artifacts), 2)
         self.assertEqual(result.review.coverage_ratio, 1.0)
         self.assertGreaterEqual(result.iterations, 1)
+        self.assertEqual(len(result.stage_traces), result.iterations * 5)
+        self.assertEqual(result.stage_traces[0].agent_name, "Requirements Analyst")
+        self.assertEqual(result.stage_traces[-1].agent_name, "Orchestrator Agent")
 
         requirement_ids = {item.requirement_id for item in result.requirements}
         artifact_ids = {item.requirement_id for item in result.generated_artifacts}

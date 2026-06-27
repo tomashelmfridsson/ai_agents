@@ -242,6 +242,11 @@ def build_demo() -> gr.Blocks:
     .stage-role { font-size: 1.08rem; font-weight: 700; color: var(--app-ink) !important; }
     .stage-meta { font-size: 0.92rem; color: var(--app-muted) !important; align-self: end; font-weight: 500; }
     .stage-body { padding: 16px 18px 18px; }
+    .io-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+    }
     .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--app-accent) !important; font-weight: 700; }
     .log-list { margin: 0; padding-left: 18px; color: var(--app-ink) !important; line-height: 1.7; font-weight: 500; }
     .log-list li + li { margin-top: 7px; }
@@ -383,60 +388,7 @@ def build_workflow_report(payload: dict) -> str:
     iteration_explanation = build_iteration_explanation(payload)
     agent_configuration = build_agent_configuration_summary()
 
-    stage_sections = [
-        build_stage_card(
-            index=1,
-            role="Requirements analysis",
-            stage_status=f"{len(requirements)} requirement item(s) extracted",
-            output_type="Structured requirements",
-            logs=[
-                f"{item['requirement_id']}: priority {item['priority']}, {len(item['acceptance_criteria'])} acceptance criteria, {len(item['assumptions'])} assumption(s)."
-                for item in requirements
-            ]
-            or ["No requirements were extracted."],
-        ),
-        build_stage_card(
-            index=2,
-            role="Test design",
-            stage_status=f"{len(test_designs)} design(s) created",
-            output_type="Traceable test cases",
-            logs=[
-                f"{item['test_case_id']}: {item['test_type']} with {len(item['steps'])} step(s) and {len(item['expected_results'])} expected result(s)."
-                for item in test_designs
-            ]
-            or ["No test designs were generated."],
-        ),
-        build_stage_card(
-            index=3,
-            role="Artifact generation",
-            stage_status=f"{len(artifacts)} artifact(s) generated",
-            output_type="Selectors, test data, pseudocode",
-            logs=[
-                f"{item['artifact_id']}: target {item['target']}, test name {item['test_name']}, {len(item['selectors'])} selector suggestion(s)."
-                for item in artifacts
-            ]
-            or ["No artifacts were generated."],
-        ),
-        build_stage_card(
-            index=4,
-            role="Review",
-            stage_status="Coverage and assumptions reviewed",
-            output_type="Review findings",
-            logs=review["findings"] or ["No critical issues were identified."],
-        ),
-        build_stage_card(
-            index=5,
-            role="Orchestration summary",
-            stage_status="Workflow pass completed",
-            output_type="Iteration outcome",
-            logs=[
-                f"The workflow ended after {payload['iterations']} iteration(s).",
-                f"Coverage ratio: {review['coverage_ratio']}.",
-                f"Approved: {'yes' if review['approved'] else 'no'}.",
-            ]
-            + review["improvement_actions"],
-        ),
-    ]
+    trace_sections = build_trace_sections(payload["stage_traces"])
 
     flow_diagram = """
     <section class='diagram-card'>
@@ -458,7 +410,7 @@ def build_workflow_report(payload: dict) -> str:
         f"{agent_configuration}"
         f"{flow_diagram}"
         "<div class='stage-grid'>"
-        + "".join(stage_sections)
+        + trace_sections
         + "</div></div>"
     )
 
@@ -554,21 +506,53 @@ def build_agent_configuration_summary() -> str:
     )
 
 
-def build_stage_card(index: int, role: str, stage_status: str, output_type: str, logs: list[str]) -> str:
-    log_items = "".join(f"<li>{html.escape(log)}</li>" for log in logs)
+def build_trace_sections(stage_traces: list[dict]) -> str:
+    return "".join(
+        build_stage_card(
+            run_index=index,
+            iteration=trace["iteration"],
+            stage_index=trace["stage_index"],
+            role=trace["agent_name"],
+            stage_status=trace["status"],
+            input_summary=trace["input_summary"],
+            output_summary=trace["output_summary"],
+        )
+        for index, trace in enumerate(stage_traces, start=1)
+    )
+
+
+def build_stage_card(
+    run_index: int,
+    iteration: int,
+    stage_index: int,
+    role: str,
+    stage_status: str,
+    input_summary: list[str],
+    output_summary: list[str],
+) -> str:
+    input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_summary)
+    output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_summary)
     return (
         "<section class='stage-card'>"
         "<div class='stage-head'>"
         "<div>"
-        f"<div class='stage-index'>Stage {index}</div>"
+        f"<div class='stage-index'>Run {run_index} • Iteration {iteration} • Stage {stage_index}</div>"
         f"<div class='stage-role'>{html.escape(role)}</div>"
         "</div>"
         f"<div class='stage-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
-        f"<div class='stage-meta'><strong>Output:</strong> {html.escape(output_type)}</div>"
+        f"<div class='stage-meta'><strong>Agent pass:</strong> {html.escape(role)}</div>"
         "</div>"
         "<div class='stage-body'>"
-        "<div class='log-title'>Execution log</div>"
-        f"<ul class='log-list'>{log_items}</ul>"
+        "<div class='io-grid'>"
+        "<div>"
+        "<div class='log-title'>Input</div>"
+        f"<ul class='log-list'>{input_items}</ul>"
+        "</div>"
+        "<div>"
+        "<div class='log-title'>Output</div>"
+        f"<ul class='log-list'>{output_items}</ul>"
+        "</div>"
+        "</div>"
         "</div>"
         "</section>"
     )

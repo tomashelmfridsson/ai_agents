@@ -48,6 +48,16 @@ class ReviewReport:
 
 
 @dataclass
+class StageTrace:
+    iteration: int
+    stage_index: int
+    agent_name: str
+    input_summary: list[str]
+    output_summary: list[str]
+    status: str
+
+
+@dataclass
 class PipelineResult:
     title: str
     source_requirements: str
@@ -56,6 +66,7 @@ class PipelineResult:
     generated_artifacts: list[GeneratedArtifact]
     review: ReviewReport
     iterations: int
+    stage_traces: list[StageTrace] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
