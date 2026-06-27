@@ -238,6 +238,11 @@ class OrchestratorAgent:
                     if should_rerun
                     else "Stop pipeline because the maximum number of iterations has been reached."
                 ),
+                (
+                    f"Primary reason: {review.findings[0]}"
+                    if review.findings
+                    else "Primary reason: no explicit finding was recorded."
+                ),
                 *review.improvement_actions[:3],
             ],
             status="rerun" if should_rerun else "stop",
@@ -247,7 +252,8 @@ class OrchestratorAgent:
             ),
             decision_explanation=(
                 "A rerun happens when review.approved is false and the maximum iteration limit has not "
-                "yet been reached. Otherwise the pipeline stops."
+                "yet been reached. In practice, this means that at least one review finding remained "
+                "important enough to block approval, so the orchestrator starts the same five-agent pass again."
                 if should_rerun
                 else (
                     "The pipeline stops because review.approved is true."

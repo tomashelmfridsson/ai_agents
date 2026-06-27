@@ -23,22 +23,26 @@ LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
 
-def process_requirements(title: str, requirements: str) -> tuple[str, str]:
+def process_requirements(title: str, requirements: str, max_iterations: float) -> tuple[str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         raise gr.Error("The requirements field is required.")
+    iteration_limit = max(1, int(max_iterations))
 
-    result = OrchestratorAgent().process(
+    result = OrchestratorAgent(max_iterations=iteration_limit).process(
         title=normalized_title,
         requirements_text=normalized_requirements,
     )
     payload = result.to_dict()
+    findings_count = len(payload["review"]["findings"])
+    improvement_count = len(payload["review"]["improvement_actions"])
     status = (
         "<div class='result-status'>"
-        f"Completed after {payload['iterations']} iteration(s). "
+        f"Completed after {payload['iterations']} of {iteration_limit} allowed iteration(s). "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
-        f"Approved: {'yes' if payload['review']['approved'] else 'no'}."
+        f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
+        f"Findings: {findings_count}. Improvement actions: {improvement_count}."
         "</div>"
     )
     return status, build_workflow_report(payload)
@@ -193,6 +197,23 @@ def build_demo() -> gr.Blocks:
     .summary-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
     }
+    .summary-card-wide {
+      padding: 18px 20px;
+    }
+    .summary-lead {
+      margin: 0 0 10px;
+      color: var(--app-ink) !important;
+      font-size: 1.05rem;
+      line-height: 1.65;
+      font-weight: 600;
+    }
+    .summary-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--app-muted) !important;
+      line-height: 1.7;
+      font-weight: 500;
+    }
     .metric-card, .stage-card, .diagram-card {
       border: 1px solid var(--app-line);
       border-radius: 20px;
@@ -235,6 +256,27 @@ def build_demo() -> gr.Blocks:
     }
     .diagram-node strong { display: block; margin-bottom: 6px; color: var(--app-ink) !important; font-weight: 700; }
     .diagram-node span { display: block; color: var(--app-muted) !important; font-size: 0.92rem; line-height: 1.5; font-weight: 500; }
+    .diagram-card table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      background: rgba(255,255,255,0.9);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .diagram-card th,
+    .diagram-card td {
+      padding: 12px 14px;
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      text-align: left;
+      vertical-align: top;
+      color: var(--app-ink) !important;
+      background: rgba(255,255,255,0.78);
+    }
+    .diagram-card th {
+      background: rgba(203, 145, 50, 0.18);
+      font-weight: 700;
+    }
     .stage-grid { display: grid; gap: 14px; }
     .stage-card { overflow: hidden; }
     .stage-head {
@@ -373,31 +415,35 @@ def build_demo() -> gr.Blocks:
                 """
             )
 
-            with gr.Row():
-                with gr.Column(scale=5):
-                    with gr.Group(elem_classes=["panel-card"]):
-                        gr.Markdown("## Run workflow")
-                        title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
-                        requirements_input = gr.Textbox(
-                            label="Requirements",
-                            value=DEFAULT_REQUIREMENTS,
-                            lines=12,
-                        )
-                        run_button = gr.Button("Run workflow", variant="primary")
+            with gr.Group(elem_classes=["panel-card"]):
+                gr.Markdown("## Run workflow")
+                title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
+                requirements_input = gr.Textbox(
+                    label="Requirements",
+                    value=DEFAULT_REQUIREMENTS,
+                    lines=12,
+                )
+                max_iterations_input = gr.Slider(
+                    label="Maximum iterations",
+                    minimum=1,
+                    maximum=5,
+                    step=1,
+                    value=2,
+                )
+                run_button = gr.Button("Run workflow", variant="primary")
 
-                with gr.Column(scale=6):
-                    with gr.Group(elem_classes=["panel-card"]):
-                        gr.Markdown("## Result")
-                        status_output = gr.Markdown(
-                            value="<div class='result-status'>Waiting for input.</div>"
-                        )
-                        result_output = gr.HTML(
-                            value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, and review findings.</div>"
-                        )
+            with gr.Group(elem_classes=["panel-card"]):
+                gr.Markdown("## Result")
+                status_output = gr.Markdown(
+                    value="<div class='result-status'>Waiting for input.</div>"
+                )
+                result_output = gr.HTML(
+                    value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, review findings, and orchestration decisions.</div>"
+                )
 
         run_button.click(
             fn=process_requirements,
-            inputs=[title_input, requirements_input],
+            inputs=[title_input, requirements_input, max_iterations_input],
             outputs=[status_output, result_output],
         )
 
@@ -406,25 +452,7 @@ def build_demo() -> gr.Blocks:
 
 def build_workflow_report(payload: dict) -> str:
     review = payload["review"]
-    summary_cards = [
-        ("Scenario", payload["title"]),
-        ("Iterations", str(payload["iterations"])),
-        ("Requirements", str(len(payload["requirements"]))),
-        ("Test cases", str(len(payload["test_designs"]))),
-        ("Artifacts", str(len(payload["generated_artifacts"]))),
-        ("Coverage", str(review["coverage_ratio"])),
-    ]
-    summary_html = "".join(
-        "<div class='metric-card'>"
-        f"<div class='metric-label'>{html.escape(label)}</div>"
-        f"<div class='metric-value'>{html.escape(value)}</div>"
-        "</div>"
-        for label, value in summary_cards
-    )
-
-    requirements = payload["requirements"]
-    test_designs = payload["test_designs"]
-    artifacts = payload["generated_artifacts"]
+    summary_html = build_summary_overview(payload)
     trace_overview = build_trace_overview(payload)
 
     trace_sections = build_trace_sections(payload["stage_traces"])
@@ -444,12 +472,42 @@ def build_workflow_report(payload: dict) -> str:
 
     return (
         "<div class='report-shell'>"
-        f"<div class='summary-grid'>{summary_html}</div>"
+        f"{summary_html}"
         f"{trace_overview}"
         f"{flow_diagram}"
         "<div class='stage-grid'>"
         + trace_sections
         + "</div></div>"
+    )
+
+
+def build_summary_overview(payload: dict) -> str:
+    review = payload["review"]
+    approved = "yes" if review["approved"] else "no"
+    findings = review["findings"]
+    improvement_actions = review["improvement_actions"]
+    lead = (
+        f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
+        f"{len(payload['test_designs'])} planned test case(s), and {len(payload['generated_artifacts'])} "
+        f"generated artifact(s). The run ended after {payload['iterations']} iteration(s) with "
+        f"coverage ratio {review['coverage_ratio']} and approved={approved}."
+    )
+    bullets = [
+        f"Review findings: {len(findings)}",
+        f"Improvement actions: {len(improvement_actions)}",
+        f"Final approval decision: {approved}",
+    ]
+    if findings:
+        bullets.append(f"Most important review issue: {findings[0]}")
+    if improvement_actions:
+        bullets.append(f"Primary requested improvement: {improvement_actions[0]}")
+    items = "".join(f"<li>{html.escape(item)}</li>" for item in bullets)
+    return (
+        "<section class='diagram-card summary-card-wide'>"
+        "<h3>Run summary</h3>"
+        f"<p class='summary-lead'>{html.escape(lead)}</p>"
+        f"<ul class='summary-list'>{items}</ul>"
+        "</section>"
     )
 
 
