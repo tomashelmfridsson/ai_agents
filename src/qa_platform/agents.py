@@ -45,25 +45,25 @@ class RequirementsAnalystAgent:
 
     def _extract_acceptance_criteria(self, text: str) -> list[str]:
         lowered = text.lower()
-        criteria = [f"Systemet ska uppfylla kravet: {text}"]
+        criteria = [f"The system shall satisfy the requirement: {text}"]
         if any(keyword in lowered for keyword in ("login", "logga in", "autentis", "sign in")):
-            criteria.append("Användaren ska kunna autentiseras med giltiga uppgifter.")
-            criteria.append("Ogiltiga uppgifter ska ge ett tydligt felmeddelande.")
+            criteria.append("The user shall be authenticated when valid credentials are supplied.")
+            criteria.append("Invalid credentials shall produce a clear error message.")
         if any(keyword in lowered for keyword in ("visa", "display", "list", "översikt", "dashboard")):
-            criteria.append("Relevant information ska presenteras utan trasiga eller tomma tillstånd.")
+            criteria.append("Relevant information shall be presented without broken or empty states.")
         if any(keyword in lowered for keyword in ("skapa", "save", "spara", "registrera", "submit")):
-            criteria.append("Inmatade data ska valideras innan de sparas.")
-            criteria.append("Lyckad operation ska ge en bekräftelse till användaren.")
+            criteria.append("Input data shall be validated before it is stored.")
+            criteria.append("A successful operation shall provide user confirmation.")
         if any(keyword in lowered for keyword in ("admin", "behörighet", "access", "roll")):
-            criteria.append("Otillåten åtkomst ska blockeras och loggas.")
+            criteria.append("Unauthorized access shall be blocked and logged.")
         return criteria
 
     def _build_assumptions(self, text: str, criteria: list[str]) -> list[str]:
         assumptions = []
         if len(criteria) == 1:
-            assumptions.append("Kravet behöver sannolikt förtydligas med fler acceptanskriterier.")
+            assumptions.append("The requirement likely needs more explicit acceptance criteria.")
         if not any(word in text.lower() for word in ("fel", "error", "ogiltig", "invalid")):
-            assumptions.append("Felhantering är inte explicit beskriven och bör granskas.")
+            assumptions.append("Error handling is not explicit and should be reviewed.")
         return assumptions
 
     def _classify_priority(self, text: str) -> str:
@@ -84,10 +84,10 @@ class TestDesignAgent:
         for req in requirements:
             test_type = self._choose_test_type(req)
             design_id = f"TC-{req.requirement_id.split('-')[-1]}"
-            title = f"Verifiera {req.requirement_id.lower()} {_slugify(req.normalized_text)[:40]}"
+            title = f"Verify {req.requirement_id.lower()} {_slugify(req.normalized_text)[:40]}"
             steps = self._build_steps(req)
             expected_results = [criterion for criterion in req.acceptance_criteria]
-            oracle = "Alla förväntade resultat uppfylls och inga otillåtna bieffekter observeras."
+            oracle = "All expected results are satisfied and no unauthorized side effects are observed."
             risks = self._identify_risks(req)
             designs.append(
                 TestCaseDesign(
@@ -95,7 +95,7 @@ class TestDesignAgent:
                     requirement_id=req.requirement_id,
                     title=title,
                     test_type=test_type,
-                    preconditions=["Applikationen är tillgänglig.", "Testdata är initierad."],
+                    preconditions=["The application is available.", "Test data is initialized."],
                     steps=steps,
                     expected_results=expected_results,
                     oracle=oracle,
@@ -116,19 +116,19 @@ class TestDesignAgent:
 
     def _build_steps(self, req: RequirementItem) -> list[str]:
         return [
-            f"Identifiera funktion kopplad till {req.requirement_id}.",
-            "Förbered positivt testfall med giltiga data.",
-            "Exekvera huvudflödet.",
-            "Verifiera förväntat resultat mot acceptanskriterierna.",
-            "Exekvera negativt eller gränsvärdesfall om tillämpligt.",
+            f"Identify the functionality associated with {req.requirement_id}.",
+            "Prepare a positive test case with valid data.",
+            "Execute the primary flow.",
+            "Verify the expected result against the acceptance criteria.",
+            "Execute a negative or boundary case when applicable.",
         ]
 
     def _identify_risks(self, req: RequirementItem) -> list[str]:
         risks = []
         if req.assumptions:
-            risks.append("Kravet innehåller antaganden som kan ge feltolkad testdesign.")
+            risks.append("The requirement contains assumptions that can distort test design.")
         if len(req.acceptance_criteria) < 2:
-            risks.append("Begränsad specificitet kan minska testbarheten.")
+            risks.append("Limited specificity can reduce testability.")
         return risks
 
 
@@ -159,9 +159,9 @@ class TestGenerationAgent:
 
     def _build_test_data(self, req: RequirementItem, design: TestCaseDesign) -> dict[str, str]:
         return {
-            "positive_case": f"Giltig data för {req.requirement_id}",
-            "negative_case": f"Ogiltig data för {req.requirement_id}",
-            "notes": f"Genererad för testtyp {design.test_type}",
+            "positive_case": f"Valid data for {req.requirement_id}",
+            "negative_case": f"Invalid data for {req.requirement_id}",
+            "notes": f"Generated for test type {design.test_type}",
         }
 
     def _suggest_selectors(self, req: RequirementItem) -> list[str]:
@@ -223,30 +223,30 @@ class ReviewAgent:
 
         for requirement in requirements:
             if requirement.requirement_id not in covered_requirements:
-                findings.append(f"{requirement.requirement_id} saknar genererad testartefakt.")
-                improvements.append(f"Generera minst ett test för {requirement.requirement_id}.")
+                findings.append(f"{requirement.requirement_id} is missing a generated test artifact.")
+                improvements.append(f"Generate at least one test for {requirement.requirement_id}.")
 
         for design in test_designs:
             if len(design.expected_results) < 2:
                 findings.append(
-                    f"{design.test_case_id} har svag oracle-definition och behöver fler förväntade resultat."
+                    f"{design.test_case_id} has a weak oracle definition and needs more expected results."
                 )
                 improvements.append(
-                    f"Förtydliga acceptanskriterier eller lägg till negativa scenarier för {design.test_case_id}."
+                    f"Clarify acceptance criteria or add negative scenarios for {design.test_case_id}."
                 )
 
         for requirement in requirements:
             if requirement.assumptions:
                 findings.append(
-                    f"{requirement.requirement_id} innehåller antaganden som bör bekräftas innan automation."
+                    f"{requirement.requirement_id} contains assumptions that should be confirmed before automation."
                 )
                 improvements.append(
-                    f"Förtydliga kravet {requirement.requirement_id} för att minska feltolkning."
+                    f"Clarify requirement {requirement.requirement_id} to reduce misinterpretation."
                 )
 
         approved = coverage_ratio == 1.0 and len(findings) <= max(1, len(requirements) // 2)
         if approved and not findings:
-            findings.append("Inga kritiska avvikelser identifierades.")
+            findings.append("No critical issues were identified.")
 
         return ReviewReport(
             approved=approved,

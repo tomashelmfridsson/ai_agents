@@ -1,25 +1,77 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agentisk QA-plattform</title>
+    <title>Deterministic QA Workflow</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
     <main class="layout">
       <section class="hero">
         <div class="hero-top">
-          <p class="eyebrow">Sommarprojekt</p>
+          <div>
+            <p class="eyebrow">Research prototype</p>
+            <h1>Deterministic QA workflow for requirements-based test design</h1>
+          </div>
           <a class="doc-link" href="/literature" target="_blank" rel="noreferrer">
-            Öppna litteraturstudie
+            Open literature review
           </a>
         </div>
-        <h1>Agentisk QA-plattform för kravbaserad testdesign</h1>
         <p class="lede">
-          Skicka in kravspecifikationer och få tillbaka strukturerad analys,
-          testdesign, testartefakter och en granskningsrapport från en agentisk pipeline.
+          This implementation runs as a synchronous, rule-based workflow. It does not use LLMs,
+          autonomous tool selection, or agentic planning, even though the stages mirror common
+          agent responsibilities.
         </p>
+      </section>
+
+      <section class="info-grid">
+        <article class="panel info-card">
+          <p class="section-label">Execution model</p>
+          <p>
+            A fixed synchronous pipeline executes the same stages in order on every run. The
+            current prototype is deterministic and non-agentic.
+          </p>
+        </article>
+        <article class="panel info-card">
+          <p class="section-label">Iterations</p>
+          <p>
+            An iteration is one full pass through analysis, design, generation, and review. The
+            orchestrator repeats the pass until approval or the iteration limit is reached.
+          </p>
+        </article>
+        <article class="panel info-card">
+          <p class="section-label">Technical flow</p>
+          <ul>
+            <li>Requirement parsing and normalization</li>
+            <li>Heuristic acceptance criteria extraction</li>
+            <li>Rule-based test design and artifact generation</li>
+            <li>Coverage and assumption review</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="workflow-strip panel">
+        <div class="workflow-step">
+          <strong>1. Parse</strong>
+          <span>Normalize the scenario and split requirement statements.</span>
+        </div>
+        <div class="workflow-step">
+          <strong>2. Analyze</strong>
+          <span>Extract requirement IDs, assumptions, and acceptance criteria.</span>
+        </div>
+        <div class="workflow-step">
+          <strong>3. Design</strong>
+          <span>Create test-case structures, steps, expected results, and oracles.</span>
+        </div>
+        <div class="workflow-step">
+          <strong>4. Generate</strong>
+          <span>Produce selectors, test data, and pseudocode artifacts.</span>
+        </div>
+        <div class="workflow-step">
+          <strong>5. Review</strong>
+          <span>Check coverage, findings, and approval status before the next iteration.</span>
+        </div>
       </section>
 
       <section class="panel">
@@ -29,27 +81,30 @@
             id="title"
             name="title"
             type="text"
-            value="Demo: webbapplikation för inloggning och registrering"
+            value="Demo: web application for login and registration"
           />
 
-          <label for="requirements">Kravspecifikation</label>
+          <label for="requirements">Requirements</label>
           <textarea id="requirements" name="requirements" rows="12">
-Användaren måste kunna logga in med e-post och lösenord.
-Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
-En administratör ska kunna se en översikt över registrerade användare.
-Användaren ska kunna registrera ett nytt konto via ett formulär.
+The user must be able to sign in with email and password.
+The system shall display a clear error message when credentials are invalid.
+An administrator shall be able to view an overview of registered users.
+The user shall be able to register a new account through a form.
           </textarea>
 
-          <button type="submit">Kör agentflöde</button>
+          <button type="submit">Run workflow</button>
         </form>
       </section>
 
       <section class="panel output">
         <div class="status-row">
-          <h2>Resultat</h2>
-          <span id="status">Väntar på indata</span>
+          <h2>Result</h2>
+          <span id="status">Waiting for input</span>
         </div>
-        <pre id="result">Ingen körning ännu.</pre>
+        <div id="result" class="empty-state">
+          No run has been executed yet. Start the workflow to inspect stages, technical outputs,
+          and review findings.
+        </div>
       </section>
     </main>
 

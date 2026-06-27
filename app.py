@@ -1,10 +1,9 @@
 import html
 import os
+import sys
+from pathlib import Path
 
 import gradio as gr
-
-from pathlib import Path
-import sys
 
 
 ROOT = Path(__file__).resolve().parent
@@ -15,11 +14,11 @@ if str(SRC) not in sys.path:
 from qa_platform.orchestrator import OrchestratorAgent
 
 
-DEFAULT_TITLE = "Demo: webbapplikation för inloggning och registrering"
-DEFAULT_REQUIREMENTS = """Användaren måste kunna logga in med e-post och lösenord.
-Systemet ska visa ett tydligt felmeddelande vid ogiltiga uppgifter.
-En administratör ska kunna se en översikt över registrerade användare.
-Användaren ska kunna registrera ett nytt konto via ett formulär."""
+DEFAULT_TITLE = "Demo: web application for login and registration"
+DEFAULT_REQUIREMENTS = """The user must be able to sign in with email and password.
+The system shall display a clear error message when credentials are invalid.
+An administrator shall be able to view an overview of registered users.
+The user shall be able to register a new account through a form."""
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 
 
@@ -27,7 +26,7 @@ def process_requirements(title: str, requirements: str) -> tuple[str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
-        raise gr.Error("Fältet 'Kravspecifikation' måste fyllas i.")
+        raise gr.Error("The requirements field is required.")
 
     result = OrchestratorAgent().process(
         title=normalized_title,
@@ -36,12 +35,12 @@ def process_requirements(title: str, requirements: str) -> tuple[str, str]:
     payload = result.to_dict()
     status = (
         "<div class='result-status'>"
-        f"Klar. Iterationer: {payload['iterations']}. "
-        f"Coverage: {payload['review']['coverage_ratio']}. "
-        f"Godkänd: {'ja' if payload['review']['approved'] else 'nej'}."
+        f"Completed after {payload['iterations']} iteration(s). "
+        f"Coverage ratio: {payload['review']['coverage_ratio']}. "
+        f"Approved: {'yes' if payload['review']['approved'] else 'no'}."
         "</div>"
     )
-    return status, build_agent_report(payload)
+    return status, build_workflow_report(payload)
 
 
 def build_demo() -> gr.Blocks:
@@ -52,105 +51,205 @@ def build_demo() -> gr.Blocks:
     )
 
     custom_css = """
-    body { background:
-      radial-gradient(circle at top left, rgba(212, 162, 87, 0.20), transparent 26%),
-      radial-gradient(circle at bottom right, rgba(166, 69, 36, 0.14), transparent 24%),
-      #f5efe4; }
-    .app-shell { max-width: 1120px; margin: 0 auto; }
-    .hero-card, .panel-card { border-radius: 24px; border: 1px solid rgba(35, 26, 18, 0.10); }
-    .hero-card { background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,248,240,0.94)); }
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(212, 162, 87, 0.18), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(166, 69, 36, 0.12), transparent 22%),
+        #eee5d7;
+      color: #201811;
+    }
+    .app-shell { max-width: 1160px; margin: 0 auto; }
+    .hero-card, .panel-card, .info-card {
+      border-radius: 24px;
+      border: 1px solid rgba(32, 24, 17, 0.12);
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(250,244,235,0.98));
+      box-shadow: 0 18px 42px rgba(74, 45, 16, 0.10);
+    }
+    .hero-card { overflow: hidden; }
     .doc-pill-button,
     .doc-pill-button button {
-      display: inline-flex; align-items: center; min-height: 42px; padding: 0 16px;
+      display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: #241a12; background: rgba(255,255,255,0.82); border: 1px solid rgba(166, 69, 36, 0.16);
+      color: #1f160f; background: rgba(255,255,255,0.94); border: 1px solid rgba(166, 69, 36, 0.22);
     }
-    .result-status { font-size: 1rem; color: #6a5646; margin-bottom: 8px; }
+    .doc-pill-button button:hover { background: #fff; }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+    .info-card { padding: 18px 20px; }
+    .info-label {
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #8e5937;
+      margin-bottom: 8px;
+    }
+    .info-card p, .info-card li { color: #3f3228; line-height: 1.6; margin: 0; }
+    .info-card ul { margin: 10px 0 0 18px; padding: 0; }
+    .workflow-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .workflow-step {
+      border-radius: 18px;
+      border: 1px solid rgba(32, 24, 17, 0.10);
+      background: rgba(255, 252, 248, 0.96);
+      padding: 14px 16px;
+    }
+    .workflow-step strong {
+      display: block;
+      color: #201811;
+      margin-bottom: 6px;
+      font-size: 0.98rem;
+    }
+    .workflow-step span {
+      display: block;
+      color: #5b493d;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .result-status { font-size: 1rem; color: #4e3f34; margin-bottom: 8px; }
     .report-shell { display: grid; gap: 18px; }
     .summary-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
     }
-    .metric-card, .agent-card {
-      border: 1px solid rgba(35, 26, 18, 0.10);
+    .metric-card, .stage-card, .diagram-card {
+      border: 1px solid rgba(32, 24, 17, 0.10);
       border-radius: 20px;
-      background: rgba(255, 252, 247, 0.92);
+      background: rgba(255, 252, 247, 0.95);
       box-shadow: 0 14px 32px rgba(74, 45, 16, 0.08);
     }
     .metric-card { padding: 16px 18px; }
-    .metric-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.12em; color: #8a6a55; }
-    .metric-value { margin-top: 8px; font-size: 1.5rem; font-weight: 700; color: #241a12; }
-    .agent-grid { display: grid; gap: 14px; }
-    .agent-card { overflow: hidden; }
-    .agent-head {
-      display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
-      gap: 12px; padding: 16px 18px; background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,236,224,0.88));
-      border-bottom: 1px solid rgba(35, 26, 18, 0.08);
+    .metric-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.12em; color: #825740; }
+    .metric-value { margin-top: 8px; font-size: 1.5rem; font-weight: 700; color: #201811; }
+    .diagram-card { padding: 18px; }
+    .diagram-card h3 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #825740;
     }
-    .agent-index { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.14em; color: #a64524; }
-    .agent-role { font-size: 1.08rem; font-weight: 700; color: #241a12; }
-    .agent-meta { font-size: 0.9rem; color: #6a5646; align-self: end; }
-    .agent-body { padding: 16px 18px 18px; }
-    .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: #8a6a55; }
-    .log-list { margin: 0; padding-left: 18px; color: #2d241d; line-height: 1.6; }
+    .diagram-flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .diagram-node {
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,232,220,0.92));
+      border: 1px solid rgba(32, 24, 17, 0.10);
+    }
+    .diagram-node strong { display: block; margin-bottom: 6px; color: #201811; }
+    .diagram-node span { display: block; color: #5b493d; font-size: 0.9rem; line-height: 1.45; }
+    .stage-grid { display: grid; gap: 14px; }
+    .stage-card { overflow: hidden; }
+    .stage-head {
+      display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
+      gap: 12px; padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,236,224,0.90));
+      border-bottom: 1px solid rgba(32, 24, 17, 0.08);
+    }
+    .stage-index { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.14em; color: #a64524; }
+    .stage-role { font-size: 1.08rem; font-weight: 700; color: #201811; }
+    .stage-meta { font-size: 0.9rem; color: #4e3f34; align-self: end; }
+    .stage-body { padding: 16px 18px 18px; }
+    .log-title { margin: 0 0 10px; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.12em; color: #825740; }
+    .log-list { margin: 0; padding-left: 18px; color: #2b211a; line-height: 1.6; }
     .log-list li + li { margin-top: 7px; }
     .empty-state {
-      padding: 22px; border-radius: 18px; background: rgba(255,252,247,0.88);
-      border: 1px dashed rgba(35,26,18,0.16); color: #6a5646;
+      padding: 22px; border-radius: 18px; background: rgba(255,252,247,0.92);
+      border: 1px dashed rgba(32,24,17,0.16); color: #4e3f34;
     }
     @media (max-width: 820px) {
-      .agent-head { grid-template-columns: 1fr; }
+      .stage-head { grid-template-columns: 1fr; }
     }
     """
 
-    with gr.Blocks(theme=theme, css=custom_css, title="Agentisk QA-plattform") as demo:
+    with gr.Blocks(theme=theme, css=custom_css, title="Deterministic QA Workflow") as demo:
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Group(elem_classes=["hero-card"]):
                 gr.HTML(
                     """
                     <section style="padding: 28px;">
                       <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
-                        <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#a64524;">Sommarprojekt</p>
+                        <div style="max-width:62ch;">
+                          <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:#8e5937;">Research prototype</p>
+                          <h1 style="margin:12px 0 0; font-size:clamp(2.4rem, 5vw, 4.7rem); line-height:0.95;">
+                            Deterministic QA workflow for requirements-based test design
+                          </h1>
+                        </div>
                         <div id="literature-button-slot"></div>
                       </div>
-                      <h1 style="margin:14px 0 0; font-size:clamp(2.6rem, 5vw, 4.8rem); line-height:0.95;">
-                        Agentisk QA-plattform för kravbaserad testdesign
-                      </h1>
-                      <p style="max-width:72ch; margin:18px 0 0; color:#6a5646; line-height:1.7; font-size:1.04rem;">
-                        Kör en regelbaserad agentpipeline lokalt i Gradio och visa litteraturstudien från samma applikation.
-                      </p>
-                      <p style="margin:14px 0 0; color:#6a5646; line-height:1.6;">
-                        Litteraturstudien öppnas i en separat flik som en renderad Markdown-vy.
+                      <p style="max-width:72ch; margin:18px 0 0; color:#4e3f34; line-height:1.7; font-size:1.04rem;">
+                        This implementation runs as a synchronous, rule-based workflow. It does not use LLMs, autonomous tool selection, or agentic planning, even though the stages mirror common agent responsibilities.
                       </p>
                     </section>
                     """
                 )
-                literature_button = gr.Button(
-                    "Öppna litteraturstudie",
+                gr.Button(
+                    "Open literature review",
                     link=LITERATURE_URL,
                     link_target="_blank",
                     elem_classes=["doc-pill-button"],
                 )
 
+            gr.HTML(
+                """
+                <section class="info-grid">
+                  <article class="info-card">
+                    <div class="info-label">Execution model</div>
+                    <p>A fixed synchronous pipeline executes the same stages in order on every run. The design is deterministic and non-agentic.</p>
+                  </article>
+                  <article class="info-card">
+                    <div class="info-label">Iterations</div>
+                    <p>An iteration is one full pass through analysis, design, generation, and review. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
+                  </article>
+                  <article class="info-card">
+                    <div class="info-label">Technical flow</div>
+                    <ul>
+                      <li>Input parsing and requirement splitting</li>
+                      <li>Heuristic acceptance criteria extraction</li>
+                      <li>Rule-based test design and artifact generation</li>
+                      <li>Coverage and assumption review</li>
+                    </ul>
+                  </article>
+                </section>
+                <section class="workflow-strip">
+                  <div class="workflow-step"><strong>1. Parse</strong><span>Normalize the scenario and split requirement statements.</span></div>
+                  <div class="workflow-step"><strong>2. Analyze</strong><span>Extract requirement IDs, assumptions, and acceptance criteria.</span></div>
+                  <div class="workflow-step"><strong>3. Design</strong><span>Create test-case structures, steps, expected results, and oracles.</span></div>
+                  <div class="workflow-step"><strong>4. Generate</strong><span>Produce selectors, test data, and pseudocode artifacts.</span></div>
+                  <div class="workflow-step"><strong>5. Review</strong><span>Check coverage, findings, and approval status before the next iteration.</span></div>
+                </section>
+                """
+            )
+
             with gr.Row():
                 with gr.Column(scale=5):
                     with gr.Group(elem_classes=["panel-card"]):
-                        gr.Markdown("## Kör agentflöde")
+                        gr.Markdown("## Run workflow")
                         title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
                         requirements_input = gr.Textbox(
-                            label="Kravspecifikation",
+                            label="Requirements",
                             value=DEFAULT_REQUIREMENTS,
                             lines=12,
                         )
-                        run_button = gr.Button("Kör agentflöde", variant="primary")
+                        run_button = gr.Button("Run workflow", variant="primary")
 
                 with gr.Column(scale=6):
                     with gr.Group(elem_classes=["panel-card"]):
-                        gr.Markdown("## Resultat")
+                        gr.Markdown("## Result")
                         status_output = gr.Markdown(
-                            value="<div class='result-status'>Väntar på indata.</div>"
+                            value="<div class='result-status'>Waiting for input.</div>"
                         )
                         result_output = gr.HTML(
-                            value="<div class='empty-state'>Ingen körning ännu. Kör agentflödet för att se agenter, status och körningslogg.</div>"
+                            value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, and review findings.</div>"
                         )
 
         run_button.click(
@@ -162,14 +261,14 @@ def build_demo() -> gr.Blocks:
     return demo
 
 
-def build_agent_report(payload: dict) -> str:
+def build_workflow_report(payload: dict) -> str:
     review = payload["review"]
     summary_cards = [
         ("Scenario", payload["title"]),
-        ("Iterationer", str(payload["iterations"])),
-        ("Krav", str(len(payload["requirements"]))),
-        ("Testdesigner", str(len(payload["test_designs"]))),
-        ("Artefakter", str(len(payload["generated_artifacts"]))),
+        ("Iterations", str(payload["iterations"])),
+        ("Requirements", str(len(payload["requirements"]))),
+        ("Designs", str(len(payload["test_designs"]))),
+        ("Artifacts", str(len(payload["generated_artifacts"]))),
         ("Coverage", str(review["coverage_ratio"])),
     ]
     summary_html = "".join(
@@ -184,84 +283,98 @@ def build_agent_report(payload: dict) -> str:
     test_designs = payload["test_designs"]
     artifacts = payload["generated_artifacts"]
 
-    agent_sections = [
-        build_agent_card(
+    stage_sections = [
+        build_stage_card(
             index=1,
-            role="Requirements Analyst",
-            stage_status=f"{len(requirements)} krav extraherade",
-            output_type="Requirement items",
+            role="Requirements analysis",
+            stage_status=f"{len(requirements)} requirement item(s) extracted",
+            output_type="Structured requirements",
             logs=[
-                f"{item['requirement_id']}: prioritet {item['priority']}, {len(item['acceptance_criteria'])} acceptanskriterier."
+                f"{item['requirement_id']}: priority {item['priority']}, {len(item['acceptance_criteria'])} acceptance criteria, {len(item['assumptions'])} assumption(s)."
                 for item in requirements
             ]
-            or ["Inga krav extraherades."],
+            or ["No requirements were extracted."],
         ),
-        build_agent_card(
+        build_stage_card(
             index=2,
-            role="Test Design Agent",
-            stage_status=f"{len(test_designs)} testdesigner skapade",
-            output_type="Test case designs",
+            role="Test design",
+            stage_status=f"{len(test_designs)} design(s) created",
+            output_type="Traceable test cases",
             logs=[
-                f"{item['test_case_id']}: {item['test_type']} med {len(item['steps'])} steg och {len(item['expected_results'])} förväntade resultat."
+                f"{item['test_case_id']}: {item['test_type']} with {len(item['steps'])} step(s) and {len(item['expected_results'])} expected result(s)."
                 for item in test_designs
             ]
-            or ["Ingen testdesign genererades."],
+            or ["No test designs were generated."],
         ),
-        build_agent_card(
+        build_stage_card(
             index=3,
-            role="Test Generation Agent",
-            stage_status=f"{len(artifacts)} artefakter genererade",
-            output_type="Generated artifacts",
+            role="Artifact generation",
+            stage_status=f"{len(artifacts)} artifact(s) generated",
+            output_type="Selectors, test data, pseudocode",
             logs=[
-                f"{item['artifact_id']}: mål {item['target']}, testnamn {item['test_name']} och {len(item['selectors'])} selektorförslag."
+                f"{item['artifact_id']}: target {item['target']}, test name {item['test_name']}, {len(item['selectors'])} selector suggestion(s)."
                 for item in artifacts
             ]
-            or ["Inga testartefakter genererades."],
+            or ["No artifacts were generated."],
         ),
-        build_agent_card(
+        build_stage_card(
             index=4,
-            role="Review Agent",
-            stage_status="Granskning genomförd",
-            output_type="Review report",
-            logs=review["findings"] or ["Inga kritiska avvikelser identifierades."],
+            role="Review",
+            stage_status="Coverage and assumptions reviewed",
+            output_type="Review findings",
+            logs=review["findings"] or ["No critical issues were identified."],
         ),
-        build_agent_card(
+        build_stage_card(
             index=5,
-            role="Orchestrator Agent",
-            stage_status="Flöde sammanställt",
-            output_type="Pipeline summary",
+            role="Orchestration summary",
+            stage_status="Workflow pass completed",
+            output_type="Iteration outcome",
             logs=[
-                f"Körningen avslutades efter {payload['iterations']} iterationer.",
+                f"The workflow ended after {payload['iterations']} iteration(s).",
                 f"Coverage ratio: {review['coverage_ratio']}.",
-                f"Godkännande: {'ja' if review['approved'] else 'nej'}.",
+                f"Approved: {'yes' if review['approved'] else 'no'}.",
             ]
             + review["improvement_actions"],
         ),
     ]
 
+    flow_diagram = """
+    <section class='diagram-card'>
+      <h3>Pipeline visualization</h3>
+      <div class='diagram-flow'>
+        <div class='diagram-node'><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
+        <div class='diagram-node'><strong>Requirements analyst</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
+        <div class='diagram-node'><strong>Test designer</strong><span>Test type selection, steps, oracle, expected results.</span></div>
+        <div class='diagram-node'><strong>Artifact generator</strong><span>Selectors, test data, pseudocode, target mapping.</span></div>
+        <div class='diagram-node'><strong>Reviewer</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
+      </div>
+    </section>
+    """
+
     return (
         "<div class='report-shell'>"
         f"<div class='summary-grid'>{summary_html}</div>"
-        "<div class='agent-grid'>"
-        + "".join(agent_sections)
+        f"{flow_diagram}"
+        "<div class='stage-grid'>"
+        + "".join(stage_sections)
         + "</div></div>"
     )
 
 
-def build_agent_card(index: int, role: str, stage_status: str, output_type: str, logs: list[str]) -> str:
+def build_stage_card(index: int, role: str, stage_status: str, output_type: str, logs: list[str]) -> str:
     log_items = "".join(f"<li>{html.escape(log)}</li>" for log in logs)
     return (
-        "<section class='agent-card'>"
-        "<div class='agent-head'>"
+        "<section class='stage-card'>"
+        "<div class='stage-head'>"
         "<div>"
-        f"<div class='agent-index'>Agent {index}</div>"
-        f"<div class='agent-role'>{html.escape(role)}</div>"
+        f"<div class='stage-index'>Stage {index}</div>"
+        f"<div class='stage-role'>{html.escape(role)}</div>"
         "</div>"
-        f"<div class='agent-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
-        f"<div class='agent-meta'><strong>Output:</strong> {html.escape(output_type)}</div>"
+        f"<div class='stage-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
+        f"<div class='stage-meta'><strong>Output:</strong> {html.escape(output_type)}</div>"
         "</div>"
-        "<div class='agent-body'>"
-        "<div class='log-title'>Körningslogg</div>"
+        "<div class='stage-body'>"
+        "<div class='log-title'>Execution log</div>"
         f"<ul class='log-list'>{log_items}</ul>"
         "</div>"
         "</section>"
