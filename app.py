@@ -129,20 +129,54 @@ def build_demo() -> gr.Blocks:
       background: linear-gradient(180deg, var(--app-paper), var(--app-paper-2));
       box-shadow: 0 18px 42px rgba(50, 28, 8, 0.14);
     }
-    .hero-card { overflow: hidden; }
+    .hero-card {
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top right, rgba(203, 145, 50, 0.18), transparent 28%),
+        linear-gradient(180deg, rgba(255, 252, 247, 0.99), rgba(245, 234, 220, 0.99));
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      box-shadow: 0 20px 46px rgba(50, 28, 8, 0.16);
+    }
     .panel-card, .info-card, .metric-card, .stage-card, .diagram-card, .diagram-node, .workflow-step {
       color: var(--app-ink) !important;
+    }
+    .hero-kicker {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.78rem;
+      color: #7a2d12 !important;
+      font-weight: 800;
+    }
+    .hero-title {
+      margin: 10px 0 0;
+      font-size: clamp(1.7rem, 3.4vw, 3.1rem);
+      line-height: 1.02;
+      color: #160e09 !important;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+    }
+    .hero-copy {
+      max-width: 68ch;
+      margin: 14px 0 0;
+      color: #2c2119 !important;
+      line-height: 1.68;
+      font-size: 0.97rem;
+      font-weight: 600;
     }
     .doc-pill-button,
     .doc-pill-button button {
       display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: var(--app-ink) !important;
-      background: rgba(255,255,255,0.97);
-      border: 1px solid rgba(143, 53, 24, 0.28);
+      color: #24170f !important;
+      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(246,236,223,1));
+      border: 1px solid rgba(122, 45, 18, 0.34);
       font-size: 0.9rem;
+      box-shadow: 0 6px 16px rgba(50, 28, 8, 0.10);
     }
-    .doc-pill-button button:hover { background: #fff; }
+    .doc-pill-button button:hover {
+      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,244,231,1));
+      border-color: rgba(122, 45, 18, 0.48);
+    }
     .doc-actions {
       display: flex;
       flex-wrap: wrap;
@@ -179,21 +213,70 @@ def build_demo() -> gr.Blocks:
     }
     .workflow-config-note {
       margin: 0 0 12px;
+      padding: 11px 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(203, 145, 50, 0.22);
+      background: rgba(255, 248, 236, 0.96);
       color: var(--app-muted) !important;
       font-size: 0.92rem;
-      line-height: 1.5;
-      font-weight: 500;
+      line-height: 1.55;
+      font-weight: 600;
     }
     .llm-summary {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 249, 240, 0.98);
+      border: 1px solid rgba(143, 53, 24, 0.14);
       color: var(--app-accent) !important;
       font-size: 0.84rem;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
       font-weight: 700;
     }
     .config-accordion {
       margin-top: 8px;
+      border: 1px solid rgba(29, 20, 13, 0.14);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(252, 246, 238, 0.98);
+    }
+    .config-accordion > div,
+    .config-accordion section,
+    .config-accordion details {
+      background: transparent !important;
+      color: var(--app-ink) !important;
+    }
+    .config-accordion button,
+    .config-accordion summary,
+    .config-accordion [role="button"] {
+      background: linear-gradient(180deg, rgba(255, 252, 247, 0.99), rgba(248, 239, 226, 0.99)) !important;
+      color: var(--app-ink) !important;
+      font-weight: 700 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+    .config-accordion button:hover,
+    .config-accordion summary:hover,
+    .config-accordion [role="button"]:hover {
+      background: rgba(255, 248, 239, 1) !important;
+    }
+    .config-accordion .label-wrap,
+    .config-accordion .label-wrap span,
+    .config-accordion .label-wrap p,
+    .config-accordion .icon-wrap {
+      color: var(--app-ink) !important;
+      fill: var(--app-ink) !important;
+    }
+    .config-accordion textarea,
+    .config-accordion input,
+    .config-accordion select {
+      background: rgba(255, 255, 255, 0.99) !important;
+    }
+    .config-accordion .form,
+    .config-accordion .wrap,
+    .config-accordion .block {
+      background: transparent !important;
     }
     .gradio-container .gr-group,
     .gradio-container .block,
@@ -235,6 +318,21 @@ def build_demo() -> gr.Blocks:
       font-size: 0.93rem;
       line-height: 1.5;
       font-weight: 500;
+    }
+    .baseline-note {
+      margin: 4px 0 10px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(143, 53, 24, 0.16);
+      background: linear-gradient(180deg, rgba(255, 249, 240, 0.98), rgba(248, 239, 226, 0.98));
+      color: var(--app-muted) !important;
+      font-size: 0.94rem;
+      line-height: 1.6;
+      font-weight: 500;
+    }
+    .baseline-note strong {
+      color: var(--app-ink) !important;
+      font-weight: 700;
     }
     .agent-config-grid {
       display: grid;
@@ -444,14 +542,14 @@ def build_demo() -> gr.Blocks:
                     <section style="padding: 28px;">
                       <div style="display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
                         <div style="max-width:58ch;">
-                          <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:var(--app-accent); font-weight:700;">Research prototype</p>
-                          <h1 style="margin:10px 0 0; font-size:clamp(1.7rem, 3.4vw, 3.1rem); line-height:1.02; color:var(--app-ink);">
+                          <p class="hero-kicker">Research prototype</p>
+                          <h1 class="hero-title">
                             QA agent research workbench for LLM and orchestration comparisons
                           </h1>
                         </div>
                         <div class="doc-actions" id="literature-button-slot"></div>
                       </div>
-                      <p style="max-width:68ch; margin:14px 0 0; color:var(--app-muted); line-height:1.65; font-size:0.96rem; font-weight:500;">
+                      <p class="hero-copy">
                         The broader project evaluates multiple LLMs, local versus cloud inference, and alternative agentic orchestration patterns for QA. The current demo is the deterministic baseline: a synchronous rule-based workflow used as a controlled reference point.
                       </p>
                     </section>
@@ -470,22 +568,7 @@ def build_demo() -> gr.Blocks:
                     elem_classes=["doc-pill-button"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
-                gr.Markdown("## Run workflow")
-                scenario_picker = gr.Dropdown(
-                    label="Preset scenario",
-                    choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
-                    value=DEFAULT_SCENARIO,
-                )
-                gr.Markdown(
-                    "Choose a preset, or switch to `Custom scenario` and write your own title and requirements below.",
-                    elem_classes=["scenario-help"],
-                )
-                title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
-                requirements_input = gr.Textbox(
-                    label="Requirements",
-                    value=DEFAULT_REQUIREMENTS,
-                    lines=12,
-                )
+                gr.Markdown("## Configuration")
                 max_iterations_input = gr.Slider(
                     label="Maximum iterations",
                     minimum=1,
@@ -493,9 +576,14 @@ def build_demo() -> gr.Blocks:
                     step=1,
                     value=2,
                 )
-                gr.Markdown(
-                    "Use `Structured baseline` for the current deterministic implementation, or choose `Model-backed (preview)` to save intended model settings per agent before we wire in live LLM execution. The GUI now separates provider strategy from model family so we can later plug in Hugging Face, Ollama, or custom OpenAI-compatible backends.",
-                    elem_classes=["scenario-help"],
+                gr.HTML(
+                    """
+                    <div class="baseline-note">
+                      <strong>Structured baseline</strong> runs the current deterministic implementation.
+                      Choose <strong>Model-backed (preview)</strong> to save intended model settings per agent before live LLM execution is wired in.
+                      Provider strategy and model family are separated so Hugging Face, Ollama, and custom OpenAI-compatible backends can be plugged in later.
+                    </div>
+                    """
                 )
                 agent_config_inputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
@@ -506,9 +594,8 @@ def build_demo() -> gr.Blocks:
                             )
                             hint = AGENT_MODEL_HINTS.get(agent_key, "")
                             if hint:
-                                gr.Markdown(
-                                    f"Cheap/free candidate: {hint}",
-                                    elem_classes=["workflow-config-note"],
+                                gr.HTML(
+                                    f"<div class='workflow-config-note'><strong>Cheap/free candidate:</strong> {html.escape(hint)}</div>"
                                 )
                             with gr.Accordion(
                                 "LLM configuration",
@@ -560,6 +647,23 @@ def build_demo() -> gr.Blocks:
                                     directives_input,
                                 ]
                             )
+            with gr.Group(elem_classes=["panel-card"]):
+                gr.Markdown("## Scenario")
+                scenario_picker = gr.Dropdown(
+                    label="Preset scenario",
+                    choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
+                    value=DEFAULT_SCENARIO,
+                )
+                gr.Markdown(
+                    "Choose a preset, or switch to `Custom scenario` and write your own title and requirements below.",
+                    elem_classes=["scenario-help"],
+                )
+                title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
+                requirements_input = gr.Textbox(
+                    label="Requirements",
+                    value=DEFAULT_REQUIREMENTS,
+                    lines=12,
+                )
                 run_button = gr.Button("Run workflow", variant="primary")
 
             with gr.Group(elem_classes=["panel-card"]):
