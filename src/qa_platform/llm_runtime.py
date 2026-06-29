@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -13,6 +14,9 @@ from .models import AgentRuntimeConfig
 
 class LLMRuntimeError(RuntimeError):
     pass
+
+
+HTTP_TIMEOUT_SECONDS = 55
 
 
 @dataclass
@@ -347,6 +351,10 @@ def _post_hf_inference_chat_completion(
             max_tokens=2000,
             temperature=temperature,
         )
+    except (TimeoutError, socket.timeout) as exc:
+        raise LLMRuntimeError(
+            f"Hugging Face InferenceClient timed out after {HTTP_TIMEOUT_SECONDS} seconds."
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise LLMRuntimeError(str(exc)) from exc
 
@@ -395,7 +403,7 @@ def _post_chat_completion(
     encoded = json.dumps(body).encode("utf-8")
     req = request.Request(endpoint, data=encoded, headers=headers, method="POST")
     try:
-        with request.urlopen(req, timeout=120) as response:
+        with request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -404,6 +412,10 @@ def _post_chat_completion(
         ) from exc
     except error.URLError as exc:
         raise LLMRuntimeError(f"Could not reach model endpoint {endpoint}: {exc.reason}") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise LLMRuntimeError(
+            f"Model endpoint {endpoint} timed out after {HTTP_TIMEOUT_SECONDS} seconds."
+        ) from exc
 
 
 def _extract_message_content(payload: dict[str, Any]) -> str:

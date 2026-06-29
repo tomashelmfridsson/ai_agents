@@ -50,11 +50,14 @@ class RequirementsAnalystAgent:
                     assumptions=assumptions,
                 )
             )
+        items, validation_findings = self._standardize_requirement_items(items)
         self.last_execution = {
             "mode": "structured",
             "reasoning_source": "structured_trace",
             "notes": [],
             "llm_used": False,
+            "validation_findings": validation_findings,
+            "contract_version": "requirements.v1",
         }
         return items
 
@@ -120,16 +123,11 @@ class RequirementsAnalystAgent:
         )
         items = []
         raw_items = response.get("requirements") or []
-        fallback_parts = _split_requirements(requirements_text)
         for index, item in enumerate(raw_items, start=1):
-            original_text = _clean_text(item.get("original_text")) or (
-                fallback_parts[index - 1] if index - 1 < len(fallback_parts) else ""
-            )
+            original_text = _clean_text(item.get("original_text"))
             normalized_text = _clean_text(item.get("normalized_text")) or original_text.strip().rstrip(".")
             priority = _clean_priority(item.get("priority"))
             acceptance_criteria = _clean_string_list(item.get("acceptance_criteria"))
-            if not acceptance_criteria:
-                acceptance_criteria = [f"The system shall satisfy the requirement: {normalized_text}"]
             assumptions = _clean_string_list(item.get("assumptions"))
             items.append(
                 RequirementItem(
@@ -141,6 +139,7 @@ class RequirementsAnalystAgent:
                     assumptions=assumptions,
                 )
             )
+        items, validation_findings = self._standardize_requirement_items(items)
         self.last_execution = {
             "mode": "llm",
             "reasoning_source": "llm_structured_output",
@@ -148,8 +147,52 @@ class RequirementsAnalystAgent:
             + _flatten_trace_notes(raw_items, "trace_notes"),
             "llm_used": True,
             "metadata": metadata,
+            "validation_findings": validation_findings,
+            "contract_version": "requirements.v1",
         }
         return items
+
+    def _standardize_requirement_items(
+        self,
+        items: list[RequirementItem],
+    ) -> tuple[list[RequirementItem], list[str]]:
+        standardized: list[RequirementItem] = []
+        validation_findings: list[str] = []
+        for item in items:
+            original_text = item.original_text.strip()
+            normalized_text = item.normalized_text.strip()
+            acceptance_criteria = [criterion.strip() for criterion in item.acceptance_criteria if criterion.strip()]
+            assumptions = [assumption.strip() for assumption in item.assumptions if assumption.strip()]
+
+            if not original_text:
+                validation_findings.append(f"{item.requirement_id} was dropped because original_text was empty.")
+                continue
+            if not normalized_text:
+                validation_findings.append(f"{item.requirement_id} was dropped because normalized_text was empty.")
+                continue
+            if not acceptance_criteria:
+                validation_findings.append(
+                    f"{item.requirement_id} was dropped because acceptance_criteria was empty."
+                )
+                continue
+
+            standardized.append(
+                RequirementItem(
+                    requirement_id=item.requirement_id,
+                    original_text=original_text,
+                    normalized_text=normalized_text,
+                    priority=item.priority,
+                    acceptance_criteria=acceptance_criteria,
+                    assumptions=assumptions,
+                )
+            )
+
+        if not standardized:
+            validation_findings.append(
+                "Requirements Analyst did not produce any valid requirement items that satisfy the requirements.v1 contract."
+            )
+
+        return standardized, validation_findings
 
     def _extract_acceptance_criteria(self, text: str) -> list[str]:
         lowered = text.lower()

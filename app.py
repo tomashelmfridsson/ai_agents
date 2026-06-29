@@ -21,7 +21,7 @@ from qa_platform.agent_runtime import (
     build_agent_runtime_configs,
 )
 from qa_platform.llm_runtime import LLMRuntimeError
-from qa_platform.orchestrator import OrchestratorAgent
+from qa_platform.orchestrator import AGENT_TIMEOUT_SECONDS, AgentTimeoutError, OrchestratorAgent
 from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
@@ -41,8 +41,11 @@ def process_requirements(
     max_rounds: float,
     max_feedback_messages: float,
     max_feedback_per_agent_pair: float,
+    ollama_base_url: str,
+    openai_base_url: str,
     *agent_values: str,
-) -> tuple[str, str, str]:
+    progress=gr.Progress(track_tqdm=False),
+) -> tuple[str, str, str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
@@ -53,16 +56,32 @@ def process_requirements(
         max_feedback_messages=max(0, int(max_feedback_messages)),
         max_feedback_per_agent_pair=max(0, int(max_feedback_per_agent_pair)),
     )
+    os.environ["OLLAMA_BASE_URL"] = (ollama_base_url or "http://127.0.0.1:11434").strip()
+    custom_openai_base_url = (openai_base_url or "").strip()
+    if custom_openai_base_url:
+        os.environ["OPENAI_BASE_URL"] = custom_openai_base_url
     agent_configs = build_agent_runtime_configs(*agent_values)
+    runtime_events: list[dict[str, object]] = []
+
+    def handle_runtime_event(event: dict[str, object]) -> None:
+        runtime_events.append(event)
+        progress(None, desc=str(event.get("message", "Processing workflow...")))
+
     try:
+        progress(None, desc="Starting workflow.")
         result = OrchestratorAgent(max_iterations=round_limit).process(
             title=normalized_title,
             requirements_text=normalized_requirements,
             agent_configs=agent_configs,
             run_controls=run_controls,
+            event_callback=handle_runtime_event,
         )
     except LLMRuntimeError as exc:
         raise gr.Error(format_user_error(str(exc))) from exc
+    except AgentTimeoutError as exc:
+        raise gr.Error(
+            f"En agent hann inte klart inom timeoutgränsen på {AGENT_TIMEOUT_SECONDS} sekunder. {exc}"
+        ) from exc
     payload = result.to_dict()
     saved_run = save_run(payload)
     payload["run_id"] = saved_run.run_id
@@ -87,7 +106,7 @@ def process_requirements(
         f"Log file: {html.escape(payload['log_path'])}.{llm_note}"
         "</div>"
     )
-    return status, build_workflow_report(payload), saved_run.log_path
+    return status, build_workflow_report(payload), saved_run.log_path, build_runtime_timeline(runtime_events)
 
 
 def mark_custom_scenario(*_args: str) -> str:
@@ -129,6 +148,93 @@ def format_user_error(raw_message: str) -> str:
     return f"Körningen stoppades av ett fel: {raw_message}"
 
 
+def build_runtime_timeline(runtime_events: list[dict[str, object]]) -> str:
+    if not runtime_events:
+        return "<div class='empty-state'>No runtime events recorded yet.</div>"
+
+    rows = []
+    for event in runtime_events:
+        duration_ms = int(event.get("duration_ms", 0) or 0)
+        duration_label = f"{duration_ms} ms" if duration_ms > 0 else "-"
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(event.get('iteration', '')))}</td>"
+            f"<td>{html.escape(str(event.get('stage_index', '')))}</td>"
+            f"<td>{html.escape(str(event.get('agent_name', '')))}</td>"
+            f"<td>{html.escape(str(event.get('event_type', '')))}</td>"
+            f"<td>{html.escape(duration_label)}</td>"
+            f"<td>{html.escape(str(event.get('message', '')))}</td>"
+            "</tr>"
+        )
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Runtime activity</h3>"
+        "<p class='agent-config-text'>This panel shows which agent was active, when routing happened, and how long completed agent passes took.</p>"
+        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Event</th><th>Time</th><th>Message</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+        "</section>"
+    )
+
+
+def build_debug_panel(payload: dict) -> str:
+    stage_traces = payload.get("stage_traces", []) or []
+    contract_rows = []
+    orchestrator_rows = []
+
+    for trace in stage_traces:
+        if trace.get("agent_name") == "Requirements Analyst":
+            contract_messages = [
+                item
+                for item in trace.get("reasoning_trace", [])
+                if "requirements.v1 contract" in str(item).lower()
+                or "was dropped because" in str(item).lower()
+            ]
+            if contract_messages:
+                contract_rows.append(
+                    "<tr>"
+                    f"<td>{html.escape(str(trace.get('iteration', '')))}</td>"
+                    f"<td>{html.escape(str(trace.get('status', '')))}</td>"
+                    f"<td>{html.escape('; '.join(contract_messages[:3]))}</td>"
+                    "</tr>"
+                )
+        if trace.get("agent_name") == "Orchestrator Agent":
+            lead = (trace.get("output_summary") or ["No decision recorded."])[0]
+            orchestrator_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(trace.get('iteration', '')))}</td>"
+                f"<td>{html.escape(str(trace.get('status', '')))}</td>"
+                f"<td>{html.escape(str(lead))}</td>"
+                "</tr>"
+            )
+
+    contract_table = (
+        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Status</th><th>Contract validation</th></tr></thead><tbody>"
+        + "".join(contract_rows)
+        + "</tbody></table></div>"
+        if contract_rows
+        else "<p class='agent-config-text'>No requirement-contract violations were recorded in this run.</p>"
+    )
+    orchestrator_table = (
+        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Status</th><th>Decision</th></tr></thead><tbody>"
+        + "".join(orchestrator_rows)
+        + "</tbody></table></div>"
+        if orchestrator_rows
+        else "<p class='agent-config-text'>No orchestrator decisions were recorded in this run.</p>"
+    )
+
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Debug panel</h3>"
+        "<p class='agent-config-text'>This panel focuses on the standardized agent contract checks and the orchestrator decisions that moved, backtracked, or stopped the run.</p>"
+        "<h3>Requirement contract</h3>"
+        f"{contract_table}"
+        "<h3>Orchestrator decisions</h3>"
+        f"{orchestrator_table}"
+        "</section>"
+    )
+
+
 def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
     provider = provider_strategy or "Provider not set"
     model = model_family or "Model not set"
@@ -166,14 +272,7 @@ def build_pipeline_visualization_section() -> str:
     """
 
 
-def build_demo() -> gr.Blocks:
-    theme = gr.themes.Soft(
-        primary_hue="amber",
-        secondary_hue="orange",
-        neutral_hue="stone",
-    )
-
-    custom_css = """
+CUSTOM_CSS = """
     :root {
       --app-ink: #1d140d;
       --app-muted: #3d3027;
@@ -764,7 +863,10 @@ def build_demo() -> gr.Blocks:
     }
     """
 
-    with gr.Blocks(theme=theme, css=custom_css, title="QA Agent Research Workbench") as demo:
+
+def build_demo() -> gr.Blocks:
+
+    with gr.Blocks(title="QA Agent Research Workbench") as demo:
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Group(elem_classes=["hero-card"]):
                 gr.HTML(
@@ -829,6 +931,27 @@ def build_demo() -> gr.Blocks:
                           <strong>Agent feedback budget</strong> defines how much direct back-and-forth the future LLM agents may use.
                           Use it to stop Requirements Analyst, Test Design, and Review from sending too many correction messages to each other.
                           The current structured baseline stores these limits now, but still reruns the full pipeline instead of routing targeted feedback.
+                        </div>
+                        """
+                    )
+                with gr.Accordion("Local backends", open=False, elem_classes=["controls-accordion"]):
+                    ollama_base_url_input = gr.Textbox(
+                        label="Ollama base URL",
+                        value=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                    )
+                    openai_base_url_input = gr.Textbox(
+                        label="Custom OpenAI-compatible base URL",
+                        value=os.getenv("OPENAI_BASE_URL", ""),
+                        placeholder="http://host:port/v1",
+                    )
+                    gr.HTML(
+                        """
+                        <div class="baseline-note">
+                          <strong>Local Ollama</strong> works best when `ollama serve` is running and the mapped models are already available locally.
+                          Typical pulls:
+                          `ollama pull qwen3:32b`,
+                          `ollama pull llama3.3:70b`,
+                          `ollama pull deepseek-r1:32b`.
                         </div>
                         """
                     )
@@ -941,6 +1064,11 @@ def build_demo() -> gr.Blocks:
                     show_label=False,
                     container=False,
                 )
+                runtime_output = gr.HTML(
+                    value="<div class='empty-state'>No runtime activity yet.</div>",
+                    show_label=False,
+                    container=False,
+                )
                 log_file_output = gr.File(
                     label="Download run log",
                     value=None,
@@ -955,9 +1083,11 @@ def build_demo() -> gr.Blocks:
                 max_iterations_input,
                 max_feedback_messages_input,
                 max_feedback_per_pair_input,
+                ollama_base_url_input,
+                openai_base_url_input,
                 *agent_config_inputs,
             ],
-            outputs=[status_output, result_output, log_file_output],
+            outputs=[status_output, result_output, log_file_output, runtime_output],
         )
         scenario_picker.change(
             fn=load_sample_scenario,
@@ -986,6 +1116,7 @@ def build_workflow_report(payload: dict) -> str:
         payload.get("agent_configs", []),
     )
     trace_overview = build_trace_overview(payload)
+    debug_panel = build_debug_panel(payload)
 
     trace_sections = build_trace_sections(
         payload["stage_traces"],
@@ -997,6 +1128,7 @@ def build_workflow_report(payload: dict) -> str:
         f"{summary_html}"
         f"{config_html}"
         f"{trace_overview}"
+        f"{debug_panel}"
         "<div class='stage-grid'>"
         + trace_sections
         + "</div></div>"
@@ -1291,4 +1423,10 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.getenv("PORT", "7860")),
+        theme=gr.themes.Soft(
+            primary_hue="amber",
+            secondary_hue="orange",
+            neutral_hue="stone",
+        ),
+        css=CUSTOM_CSS,
     )

@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
 from qa_platform.agents import RequirementsAnalystAgent
+from qa_platform.models import ReviewReport
 from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import save_run
@@ -256,6 +257,88 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(agent.last_execution["reasoning_source"], "llm_structured_output")
         self.assertTrue(agent.last_execution["llm_used"])
         self.assertTrue(any("configured LLM schema" in note for note in agent.last_execution["notes"]))
+
+    def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
+        configs = build_agent_runtime_configs(
+            "Structured baseline",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Route clearly.",
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Extract strict requirement objects.",
+            "Structured baseline",
+            "HF fastest",
+            "DeepSeek R1",
+            "Design stronger oracles.",
+            "Structured baseline",
+            "HF fastest",
+            "DeepSeek R1",
+            "Review thoroughly.",
+        )
+        runtime_config = configs[1]
+        fake_response = (
+            {
+                "requirements": [
+                    {
+                        "original_text": "   ",
+                        "normalized_text": "",
+                        "priority": "high",
+                        "acceptance_criteria": [],
+                        "assumptions": [],
+                        "trace_notes": ["Invalid output from model."],
+                    }
+                ],
+                "run_notes": ["Model returned one malformed item."],
+            },
+            {
+                "model_id": runtime_config.model_id,
+                "provider_strategy": runtime_config.provider_strategy,
+            },
+        )
+
+        with patch("qa_platform.agents.call_structured_llm", return_value=fake_response):
+            agent = RequirementsAnalystAgent()
+            result = agent.analyze(
+                "The user must be able to sign in with email and password.",
+                runtime_config=runtime_config,
+            )
+
+        self.assertEqual(result, [])
+        self.assertTrue(any("requirements.v1 contract" in item for item in agent.last_execution["validation_findings"]))
+
+    def test_orchestrator_blocks_test_design_when_no_valid_requirements_exist(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+
+        def fake_analyze(*_args, **_kwargs):
+            orchestrator.requirements_analyst.last_execution = {
+                "llm_used": True,
+                "reasoning_source": "llm_structured_output",
+                "notes": ["Model returned malformed requirement payload."],
+                "validation_findings": [
+                    "Requirements Analyst did not produce any valid requirement items that satisfy the requirements.v1 contract."
+                ],
+            }
+            return []
+
+        with patch.object(orchestrator.requirements_analyst, "analyze", side_effect=fake_analyze):
+            result = orchestrator.process(
+                title="Broken requirements contract",
+                requirements_text="The user must be able to sign in with email and password.",
+                run_controls=RunControlConfig(
+                    max_rounds=1,
+                    max_feedback_messages=0,
+                    max_feedback_per_agent_pair=0,
+                ),
+            )
+
+        self.assertFalse(result.review.approved)
+        self.assertEqual(len(result.test_designs), 0)
+        self.assertEqual([trace.agent_name for trace in result.stage_traces], ["Requirements Analyst", "Orchestrator Agent"])
+        self.assertTrue(
+            any("requirements.v1 contract" in finding for finding in result.review.findings)
+        )
 
     def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
