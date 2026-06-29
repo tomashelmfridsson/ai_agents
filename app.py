@@ -98,7 +98,32 @@ def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
 def format_execution_mode_help(execution_mode: str) -> str:
     if execution_mode == "LLM-backed (preview)":
         return "LLM-backed (preview) stores the intended LLM setup and directives for this agent. Live LLM execution is not wired in yet."
-    return "Structured baseline runs the deterministic implementation for this agent."
+    return "Structured baseline - deterministic implementation."
+
+
+def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict]:
+    is_llm = execution_mode == "LLM-backed (preview)"
+    return (
+        gr.update(visible=is_llm),
+        gr.update(visible=is_llm),
+        gr.update(visible=is_llm),
+        gr.update(visible=is_llm),
+    )
+
+
+def build_pipeline_visualization_section() -> str:
+    return """
+    <section class='diagram-card'>
+      <h3>Pipeline visualization</h3>
+      <div class='diagram-flow'>
+        <div class='diagram-node'><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
+        <div class='diagram-node'><strong>Orchestrator Agent</strong><span>Controls routing, collects results, and decides whether another pass is needed.</span></div>
+        <div class='diagram-node'><strong>Requirements Analyst Agent</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
+        <div class='diagram-node'><strong>Test Design Agent</strong><span>Test type selection, steps, oracle, expected results.</span></div>
+        <div class='diagram-node'><strong>Review Agent</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
+      </div>
+    </section>
+    """
 
 
 def build_demo() -> gr.Blocks:
@@ -115,6 +140,7 @@ def build_demo() -> gr.Blocks:
       --app-soft: #5f4d40;
       --app-paper: rgba(255, 250, 244, 0.98);
       --app-paper-2: rgba(247, 238, 226, 0.98);
+      --app-paper-3: rgba(252, 246, 238, 1);
       --app-line: rgba(29, 20, 13, 0.18);
       --app-accent: #8f3518;
       --app-accent-2: #cb9132;
@@ -160,6 +186,16 @@ def build_demo() -> gr.Blocks:
       color: var(--app-ink) !important;
     }
     .panel-card {
+      background: linear-gradient(180deg, rgba(255, 251, 246, 1), rgba(246, 236, 223, 1)) !important;
+    }
+    .configuration-panel,
+    .configuration-panel > div,
+    .configuration-panel .block,
+    .configuration-panel .gr-group,
+    .configuration-panel .form,
+    .configuration-panel .wrap,
+    .configuration-panel fieldset,
+    .configuration-panel [class*="container"] {
       background: linear-gradient(180deg, rgba(255, 251, 246, 1), rgba(246, 236, 223, 1)) !important;
     }
     .panel-card > div,
@@ -221,7 +257,7 @@ def build_demo() -> gr.Blocks:
     .workflow-step {
       border-radius: 18px;
       border: 1px solid var(--app-line) !important;
-      background: rgba(255, 253, 249, 1) !important;
+      background: var(--app-paper-3) !important;
       padding: 14px 16px 16px;
     }
     .workflow-step > div,
@@ -275,17 +311,17 @@ def build_demo() -> gr.Blocks:
       border: 1px solid rgba(29, 20, 13, 0.16);
       border-radius: 18px;
       overflow: hidden;
-      background: rgba(255, 252, 247, 1);
+      background: var(--app-paper-3) !important;
     }
     .agent-accordion > div,
     .agent-accordion section,
     .agent-accordion details {
-      background: transparent !important;
+      background: var(--app-paper-3) !important;
     }
     .agent-accordion button,
     .agent-accordion summary,
     .agent-accordion [role="button"] {
-      background: linear-gradient(180deg, rgba(255, 252, 247, 1), rgba(244, 232, 220, 1)) !important;
+      background: linear-gradient(180deg, rgba(255, 252, 247, 1), rgba(248, 239, 226, 1)) !important;
       color: #130d08 !important;
       font-weight: 800 !important;
       border: none !important;
@@ -346,6 +382,12 @@ def build_demo() -> gr.Blocks:
     .gradio-container .block {
       background-color: transparent !important;
     }
+    .configuration-panel .gradio-container .gr-group,
+    .configuration-panel .gradio-container .block,
+    .configuration-panel .gradio-container .form,
+    .configuration-panel .gradio-container .wrap {
+      background: transparent !important;
+    }
     .panel-card h2,
     .panel-card h3,
     .panel-card label,
@@ -366,6 +408,11 @@ def build_demo() -> gr.Blocks:
       background: rgba(255, 255, 255, 0.99) !important;
       color: var(--app-ink) !important;
       border-color: var(--app-line) !important;
+    }
+    .configuration-panel input[type="range"],
+    .configuration-panel .slider-container,
+    .configuration-panel [data-testid="block-slider"] {
+      background: transparent !important;
     }
     .gradio-container select,
     .gradio-container option {
@@ -649,6 +696,8 @@ def build_demo() -> gr.Blocks:
                     elem_classes=["doc-pill-button"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
+                gr.HTML(build_pipeline_visualization_section())
+            with gr.Group(elem_classes=["panel-card", "configuration-panel"]):
                 gr.Markdown("## Configuration")
                 gr.HTML("<div class='config-subhead'>Run controls</div>")
                 max_iterations_input = gr.Slider(
@@ -694,13 +743,6 @@ def build_demo() -> gr.Blocks:
                                 gr.HTML(
                                     f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
                                 )
-                                llm_summary = gr.Markdown(
-                                    value=format_llm_config_summary(
-                                        AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
-                                        AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
-                                    ),
-                                    elem_classes=["llm-summary"],
-                                )
                                 execution_mode_input = gr.Dropdown(
                                     label="Execution mode",
                                     choices=EXECUTION_MODE_CHOICES,
@@ -710,20 +752,31 @@ def build_demo() -> gr.Blocks:
                                     value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
                                     elem_classes=["execution-mode-help"],
                                 )
+                                llm_summary = gr.Markdown(
+                                    value=format_llm_config_summary(
+                                        AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                                        AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                    ),
+                                    elem_classes=["llm-summary"],
+                                    visible=False,
+                                )
                                 provider_strategy_input = gr.Dropdown(
                                     label="Provider strategy",
                                     choices=PROVIDER_STRATEGY_CHOICES,
                                     value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                                    visible=False,
                                 )
                                 model_family_input = gr.Dropdown(
                                     label="Model family",
                                     choices=MODEL_FAMILY_CHOICES,
                                     value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                    visible=False,
                                 )
                                 directives_input = gr.Textbox(
                                     label="Directives",
                                     value=default_directives,
                                     lines=3,
+                                    visible=False,
                                 )
                                 provider_strategy_input.change(
                                     fn=format_llm_config_summary,
@@ -739,6 +792,16 @@ def build_demo() -> gr.Blocks:
                                     fn=format_execution_mode_help,
                                     inputs=[execution_mode_input],
                                     outputs=[execution_mode_help],
+                                )
+                                execution_mode_input.change(
+                                    fn=toggle_llm_configuration_fields,
+                                    inputs=[execution_mode_input],
+                                    outputs=[
+                                        llm_summary,
+                                        provider_strategy_input,
+                                        model_family_input,
+                                        directives_input,
+                                    ],
                                 )
                             agent_config_inputs.extend(
                                 [
@@ -818,25 +881,12 @@ def build_workflow_report(payload: dict) -> str:
 
     trace_sections = build_trace_sections(payload["stage_traces"])
 
-    flow_diagram = """
-    <section class='diagram-card'>
-      <h3>Pipeline visualization</h3>
-      <div class='diagram-flow'>
-        <div class='diagram-node'><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
-        <div class='diagram-node'><strong>Orchestrator Agent</strong><span>Controls routing, collects results, and decides whether another pass is needed.</span></div>
-        <div class='diagram-node'><strong>Requirements Analyst Agent</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
-        <div class='diagram-node'><strong>Test Design Agent</strong><span>Test type selection, steps, oracle, expected results.</span></div>
-        <div class='diagram-node'><strong>Review Agent</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
-      </div>
-    </section>
-    """
-
     return (
         "<div class='report-shell'>"
         f"{summary_html}"
         f"{config_html}"
         f"{trace_overview}"
-        f"{flow_diagram}"
+        f"{build_pipeline_visualization_section()}"
         "<div class='stage-grid'>"
         + trace_sections
         + "</div></div>"
@@ -926,9 +976,10 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
     rows = []
     for config in agent_configs:
         directives = config.get("directives") or "No extra directives."
-        model_id = config.get("model_id") or "Not set"
-        provider_strategy = config.get("provider_strategy") or "Not set"
-        model_family = config.get("model_family") or "Not set"
+        llm_active = config.get("execution_mode") == "LLM-backed (preview)"
+        model_id = config.get("model_id") or ("Not active in structured baseline" if not llm_active else "Not set")
+        provider_strategy = config.get("provider_strategy") or ("Not active in structured baseline" if not llm_active else "Not set")
+        model_family = config.get("model_family") or ("Not active in structured baseline" if not llm_active else "Not set")
         rows.append(
             "<tr>"
             f"<td>{html.escape(config['agent_name'])}</td>"

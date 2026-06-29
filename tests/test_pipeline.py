@@ -137,7 +137,12 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(configs[1].model_family, "Qwen 3 32B")
         self.assertEqual(configs[1].model_id, "Qwen/Qwen3-32B:cheapest")
         self.assertIn("strict requirement objects", configs[1].directives)
-        self.assertEqual(configs[3].model_id, "Ollama local / Llama 3.3 70B Instruct")
+        self.assertEqual(configs[0].provider_strategy, "")
+        self.assertEqual(configs[0].model_family, "")
+        self.assertEqual(configs[0].model_id, "")
+        self.assertEqual(configs[3].provider_strategy, "")
+        self.assertEqual(configs[3].model_family, "")
+        self.assertEqual(configs[3].model_id, "")
 
     def test_run_controls_are_stored_and_reflected_in_orchestrator_trace(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=3)

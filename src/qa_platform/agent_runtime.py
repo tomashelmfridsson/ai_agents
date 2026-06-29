@@ -96,14 +96,15 @@ def build_agent_runtime_configs(*values: str) -> list[AgentRuntimeConfig]:
             else AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0])
         )
         directives = values[base + 3] if len(values) > base + 3 else default_directives
+        llm_active = execution_mode == "LLM-backed (preview)"
         configs.append(
             AgentRuntimeConfig(
                 agent_key=agent_key,
                 agent_name=agent_name,
                 execution_mode=execution_mode,
-                provider_strategy=provider_strategy,
-                model_family=model_family,
-                model_id=compose_model_id(provider_strategy, model_family),
+                provider_strategy=provider_strategy if llm_active else "",
+                model_family=model_family if llm_active else "",
+                model_id=compose_model_id(provider_strategy, model_family) if llm_active else "",
                 directives=(directives or "").strip(),
             )
         )
