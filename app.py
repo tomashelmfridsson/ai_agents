@@ -80,7 +80,8 @@ def process_requirements(
         f"Completed with {payload['iterations']} backtracking cycle(s) within a limit of {round_limit}. "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
-        f"Findings: {findings_count}. Improvement actions: {improvement_count}.{preview_note}"
+        f"Findings: {findings_count}. Improvement actions: {improvement_count}. "
+        f"Log file: {html.escape(payload['log_path'])}.{preview_note}"
         "</div>"
     )
     return status, build_workflow_report(payload)
@@ -942,6 +943,7 @@ def build_summary_overview(payload: dict) -> str:
     improvement_actions = review["improvement_actions"]
     run_id = payload.get("run_id")
     storage_path = payload.get("storage_path")
+    log_path = payload.get("log_path")
     lead = (
         f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
         f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} backtracking cycle(s) with "
@@ -958,6 +960,8 @@ def build_summary_overview(payload: dict) -> str:
     ]
     if storage_path:
         bullets.append(f"Run database: {storage_path}")
+    if log_path:
+        bullets.append(f"Run log: {log_path}")
     if findings:
         bullets.append(f"Most important review issue: {findings[0]}")
     if improvement_actions:

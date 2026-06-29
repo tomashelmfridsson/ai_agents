@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from .models import RequirementItem, ReviewReport, TestCaseDesign
-
-
-def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
-    return slug or "unnamed_requirement"
 
 
 def _split_requirements(requirements_text: str) -> list[str]:
@@ -135,7 +129,7 @@ class TestDesignAgent:
         for req in requirements:
             test_type = self._choose_test_type(req)
             design_id = f"TC-{req.requirement_id.split('-')[-1]}"
-            title = f"Verify {req.requirement_id.lower()} {_slugify(req.normalized_text)[:40]}"
+            title = self._build_title(req)
             steps = self._build_steps(req)
             expected_results = [criterion for criterion in req.acceptance_criteria]
             steps, expected_results, oracle = self._apply_feedback(
@@ -178,6 +172,14 @@ class TestDesignAgent:
             "Verify the expected result against the acceptance criteria.",
             "Execute a negative or boundary case when applicable.",
         ]
+
+    def _build_title(self, req: RequirementItem) -> str:
+        cleaned = req.normalized_text.strip()
+        if cleaned:
+            if len(cleaned) > 72:
+                cleaned = cleaned[:69].rstrip() + "..."
+            return cleaned
+        return f"Test case for {req.requirement_id}"
 
     def _identify_risks(self, req: RequirementItem) -> list[str]:
         risks = []
