@@ -11,6 +11,7 @@ from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = ROOT_DIR / "data" / "qa_runs.sqlite3"
+DEFAULT_LOG_DIR = ROOT_DIR / "data" / "run_logs"
 
 
 @dataclass
@@ -18,11 +19,17 @@ class SavedRun:
     run_id: int
     stored_at: str
     db_path: str
+    log_path: str
 
 
 def get_db_path() -> Path:
     override = os.getenv("QA_RUNS_DB_PATH")
     return Path(override) if override else DEFAULT_DB_PATH
+
+
+def get_log_dir() -> Path:
+    override = os.getenv("QA_RUNS_LOG_DIR")
+    return Path(override) if override else DEFAULT_LOG_DIR
 
 
 def _ensure_schema(connection: sqlite3.Connection) -> None:
@@ -45,6 +52,129 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
         """
     )
     connection.commit()
+
+
+def _normalize_agent_name(agent_name: str) -> str:
+    normalized = (agent_name or "").strip().lower()
+    if normalized.endswith(" agent"):
+        normalized = normalized[: -len(" agent")]
+    return normalized
+
+
+def _build_agent_runtime_lookup(agent_configs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for config in agent_configs:
+        lookup[_normalize_agent_name(str(config.get("agent_name", "")))] = config
+    return lookup
+
+
+def _group_stage_traces(stage_traces: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for trace in stage_traces:
+        grouped.setdefault(int(trace.get("iteration", 0)), []).append(trace)
+    return grouped
+
+
+def build_run_log_text(
+    payload: dict[str, Any],
+    run_id: int,
+    stored_at: str,
+    db_path: str,
+) -> str:
+    review = payload.get("review", {})
+    run_controls = payload.get("run_controls", {})
+    agent_lookup = _build_agent_runtime_lookup(payload.get("agent_configs", []))
+    lines = [
+        f"Run ID: {run_id}",
+        f"Stored at: {stored_at}",
+        f"Database: {db_path}",
+        f"Scenario: {payload.get('title', 'Untitled demo')}",
+        f"Approved: {review.get('approved')}",
+        f"Coverage ratio: {review.get('coverage_ratio')}",
+        f"Backtracking cycles: {payload.get('iterations')}",
+        f"Maximum rounds: {run_controls.get('max_rounds', payload.get('iterations', 0))}",
+        f"Maximum feedback messages: {run_controls.get('max_feedback_messages', 0)}",
+        f"Maximum feedback messages per agent pair: {run_controls.get('max_feedback_per_agent_pair', 0)}",
+        "",
+        "Source requirements:",
+        str(payload.get("source_requirements", "")),
+        "",
+    ]
+
+    run_index = 1
+    for cycle, traces in _group_stage_traces(payload.get("stage_traces", [])).items():
+        lines.extend(
+            [
+                f"Backtracking cycle {cycle}",
+                "Below is the full sequence of agent passes for this backtracking cycle, with explicit input, output, and routing context.",
+                "",
+            ]
+        )
+        for trace in traces:
+            runtime_config = agent_lookup.get(_normalize_agent_name(str(trace.get("agent_name", ""))), {})
+            execution_mode = runtime_config.get("execution_mode") or "Structured baseline"
+            model_id = runtime_config.get("model_id") or "deterministic implementation"
+            lines.extend(
+                [
+                    f"Run {run_index} • Cycle {trace.get('iteration')} • Stage {trace.get('stage_index')}",
+                    str(trace.get("agent_name", "")),
+                    f"Status: {trace.get('status', '')}",
+                    f"Execution: {execution_mode} / {model_id}",
+                ]
+            )
+            agent_explanation = str(trace.get("agent_explanation", "") or "").strip()
+            decision_explanation = str(trace.get("decision_explanation", "") or "").strip()
+            if agent_explanation or decision_explanation:
+                lines.append("How this agent works")
+                if agent_explanation:
+                    lines.append(agent_explanation)
+                    lines.append("")
+                if decision_explanation:
+                    lines.append(decision_explanation)
+                    lines.append("")
+            input_summary = trace.get("input_summary", []) or []
+            if input_summary:
+                lines.append("Input")
+                lines.append(str(input_summary[0]))
+                if len(input_summary) > 1:
+                    lines.append("")
+                    lines.append("Show input details")
+                    lines.extend(str(item) for item in input_summary[1:])
+            reasoning_trace = trace.get("reasoning_trace", []) or []
+            if reasoning_trace:
+                lines.append("Reasoning trace")
+                lines.append(str(reasoning_trace[0]))
+                lines.append("")
+                lines.append(f"Source: {trace.get('reasoning_source', 'structured_trace')}")
+                if len(reasoning_trace) > 1:
+                    lines.append("")
+                    lines.append("Show reasoning details")
+                    lines.extend(str(item) for item in reasoning_trace[1:])
+            output_summary = trace.get("output_summary", []) or []
+            if output_summary:
+                lines.append("Output")
+                lines.append(str(output_summary[0]))
+                if len(output_summary) > 1:
+                    lines.append("")
+                    lines.append("Show output details")
+                    lines.extend(str(item) for item in output_summary[1:])
+            lines.append("")
+            run_index += 1
+
+    findings = review.get("findings", []) or []
+    improvements = review.get("improvement_actions", []) or []
+    lines.extend(
+        [
+            "Run summary",
+            f"Findings: {len(findings)}",
+            *[str(item) for item in findings],
+            "",
+            f"Improvement actions: {len(improvements)}",
+            *[str(item) for item in improvements],
+            "",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
 
 
 def save_run(payload: dict[str, Any]) -> SavedRun:
@@ -91,4 +221,17 @@ def save_run(payload: dict[str, Any]) -> SavedRun:
     finally:
         connection.close()
 
-    return SavedRun(run_id=run_id, stored_at=stored_at, db_path=str(db_path))
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"run_{run_id:04d}.txt"
+    log_path.write_text(
+        build_run_log_text(
+            payload=payload,
+            run_id=run_id,
+            stored_at=stored_at,
+            db_path=str(db_path),
+        ),
+        encoding="utf-8",
+    )
+
+    return SavedRun(run_id=run_id, stored_at=stored_at, db_path=str(db_path), log_path=str(log_path))

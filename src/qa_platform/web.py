@@ -57,6 +57,7 @@ class QARequestHandler(BaseHTTPRequestHandler):
         response_payload["run_id"] = saved_run.run_id
         response_payload["stored_at"] = saved_run.stored_at
         response_payload["storage_path"] = saved_run.db_path
+        response_payload["log_path"] = saved_run.log_path
         self._send_json(response_payload, HTTPStatus.OK)
 
     def log_message(self, format: str, *args) -> None:

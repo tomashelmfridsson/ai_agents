@@ -66,6 +66,7 @@ def process_requirements(
     payload["run_id"] = saved_run.run_id
     payload["stored_at"] = saved_run.stored_at
     payload["storage_path"] = saved_run.db_path
+    payload["log_path"] = saved_run.log_path
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
     preview_note = (
@@ -589,6 +590,7 @@ def build_demo() -> gr.Blocks:
     .diagram-node span { display: block; color: var(--app-muted) !important; font-size: 0.92rem; line-height: 1.5; font-weight: 500; }
     .diagram-card table {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin-top: 14px;
       background: rgba(255,255,255,0.9);
@@ -603,10 +605,19 @@ def build_demo() -> gr.Blocks:
       vertical-align: top;
       color: var(--app-ink) !important;
       background: rgba(255,255,255,0.78);
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .diagram-card th {
       background: rgba(203, 145, 50, 0.18);
       font-weight: 700;
+    }
+    .table-scroll {
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: visible;
+      padding-bottom: 4px;
     }
     .stage-grid { display: grid; gap: 14px; }
     .stage-card { overflow: hidden; }
@@ -978,9 +989,9 @@ def build_trace_overview(payload: dict) -> str:
         "<section class='diagram-card'>"
         "<h3>Requirement to test case mapping</h3>"
         "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each one is linked directly to a requirement ID and reviewed without a separate generation stage.</p>"
-        "<table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
+        "<div class='table-scroll'><table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
         + "".join(rows)
-        + "</tbody></table>"
+        + "</tbody></table></div>"
         "</section>"
     )
 

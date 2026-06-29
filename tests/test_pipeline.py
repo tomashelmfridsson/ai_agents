@@ -181,8 +181,11 @@ class PipelineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "qa_runs_test.sqlite3"
+            log_dir = Path(tmpdir) / "run_logs"
             previous = os.environ.get("QA_RUNS_DB_PATH")
+            previous_log_dir = os.environ.get("QA_RUNS_LOG_DIR")
             os.environ["QA_RUNS_DB_PATH"] = str(db_path)
+            os.environ["QA_RUNS_LOG_DIR"] = str(log_dir)
             try:
                 saved_run = save_run(payload)
             finally:
@@ -190,9 +193,18 @@ class PipelineTests(unittest.TestCase):
                     os.environ.pop("QA_RUNS_DB_PATH", None)
                 else:
                     os.environ["QA_RUNS_DB_PATH"] = previous
+                if previous_log_dir is None:
+                    os.environ.pop("QA_RUNS_LOG_DIR", None)
+                else:
+                    os.environ["QA_RUNS_LOG_DIR"] = previous_log_dir
 
             self.assertEqual(saved_run.run_id, 1)
             self.assertTrue(db_path.exists())
+            self.assertTrue(Path(saved_run.log_path).exists())
+            log_text = Path(saved_run.log_path).read_text(encoding="utf-8")
+            self.assertIn("Backtracking cycle", log_text)
+            self.assertIn("How this agent works", log_text)
+            self.assertIn("Execution:", log_text)
 
             connection = sqlite3.connect(db_path)
             try:
