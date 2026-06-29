@@ -14,7 +14,6 @@ if str(SRC) not in sys.path:
 from qa_platform.agent_runtime import (
     AGENT_CONFIG_SPECS,
     AGENT_MODEL_FAMILY_DEFAULTS,
-    AGENT_MODEL_HINTS,
     AGENT_PROVIDER_DEFAULTS,
     EXECUTION_MODE_CHOICES,
     MODEL_FAMILY_CHOICES,
@@ -22,6 +21,7 @@ from qa_platform.agent_runtime import (
     build_agent_runtime_configs,
 )
 from qa_platform.orchestrator import OrchestratorAgent
+from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
     DEFAULT_SCENARIO,
@@ -34,19 +34,32 @@ LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
 
-def process_requirements(title: str, requirements: str, max_iterations: float, *agent_values: str) -> tuple[str, str]:
+def process_requirements(
+    title: str,
+    requirements: str,
+    max_rounds: float,
+    max_feedback_messages: float,
+    max_feedback_per_agent_pair: float,
+    *agent_values: str,
+) -> tuple[str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         raise gr.Error("The requirements field is required.")
-    iteration_limit = max(1, int(max_iterations))
+    round_limit = max(1, int(max_rounds))
+    run_controls = RunControlConfig(
+        max_rounds=round_limit,
+        max_feedback_messages=max(0, int(max_feedback_messages)),
+        max_feedback_per_agent_pair=max(0, int(max_feedback_per_agent_pair)),
+    )
     agent_configs = build_agent_runtime_configs(*agent_values)
     preview_agents = [config.agent_name for config in agent_configs if config.execution_mode != "Structured baseline"]
 
-    result = OrchestratorAgent(max_iterations=iteration_limit).process(
+    result = OrchestratorAgent(max_iterations=round_limit).process(
         title=normalized_title,
         requirements_text=normalized_requirements,
         agent_configs=agent_configs,
+        run_controls=run_controls,
     )
     payload = result.to_dict()
     saved_run = save_run(payload)
@@ -56,14 +69,14 @@ def process_requirements(title: str, requirements: str, max_iterations: float, *
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
     preview_note = (
-        " Model-backed selections are saved in the run configuration, but this first step still executes the structured baseline."
+        " LLM-backed selections are saved in the run configuration, but this first step still executes the structured baseline."
         if preview_agents
         else ""
     )
     status = (
         "<div class='result-status'>"
         f"Saved as run #{payload['run_id']}. "
-        f"Completed after {payload['iterations']} of {iteration_limit} allowed iteration(s). "
+        f"Completed after {payload['iterations']} of {round_limit} allowed round(s). "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
         f"Findings: {findings_count}. Improvement actions: {improvement_count}.{preview_note}"
@@ -80,6 +93,12 @@ def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
     provider = provider_strategy or "Provider not set"
     model = model_family or "Model not set"
     return f"LLM configuration: {provider} / {model}"
+
+
+def format_execution_mode_help(execution_mode: str) -> str:
+    if execution_mode == "LLM-backed (preview)":
+        return "LLM-backed (preview) stores the intended LLM setup and directives for this agent. Live LLM execution is not wired in yet."
+    return "Structured baseline runs the deterministic implementation for this agent."
 
 
 def build_demo() -> gr.Blocks:
@@ -176,17 +195,17 @@ def build_demo() -> gr.Blocks:
     }
     .doc-pill-button,
     .doc-pill-button button {
-      display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
+      display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: #24170f !important;
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(246,236,223,1));
-      border: 1px solid rgba(122, 45, 18, 0.34);
+      color: #ffffff !important;
+      background: linear-gradient(180deg, #8f3518, #6f250d) !important;
+      border: 1px solid rgba(86, 27, 8, 0.88);
       font-size: 0.9rem;
-      box-shadow: 0 6px 16px rgba(50, 28, 8, 0.10);
+      box-shadow: 0 8px 18px rgba(50, 28, 8, 0.18);
     }
     .doc-pill-button button:hover {
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,244,231,1));
-      border-color: rgba(122, 45, 18, 0.48);
+      background: linear-gradient(180deg, #9f4220, #7f2b10) !important;
+      border-color: rgba(86, 27, 8, 1);
     }
     .doc-actions {
       display: flex;
@@ -211,28 +230,24 @@ def build_demo() -> gr.Blocks:
     }
     .workflow-step strong {
       display: block;
-      color: var(--app-ink) !important;
+      color: #130d08 !important;
       margin-bottom: 6px;
-      font-size: 0.98rem;
-      font-weight: 700;
+      font-size: 1rem;
+      font-weight: 800;
     }
     .workflow-step span {
       display: block;
-      color: var(--app-muted) !important;
-      font-size: 0.95rem;
+      color: #2d221a !important;
+      font-size: 0.96rem;
       line-height: 1.5;
-      font-weight: 500;
+      font-weight: 600;
     }
     .agent-description {
-      margin-bottom: 12px;
+      margin-bottom: 6px;
     }
-    .workflow-config-note {
-      margin: 0 0 12px;
-      padding: 11px 13px;
-      border-radius: 14px;
-      border: 1px solid rgba(203, 145, 50, 0.22);
-      background: rgba(255, 248, 236, 0.96);
-      color: var(--app-muted) !important;
+    .execution-mode-help {
+      margin: 8px 0 12px;
+      color: #3a2b20 !important;
       font-size: 0.92rem;
       line-height: 1.55;
       font-weight: 600;
@@ -255,6 +270,33 @@ def build_demo() -> gr.Blocks:
       border-radius: 16px;
       overflow: hidden;
       background: rgba(252, 246, 238, 0.98);
+    }
+    .agent-accordion {
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(255, 252, 247, 1);
+    }
+    .agent-accordion > div,
+    .agent-accordion section,
+    .agent-accordion details {
+      background: transparent !important;
+    }
+    .agent-accordion button,
+    .agent-accordion summary,
+    .agent-accordion [role="button"] {
+      background: linear-gradient(180deg, rgba(255, 252, 247, 1), rgba(244, 232, 220, 1)) !important;
+      color: #130d08 !important;
+      font-weight: 800 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+    .agent-accordion .label-wrap,
+    .agent-accordion .label-wrap span,
+    .agent-accordion .label-wrap p,
+    .agent-accordion .icon-wrap {
+      color: #130d08 !important;
+      fill: #130d08 !important;
     }
     .config-accordion > div,
     .config-accordion section,
@@ -364,6 +406,14 @@ def build_demo() -> gr.Blocks:
     .baseline-note strong {
       color: var(--app-ink) !important;
       font-weight: 700;
+    }
+    .config-subhead {
+      margin: 10px 0 4px;
+      color: var(--app-accent) !important;
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 800;
     }
     .agent-config-grid {
       display: grid;
@@ -600,39 +650,50 @@ def build_demo() -> gr.Blocks:
                 )
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Configuration")
+                gr.HTML("<div class='config-subhead'>Run controls</div>")
                 max_iterations_input = gr.Slider(
-                    label="Maximum iterations",
+                    label="Maximum rounds",
                     minimum=1,
                     maximum=5,
+                    step=1,
+                    value=2,
+                )
+                max_feedback_messages_input = gr.Slider(
+                    label="Maximum feedback messages",
+                    minimum=0,
+                    maximum=12,
+                    step=1,
+                    value=4,
+                )
+                max_feedback_per_pair_input = gr.Slider(
+                    label="Maximum feedback messages per agent pair",
+                    minimum=0,
+                    maximum=4,
                     step=1,
                     value=2,
                 )
                 gr.HTML(
                     """
                     <div class="baseline-note">
-                      <strong>Structured baseline</strong> runs the current deterministic implementation.
-                      Choose <strong>Model-backed (preview)</strong> to save intended model settings per agent before live LLM execution is wired in.
-                      Provider strategy and model family are separated so Hugging Face, Ollama, and custom OpenAI-compatible backends can be plugged in later.
+                      <strong>Agent feedback budget</strong> defines how much direct back-and-forth the future LLM agents may use.
+                      Use it to stop Requirements Analyst, Test Design, and Review from sending too many correction messages to each other.
+                      The current structured baseline stores these limits now, but still reruns the full pipeline instead of routing targeted feedback.
                     </div>
                     """
                 )
+                gr.HTML("<div class='config-subhead'>Per-agent model setup</div>")
                 agent_config_inputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
                     for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
-                        with gr.Group(elem_classes=["workflow-step"]):
-                            gr.HTML(
-                                f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
-                            )
-                            hint = AGENT_MODEL_HINTS.get(agent_key, "")
-                            if hint:
+                        with gr.Accordion(
+                            agent_name,
+                            open=False,
+                            elem_classes=["agent-accordion"],
+                        ):
+                            with gr.Group(elem_classes=["workflow-step"]):
                                 gr.HTML(
-                                    f"<div class='workflow-config-note'><strong>Cheap/free candidate:</strong> {html.escape(hint)}</div>"
+                                    f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
                                 )
-                            with gr.Accordion(
-                                "LLM configuration",
-                                open=False,
-                                elem_classes=["config-accordion"],
-                            ):
                                 llm_summary = gr.Markdown(
                                     value=format_llm_config_summary(
                                         AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
@@ -644,6 +705,10 @@ def build_demo() -> gr.Blocks:
                                     label="Execution mode",
                                     choices=EXECUTION_MODE_CHOICES,
                                     value=EXECUTION_MODE_CHOICES[0],
+                                )
+                                execution_mode_help = gr.Markdown(
+                                    value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
+                                    elem_classes=["execution-mode-help"],
                                 )
                                 provider_strategy_input = gr.Dropdown(
                                     label="Provider strategy",
@@ -669,6 +734,11 @@ def build_demo() -> gr.Blocks:
                                     fn=format_llm_config_summary,
                                     inputs=[provider_strategy_input, model_family_input],
                                     outputs=[llm_summary],
+                                )
+                                execution_mode_input.change(
+                                    fn=format_execution_mode_help,
+                                    inputs=[execution_mode_input],
+                                    outputs=[execution_mode_help],
                                 )
                             agent_config_inputs.extend(
                                 [
@@ -708,7 +778,14 @@ def build_demo() -> gr.Blocks:
 
         run_button.click(
             fn=process_requirements,
-            inputs=[title_input, requirements_input, max_iterations_input, *agent_config_inputs],
+            inputs=[
+                title_input,
+                requirements_input,
+                max_iterations_input,
+                max_feedback_messages_input,
+                max_feedback_per_pair_input,
+                *agent_config_inputs,
+            ],
             outputs=[status_output, result_output],
         )
         scenario_picker.change(
@@ -733,7 +810,10 @@ def build_demo() -> gr.Blocks:
 def build_workflow_report(payload: dict) -> str:
     review = payload["review"]
     summary_html = build_summary_overview(payload)
-    config_html = build_agent_config_overview(payload.get("agent_configs", []))
+    config_html = build_agent_config_overview(
+        payload.get("run_controls", {}),
+        payload.get("agent_configs", []),
+    )
     trace_overview = build_trace_overview(payload)
 
     trace_sections = build_trace_sections(payload["stage_traces"])
@@ -765,6 +845,7 @@ def build_workflow_report(payload: dict) -> str:
 
 def build_summary_overview(payload: dict) -> str:
     review = payload["review"]
+    run_controls = payload.get("run_controls", {})
     approved = "yes" if review["approved"] else "no"
     findings = review["findings"]
     improvement_actions = review["improvement_actions"]
@@ -777,6 +858,9 @@ def build_summary_overview(payload: dict) -> str:
     )
     bullets = [
         f"Stored run ID: {run_id}" if run_id is not None else "Stored run ID: not available",
+        f"Configured max rounds: {run_controls.get('max_rounds', payload['iterations'])}",
+        f"Configured max feedback messages: {run_controls.get('max_feedback_messages', 0)}",
+        f"Configured max feedback per agent pair: {run_controls.get('max_feedback_per_agent_pair', 0)}",
         f"Review findings: {len(findings)}",
         f"Improvement actions: {len(improvement_actions)}",
         f"Final approval decision: {approved}",
@@ -821,9 +905,24 @@ def build_trace_overview(payload: dict) -> str:
     )
 
 
-def build_agent_config_overview(agent_configs: list[dict]) -> str:
-    if not agent_configs:
+def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -> str:
+    if not run_controls and not agent_configs:
         return ""
+    controls_table = (
+        "<table><thead><tr><th>Setting</th><th>Value</th><th>Meaning</th></tr></thead><tbody>"
+        f"<tr><td>Maximum rounds</td><td>{html.escape(str(run_controls.get('max_rounds', 'Not set')))}</td><td>Upper limit for full pipeline passes.</td></tr>"
+        f"<tr><td>Maximum feedback messages</td><td>{html.escape(str(run_controls.get('max_feedback_messages', 'Not set')))}</td><td>Upper limit for direct agent-to-agent correction messages in future LLM-backed orchestration.</td></tr>"
+        f"<tr><td>Maximum feedback per agent pair</td><td>{html.escape(str(run_controls.get('max_feedback_per_agent_pair', 'Not set')))}</td><td>Caps repeated back-and-forth between the same two agents.</td></tr>"
+        "</tbody></table>"
+    )
+    if not agent_configs:
+        return (
+            "<section class='diagram-card'>"
+            "<h3>Run configuration</h3>"
+            "<p class='agent-config-text'>This run stores global control settings for future agent-to-agent feedback and rerun limits.</p>"
+            f"{controls_table}"
+            "</section>"
+        )
     rows = []
     for config in agent_configs:
         directives = config.get("directives") or "No extra directives."
@@ -842,8 +941,11 @@ def build_agent_config_overview(agent_configs: list[dict]) -> str:
         )
     return (
         "<section class='diagram-card'>"
+        "<h3>Run configuration</h3>"
+        "<p class='agent-config-text'>This run stores both the global control settings and the per-agent runtime setup. The feedback limits matter once model-backed agents can send targeted repair messages to each other.</p>"
+        f"{controls_table}"
         "<h3>Agent runtime configuration</h3>"
-        "<p class='agent-config-text'>This run stores per-agent execution settings. `Model-backed (preview)` means the intended model and directives are captured now, while the current baseline still executes deterministic logic.</p>"
+        "<p class='agent-config-text'>This run stores per-agent execution settings. `LLM-backed (preview)` means the intended model and directives are captured now, while the current baseline still executes deterministic logic.</p>"
         "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Provider strategy</th><th>Model family</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"

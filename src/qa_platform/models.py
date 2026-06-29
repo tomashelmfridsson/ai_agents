@@ -16,6 +16,13 @@ class AgentRuntimeConfig:
 
 
 @dataclass
+class RunControlConfig:
+    max_rounds: int
+    max_feedback_messages: int
+    max_feedback_per_agent_pair: int
+
+
+@dataclass
 class RequirementItem:
     requirement_id: str
     original_text: str
@@ -81,6 +88,7 @@ class PipelineResult:
     generated_artifacts: list[GeneratedArtifact]
     review: ReviewReport
     iterations: int
+    run_controls: RunControlConfig
     agent_configs: list[AgentRuntimeConfig] = field(default_factory=list)
     stage_traces: list[StageTrace] = field(default_factory=list)
 

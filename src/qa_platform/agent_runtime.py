@@ -3,7 +3,7 @@ from __future__ import annotations
 from .models import AgentRuntimeConfig
 
 
-EXECUTION_MODE_CHOICES = ["Structured baseline", "Model-backed (preview)"]
+EXECUTION_MODE_CHOICES = ["Structured baseline", "LLM-backed (preview)"]
 PROVIDER_STRATEGY_CHOICES = [
     "HF cheapest/free credits",
     "HF fastest",
@@ -28,12 +28,6 @@ AGENT_MODEL_FAMILY_DEFAULTS = {
     "requirements_analyst": "Qwen 3 32B",
     "test_design": "Llama 3.3 70B Instruct",
     "review": "DeepSeek R1",
-}
-AGENT_MODEL_HINTS = {
-    "orchestrator": "Start cheap and fast here. Routing logic usually needs consistency more than raw model power.",
-    "requirements_analyst": "Qwen is a good cheap first choice for structured extraction and requirement decomposition.",
-    "test_design": "Llama 3.3 is a stronger cheap candidate when you want better test structure and oracle wording.",
-    "review": "DeepSeek R1 is a reasonable cheap candidate when you want stricter critique and clearer failure explanations.",
 }
 AGENT_CONFIG_SPECS = [
     (

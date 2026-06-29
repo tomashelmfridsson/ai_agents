@@ -7,7 +7,7 @@ from .agents import (
     ReviewAgent,
     TestDesignAgent,
 )
-from .models import AgentRuntimeConfig, PipelineResult, StageTrace
+from .models import AgentRuntimeConfig, PipelineResult, RunControlConfig, StageTrace
 
 
 @dataclass
@@ -22,12 +22,18 @@ class OrchestratorAgent:
         title: str,
         requirements_text: str,
         agent_configs: list[AgentRuntimeConfig] | None = None,
+        run_controls: RunControlConfig | None = None,
     ) -> PipelineResult:
         requirements = []
         designs = []
         review = None
         stage_traces = []
         runtime_configs = agent_configs or []
+        control_config = run_controls or RunControlConfig(
+            max_rounds=self.max_iterations,
+            max_feedback_messages=0,
+            max_feedback_per_agent_pair=0,
+        )
 
         for iteration in range(1, self.max_iterations + 1):
             requirements = self.requirements_analyst.analyze(requirements_text)
@@ -40,7 +46,7 @@ class OrchestratorAgent:
             stage_traces.append(
                 self._build_review_trace(iteration, requirements, designs, review)
             )
-            stage_traces.append(self._build_orchestrator_trace(iteration, review))
+            stage_traces.append(self._build_orchestrator_trace(iteration, review, control_config))
             if review.approved:
                 return PipelineResult(
                     title=title,
@@ -50,6 +56,7 @@ class OrchestratorAgent:
                     generated_artifacts=[],
                     review=review,
                     iterations=iteration,
+                    run_controls=control_config,
                     agent_configs=runtime_configs,
                     stage_traces=stage_traces,
                 )
@@ -62,6 +69,7 @@ class OrchestratorAgent:
             generated_artifacts=[],
             review=review,
             iterations=self.max_iterations,
+            run_controls=control_config,
             agent_configs=runtime_configs,
             stage_traces=stage_traces,
         )
@@ -209,9 +217,10 @@ class OrchestratorAgent:
             ),
         )
 
-    def _build_orchestrator_trace(self, iteration: int, review) -> StageTrace:
+    def _build_orchestrator_trace(
+        self, iteration: int, review, run_controls: RunControlConfig
+    ) -> StageTrace:
         should_rerun = (not review.approved) and iteration < self.max_iterations
-        stopped_by_limit = (not review.approved) and iteration >= self.max_iterations
         return StageTrace(
             iteration=iteration,
             stage_index=4,
@@ -219,7 +228,10 @@ class OrchestratorAgent:
             input_summary=[
                 f"Review approval signal: {review.approved}",
                 f"Improvement actions: {len(review.improvement_actions)}",
-                f"Maximum iterations: {self.max_iterations}",
+                f"Maximum rounds: {run_controls.max_rounds}",
+                f"Maximum feedback messages: {run_controls.max_feedback_messages}",
+                f"Maximum feedback per agent pair: {run_controls.max_feedback_per_agent_pair}",
+                "Selective feedback routing: disabled in structured baseline",
             ],
             output_summary=[
                 "Stop pipeline because the review approved the result."
@@ -241,6 +253,7 @@ class OrchestratorAgent:
             reasoning_trace=[
                 "Read the review approval signal, current findings, and remaining iteration budget.",
                 "Choose between full rerun and stop because this baseline orchestrator has no selective repair path.",
+                "Feedback budgets may exist in run configuration, but this deterministic baseline cannot route a targeted message from one agent directly back to another.",
                 (
                     "Route the workflow back to stage 1 for another full pass."
                     if should_rerun

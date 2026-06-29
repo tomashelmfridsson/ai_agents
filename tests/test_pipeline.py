@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
+from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import save_run
 
@@ -40,6 +41,9 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(
             all(trace.reasoning_source == "structured_trace" for trace in result.stage_traces)
         )
+        self.assertEqual(result.run_controls.max_rounds, 2)
+        self.assertEqual(result.run_controls.max_feedback_messages, 0)
+        self.assertEqual(result.run_controls.max_feedback_per_agent_pair, 0)
 
         requirement_ids = {item.requirement_id for item in result.requirements}
         design_ids = {item.requirement_id for item in result.test_designs}
@@ -112,11 +116,11 @@ class PipelineTests(unittest.TestCase):
             "HF cheapest/free credits",
             "Qwen 3 32B",
             "Keep routing explicit.",
-            "Model-backed (preview)",
+            "LLM-backed (preview)",
             "HF cheapest/free credits",
             "Qwen 3 32B",
             "Extract strict requirement objects.",
-            "Model-backed (preview)",
+            "LLM-backed (preview)",
             "HF fastest",
             "DeepSeek R1",
             "Design stronger oracles.",
@@ -128,12 +132,36 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(len(configs), 4)
         self.assertEqual(configs[1].agent_name, "Requirements Analyst Agent")
-        self.assertEqual(configs[1].execution_mode, "Model-backed (preview)")
+        self.assertEqual(configs[1].execution_mode, "LLM-backed (preview)")
         self.assertEqual(configs[1].provider_strategy, "HF cheapest/free credits")
         self.assertEqual(configs[1].model_family, "Qwen 3 32B")
         self.assertEqual(configs[1].model_id, "Qwen/Qwen3-32B:cheapest")
         self.assertIn("strict requirement objects", configs[1].directives)
         self.assertEqual(configs[3].model_id, "Ollama local / Llama 3.3 70B Instruct")
+
+    def test_run_controls_are_stored_and_reflected_in_orchestrator_trace(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=3)
+        result = orchestrator.process(
+            title="Feedback budget demo",
+            requirements_text="The user must be able to sign in with email and password.",
+            run_controls=RunControlConfig(
+                max_rounds=3,
+                max_feedback_messages=6,
+                max_feedback_per_agent_pair=2,
+            ),
+        )
+
+        self.assertEqual(result.run_controls.max_rounds, 3)
+        self.assertEqual(result.run_controls.max_feedback_messages, 6)
+        self.assertEqual(result.run_controls.max_feedback_per_agent_pair, 2)
+        orchestrator_trace = result.stage_traces[-1]
+        self.assertTrue(any("Maximum feedback messages: 6" in line for line in orchestrator_trace.input_summary))
+        self.assertTrue(
+            any(
+                "Feedback budgets may exist in run configuration" in line
+                for line in orchestrator_trace.reasoning_trace
+            )
+        )
 
     def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
