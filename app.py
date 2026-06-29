@@ -76,6 +76,12 @@ def mark_custom_scenario(*_args: str) -> str:
     return "Custom scenario"
 
 
+def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
+    provider = provider_strategy or "Provider not set"
+    model = model_family or "Model not set"
+    return f"LLM configuration: {provider} / {model}"
+
+
 def build_demo() -> gr.Blocks:
     theme = gr.themes.Soft(
         primary_hue="amber",
@@ -131,12 +137,12 @@ def build_demo() -> gr.Blocks:
     .doc-pill-button button {
       display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: #fff8f2 !important;
-      background: linear-gradient(135deg, #7d2f17, #aa5a22);
-      border: 1px solid rgba(61, 23, 10, 0.38);
+      color: var(--app-ink) !important;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid rgba(143, 53, 24, 0.28);
       font-size: 0.9rem;
     }
-    .doc-pill-button button:hover { filter: brightness(1.05); }
+    .doc-pill-button button:hover { background: #fff; }
     .doc-actions {
       display: flex;
       flex-wrap: wrap;
@@ -152,15 +158,7 @@ def build_demo() -> gr.Blocks:
       border-radius: 18px;
       border: 1px solid var(--app-line);
       background: rgba(255, 253, 249, 0.99);
-      overflow: hidden;
-    }
-    .workflow-step summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 14px 16px;
-    }
-    .workflow-step summary::-webkit-details-marker {
-      display: none;
+      padding: 14px 16px 16px;
     }
     .workflow-step strong {
       display: block;
@@ -176,17 +174,26 @@ def build_demo() -> gr.Blocks:
       line-height: 1.5;
       font-weight: 500;
     }
-    .workflow-config {
-      padding: 0 16px 16px;
-      border-top: 1px solid var(--app-line);
-      background: rgba(250, 244, 235, 0.96);
+    .agent-description {
+      margin-bottom: 12px;
     }
     .workflow-config-note {
-      margin: 10px 0 12px;
+      margin: 0 0 12px;
       color: var(--app-muted) !important;
       font-size: 0.92rem;
       line-height: 1.5;
       font-weight: 500;
+    }
+    .llm-summary {
+      margin: 0 0 10px;
+      color: var(--app-accent) !important;
+      font-size: 0.84rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .config-accordion {
+      margin-top: 8px;
     }
     .gradio-container .gr-group,
     .gradio-container .block,
@@ -493,32 +500,58 @@ def build_demo() -> gr.Blocks:
                 agent_config_inputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
                     for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
-                        with gr.Accordion(agent_name, open=True, elem_classes=["workflow-step"]):
+                        with gr.Group(elem_classes=["workflow-step"]):
+                            gr.HTML(
+                                f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
+                            )
                             hint = AGENT_MODEL_HINTS.get(agent_key, "")
-                            description_text = description
                             if hint:
-                                description_text += f"\n\nCheap/free candidate: {hint}"
-                            gr.Markdown(description_text, elem_classes=["workflow-config-note"])
-                            execution_mode_input = gr.Dropdown(
-                                label="Execution mode",
-                                choices=EXECUTION_MODE_CHOICES,
-                                value=EXECUTION_MODE_CHOICES[0],
-                            )
-                            provider_strategy_input = gr.Dropdown(
-                                label="Provider strategy",
-                                choices=PROVIDER_STRATEGY_CHOICES,
-                                value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
-                            )
-                            model_family_input = gr.Dropdown(
-                                label="Model family",
-                                choices=MODEL_FAMILY_CHOICES,
-                                value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
-                            )
-                            directives_input = gr.Textbox(
-                                label="Directives",
-                                value=default_directives,
-                                lines=3,
-                            )
+                                gr.Markdown(
+                                    f"Cheap/free candidate: {hint}",
+                                    elem_classes=["workflow-config-note"],
+                                )
+                            with gr.Accordion(
+                                "LLM configuration",
+                                open=False,
+                                elem_classes=["config-accordion"],
+                            ):
+                                llm_summary = gr.Markdown(
+                                    value=format_llm_config_summary(
+                                        AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                                        AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                    ),
+                                    elem_classes=["llm-summary"],
+                                )
+                                execution_mode_input = gr.Dropdown(
+                                    label="Execution mode",
+                                    choices=EXECUTION_MODE_CHOICES,
+                                    value=EXECUTION_MODE_CHOICES[0],
+                                )
+                                provider_strategy_input = gr.Dropdown(
+                                    label="Provider strategy",
+                                    choices=PROVIDER_STRATEGY_CHOICES,
+                                    value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                                )
+                                model_family_input = gr.Dropdown(
+                                    label="Model family",
+                                    choices=MODEL_FAMILY_CHOICES,
+                                    value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                )
+                                directives_input = gr.Textbox(
+                                    label="Directives",
+                                    value=default_directives,
+                                    lines=3,
+                                )
+                                provider_strategy_input.change(
+                                    fn=format_llm_config_summary,
+                                    inputs=[provider_strategy_input, model_family_input],
+                                    outputs=[llm_summary],
+                                )
+                                model_family_input.change(
+                                    fn=format_llm_config_summary,
+                                    inputs=[provider_strategy_input, model_family_input],
+                                    outputs=[llm_summary],
+                                )
                             agent_config_inputs.extend(
                                 [
                                     execution_mode_input,
