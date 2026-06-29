@@ -11,6 +11,16 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from qa_platform.agent_runtime import (
+    AGENT_CONFIG_SPECS,
+    AGENT_MODEL_FAMILY_DEFAULTS,
+    AGENT_MODEL_HINTS,
+    AGENT_PROVIDER_DEFAULTS,
+    EXECUTION_MODE_CHOICES,
+    MODEL_FAMILY_CHOICES,
+    PROVIDER_STRATEGY_CHOICES,
+    build_agent_runtime_configs,
+)
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
@@ -23,26 +33,34 @@ LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
 
-def process_requirements(title: str, requirements: str, max_iterations: float) -> tuple[str, str]:
+def process_requirements(title: str, requirements: str, max_iterations: float, *agent_values: str) -> tuple[str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         raise gr.Error("The requirements field is required.")
     iteration_limit = max(1, int(max_iterations))
+    agent_configs = build_agent_runtime_configs(*agent_values)
+    preview_agents = [config.agent_name for config in agent_configs if config.execution_mode != "Structured baseline"]
 
     result = OrchestratorAgent(max_iterations=iteration_limit).process(
         title=normalized_title,
         requirements_text=normalized_requirements,
+        agent_configs=agent_configs,
     )
     payload = result.to_dict()
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
+    preview_note = (
+        " Model-backed selections are saved in the run configuration, but this first step still executes the structured baseline."
+        if preview_agents
+        else ""
+    )
     status = (
         "<div class='result-status'>"
         f"Completed after {payload['iterations']} of {iteration_limit} allowed iteration(s). "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
-        f"Findings: {findings_count}. Improvement actions: {improvement_count}."
+        f"Findings: {findings_count}. Improvement actions: {improvement_count}.{preview_note}"
         "</div>"
     )
     return status, build_workflow_report(payload)
@@ -205,6 +223,28 @@ def build_demo() -> gr.Blocks:
       color: var(--app-muted) !important;
       font-size: 0.93rem;
       line-height: 1.5;
+      font-weight: 500;
+    }
+    .agent-config-grid {
+      display: grid;
+      gap: 14px;
+    }
+    .agent-config-card {
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--app-line);
+      background: rgba(255, 253, 249, 0.99);
+    }
+    .agent-config-card h4 {
+      margin: 0 0 8px;
+      color: var(--app-ink) !important;
+      font-size: 1rem;
+    }
+    .agent-config-card p {
+      margin: 0 0 12px;
+      color: var(--app-muted) !important;
+      line-height: 1.6;
+      font-size: 0.94rem;
       font-weight: 500;
     }
     .gradio-container button.primary,
@@ -477,6 +517,51 @@ def build_demo() -> gr.Blocks:
                     step=1,
                     value=2,
                 )
+                gr.Markdown("## Agent execution configuration")
+                gr.Markdown(
+                    "Use `Structured baseline` for the current deterministic implementation, or choose `Model-backed (preview)` to save intended model settings per agent before we wire in live LLM execution. The GUI now separates provider strategy from model family so we can later plug in Hugging Face, Ollama, or custom OpenAI-compatible backends.",
+                    elem_classes=["scenario-help"],
+                )
+                agent_config_inputs = []
+                with gr.Group(elem_classes=["agent-config-grid"]):
+                    for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
+                        with gr.Group(elem_classes=["agent-config-card"]):
+                            hint = AGENT_MODEL_HINTS.get(agent_key, "")
+                            description_html = html.escape(description)
+                            hint_html = (
+                                f" <strong>Cheap/free candidate:</strong> {html.escape(hint)}"
+                                if hint
+                                else ""
+                            )
+                            gr.HTML(f"<h4>{html.escape(agent_name)}</h4><p>{description_html}{hint_html}</p>")
+                            execution_mode_input = gr.Dropdown(
+                                label=f"{agent_name} execution mode",
+                                choices=EXECUTION_MODE_CHOICES,
+                                value=EXECUTION_MODE_CHOICES[0],
+                            )
+                            provider_strategy_input = gr.Dropdown(
+                                label=f"{agent_name} provider strategy",
+                                choices=PROVIDER_STRATEGY_CHOICES,
+                                value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                            )
+                            model_family_input = gr.Dropdown(
+                                label=f"{agent_name} model family",
+                                choices=MODEL_FAMILY_CHOICES,
+                                value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                            )
+                            directives_input = gr.Textbox(
+                                label=f"{agent_name} directives",
+                                value=default_directives,
+                                lines=3,
+                            )
+                            agent_config_inputs.extend(
+                                [
+                                    execution_mode_input,
+                                    provider_strategy_input,
+                                    model_family_input,
+                                    directives_input,
+                                ]
+                            )
                 run_button = gr.Button("Run workflow", variant="primary")
 
             with gr.Group(elem_classes=["panel-card"]):
@@ -490,7 +575,7 @@ def build_demo() -> gr.Blocks:
 
         run_button.click(
             fn=process_requirements,
-            inputs=[title_input, requirements_input, max_iterations_input],
+            inputs=[title_input, requirements_input, max_iterations_input, *agent_config_inputs],
             outputs=[status_output, result_output],
         )
         scenario_picker.change(
@@ -515,6 +600,7 @@ def build_demo() -> gr.Blocks:
 def build_workflow_report(payload: dict) -> str:
     review = payload["review"]
     summary_html = build_summary_overview(payload)
+    config_html = build_agent_config_overview(payload.get("agent_configs", []))
     trace_overview = build_trace_overview(payload)
 
     trace_sections = build_trace_sections(payload["stage_traces"])
@@ -535,6 +621,7 @@ def build_workflow_report(payload: dict) -> str:
     return (
         "<div class='report-shell'>"
         f"{summary_html}"
+        f"{config_html}"
         f"{trace_overview}"
         f"{flow_diagram}"
         "<div class='stage-grid'>"
@@ -590,6 +677,36 @@ def build_trace_overview(payload: dict) -> str:
         "<h3>Requirement to test case mapping</h3>"
         "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each one is linked directly to a requirement ID and reviewed without a separate generation stage.</p>"
         "<table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+        "</section>"
+    )
+
+
+def build_agent_config_overview(agent_configs: list[dict]) -> str:
+    if not agent_configs:
+        return ""
+    rows = []
+    for config in agent_configs:
+        directives = config.get("directives") or "No extra directives."
+        model_id = config.get("model_id") or "Not set"
+        provider_strategy = config.get("provider_strategy") or "Not set"
+        model_family = config.get("model_family") or "Not set"
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(config['agent_name'])}</td>"
+            f"<td>{html.escape(config['execution_mode'])}</td>"
+            f"<td>{html.escape(provider_strategy)}</td>"
+            f"<td>{html.escape(model_family)}</td>"
+            f"<td>{html.escape(model_id)}</td>"
+            f"<td>{html.escape(directives)}</td>"
+            "</tr>"
+        )
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Agent runtime configuration</h3>"
+        "<p class='agent-config-text'>This run stores per-agent execution settings. `Model-backed (preview)` means the intended model and directives are captured now, while the current baseline still executes deterministic logic.</p>"
+        "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Provider strategy</th><th>Model family</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"
         "</section>"

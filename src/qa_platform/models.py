@@ -5,6 +5,17 @@ from typing import Any
 
 
 @dataclass
+class AgentRuntimeConfig:
+    agent_key: str
+    agent_name: str
+    execution_mode: str
+    provider_strategy: str = ""
+    model_family: str = ""
+    model_id: str = ""
+    directives: str = ""
+
+
+@dataclass
 class RequirementItem:
     requirement_id: str
     original_text: str
@@ -70,6 +81,7 @@ class PipelineResult:
     generated_artifacts: list[GeneratedArtifact]
     review: ReviewReport
     iterations: int
+    agent_configs: list[AgentRuntimeConfig] = field(default_factory=list)
     stage_traces: list[StageTrace] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

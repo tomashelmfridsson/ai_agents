@@ -9,6 +9,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from qa_platform.orchestrator import OrchestratorAgent
+from qa_platform.agent_runtime import build_agent_runtime_configs
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 
 
@@ -52,10 +53,20 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(any("REQ-001" in finding for finding in result.review.findings))
 
     def test_sample_scenario_loader_uses_selected_preset(self) -> None:
-        title, requirements = load_sample_scenario("Scenario 4", DEFAULT_TITLE, "")
+        title, requirements = load_sample_scenario("Scenario 4 - support tickets", DEFAULT_TITLE, "")
 
         self.assertEqual(title, "Support ticket creation and status tracking")
         self.assertIn("create a support ticket", requirements)
+
+    def test_custom_scenario_loader_clears_fields(self) -> None:
+        title, requirements = load_sample_scenario(
+            "Custom scenario",
+            "Existing title",
+            "Existing requirements",
+        )
+
+        self.assertEqual(title, "")
+        self.assertEqual(requirements, "")
 
     def test_requirements_trace_explains_derivation_for_req_001(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
@@ -90,6 +101,35 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(
             any("Final decision: Approved=False because coverage passed" in line for line in reasoning)
         )
+
+    def test_agent_runtime_configs_capture_mode_model_and_directives(self) -> None:
+        configs = build_agent_runtime_configs(
+            "Structured baseline",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Keep routing explicit.",
+            "Model-backed (preview)",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Extract strict requirement objects.",
+            "Model-backed (preview)",
+            "HF fastest",
+            "DeepSeek R1",
+            "Design stronger oracles.",
+            "Structured baseline",
+            "Ollama local (coming soon)",
+            "Llama 3.3 70B Instruct",
+            "Be strict during review.",
+        )
+
+        self.assertEqual(len(configs), 4)
+        self.assertEqual(configs[1].agent_name, "Requirements Analyst Agent")
+        self.assertEqual(configs[1].execution_mode, "Model-backed (preview)")
+        self.assertEqual(configs[1].provider_strategy, "HF cheapest/free credits")
+        self.assertEqual(configs[1].model_family, "Qwen 3 32B")
+        self.assertEqual(configs[1].model_id, "Qwen/Qwen3-32B:cheapest")
+        self.assertIn("strict requirement objects", configs[1].directives)
+        self.assertEqual(configs[3].model_id, "Ollama local / Llama 3.3 70B Instruct")
 
 
 if __name__ == "__main__":

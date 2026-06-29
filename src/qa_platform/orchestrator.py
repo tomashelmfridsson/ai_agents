@@ -7,7 +7,7 @@ from .agents import (
     ReviewAgent,
     TestDesignAgent,
 )
-from .models import PipelineResult, StageTrace
+from .models import AgentRuntimeConfig, PipelineResult, StageTrace
 
 
 @dataclass
@@ -17,11 +17,17 @@ class OrchestratorAgent:
     reviewer: ReviewAgent = field(default_factory=ReviewAgent)
     max_iterations: int = 2
 
-    def process(self, title: str, requirements_text: str) -> PipelineResult:
+    def process(
+        self,
+        title: str,
+        requirements_text: str,
+        agent_configs: list[AgentRuntimeConfig] | None = None,
+    ) -> PipelineResult:
         requirements = []
         designs = []
         review = None
         stage_traces = []
+        runtime_configs = agent_configs or []
 
         for iteration in range(1, self.max_iterations + 1):
             requirements = self.requirements_analyst.analyze(requirements_text)
@@ -44,6 +50,7 @@ class OrchestratorAgent:
                     generated_artifacts=[],
                     review=review,
                     iterations=iteration,
+                    agent_configs=runtime_configs,
                     stage_traces=stage_traces,
                 )
 
@@ -55,6 +62,7 @@ class OrchestratorAgent:
             generated_artifacts=[],
             review=review,
             iterations=self.max_iterations,
+            agent_configs=runtime_configs,
             stage_traces=stage_traces,
         )
 
