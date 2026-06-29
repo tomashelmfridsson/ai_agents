@@ -100,6 +100,19 @@ def build_run_log_text(
         str(payload.get("source_requirements", "")),
         "",
     ]
+    agent_configs = payload.get("agent_configs", []) or []
+    if agent_configs:
+        lines.extend(["Configured agent runtime", ""])
+        for config in agent_configs:
+            lines.extend(
+                [
+                    str(config.get("agent_name", "")),
+                    f"Execution mode: {config.get('execution_mode', '')}",
+                    f"Resolved model: {config.get('model_id', '') or 'deterministic implementation'}",
+                    f"Directives: {config.get('directives', '') or 'No directives configured.'}",
+                    "",
+                ]
+            )
 
     run_index = 1
     for cycle, traces in _group_stage_traces(payload.get("stage_traces", [])).items():
@@ -120,6 +133,7 @@ def build_run_log_text(
                     str(trace.get("agent_name", "")),
                     f"Status: {trace.get('status', '')}",
                     f"Execution: {execution_mode} / {model_id}",
+                    f"Configured directive: {runtime_config.get('directives', '') or 'No directives configured.'}",
                 ]
             )
             agent_explanation = str(trace.get("agent_explanation", "") or "").strip()

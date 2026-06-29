@@ -30,6 +30,7 @@ class OrchestratorAgent:
         review = None
         stage_traces = []
         runtime_configs = agent_configs or []
+        runtime_lookup = {config.agent_key: config for config in runtime_configs}
         control_config = run_controls or RunControlConfig(
             max_rounds=self.max_iterations,
             max_feedback_messages=0,
@@ -44,13 +45,19 @@ class OrchestratorAgent:
 
         while True:
             if current_stage == "requirements":
-                requirements = self.requirements_analyst.analyze(requirements_text, requirements_feedback)
+                requirements_runtime = runtime_lookup.get("requirements_analyst")
+                requirements = self.requirements_analyst.analyze(
+                    requirements_text,
+                    requirements_feedback,
+                    requirements_runtime,
+                )
                 stage_traces.append(
                     self._build_requirements_trace(
                         route_round,
                         requirements_text,
                         requirements,
                         requirements_feedback,
+                        requirements_runtime,
                     )
                 )
                 requirements_feedback = []
@@ -58,9 +65,16 @@ class OrchestratorAgent:
                 continue
 
             if current_stage == "design":
-                designs = self.test_designer.design(requirements, design_feedback)
+                design_runtime = runtime_lookup.get("test_design")
+                designs = self.test_designer.design(requirements, design_feedback, design_runtime)
                 stage_traces.append(
-                    self._build_design_trace(route_round, requirements, designs, design_feedback)
+                    self._build_design_trace(
+                        route_round,
+                        requirements,
+                        designs,
+                        design_feedback,
+                        design_runtime,
+                    )
                 )
                 design_feedback = []
                 design_backtrack_feedback = self._build_design_backtrack_feedback(requirements)
@@ -84,6 +98,7 @@ class OrchestratorAgent:
                             from_agent="Test Design Agent",
                             to_agent="Requirements Analyst",
                             feedback_messages=design_backtrack_feedback,
+                            runtime_config=runtime_lookup.get("orchestrator"),
                             run_controls=control_config,
                             total_feedback_messages=total_feedback_messages,
                         )
@@ -95,15 +110,17 @@ class OrchestratorAgent:
                 current_stage = "review"
                 continue
 
-            review = self.reviewer.review(requirements, designs)
+            review_runtime = runtime_lookup.get("review")
+            review = self.reviewer.review(requirements, designs, review_runtime)
             stage_traces.append(
-                self._build_review_trace(route_round, requirements, designs, review)
+                self._build_review_trace(route_round, requirements, designs, review, review_runtime)
             )
             if review.approved:
                 stage_traces.append(
                     self._build_stop_orchestrator_trace(
                         route_round=route_round,
                         review=review,
+                        runtime_config=runtime_lookup.get("orchestrator"),
                         run_controls=control_config,
                         total_feedback_messages=total_feedback_messages,
                         stop_reason="Stop pipeline because the review approved the result.",
@@ -132,6 +149,7 @@ class OrchestratorAgent:
                         from_agent=backtrack_route["from_agent"],
                         to_agent=backtrack_route["to_agent"],
                         feedback_messages=backtrack_route["feedback_messages"],
+                        runtime_config=runtime_lookup.get("orchestrator"),
                         run_controls=control_config,
                         total_feedback_messages=total_feedback_messages,
                     )
@@ -149,6 +167,7 @@ class OrchestratorAgent:
                 self._build_stop_orchestrator_trace(
                     route_round=route_round,
                     review=review,
+                    runtime_config=runtime_lookup.get("orchestrator"),
                     run_controls=control_config,
                     total_feedback_messages=total_feedback_messages,
                     stop_reason=(
@@ -177,11 +196,17 @@ class OrchestratorAgent:
         requirements_text: str,
         requirements: list,
         feedback_messages: list[str],
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> StageTrace:
         detailed_reasoning = []
-        for item in requirements[:4]:
-            detailed_reasoning.extend(self._explain_requirement_derivation(item))
-            detailed_reasoning.extend(self._explain_requirement_feedback_application(item, feedback_messages))
+        execution = self.requirements_analyst.last_execution
+        llm_active = bool(execution.get("llm_used"))
+        if llm_active:
+            detailed_reasoning.extend(execution.get("notes") or [])
+        else:
+            for item in requirements[:4]:
+                detailed_reasoning.extend(self._explain_requirement_derivation(item))
+                detailed_reasoning.extend(self._explain_requirement_feedback_application(item, feedback_messages))
 
         return StageTrace(
             iteration=iteration,
@@ -212,27 +237,49 @@ class OrchestratorAgent:
                 ],
             ],
             reasoning_trace=[
-                "Split the incoming requirement text into separate candidate requirement statements.",
-                "Normalize each statement, assign deterministic IDs in sequence, and preserve the original wording.",
-                "Classify priority from keyword matches such as 'must', 'måste', or 'should'.",
-                "Expand each requirement with heuristic acceptance criteria and note missing or implicit error handling as assumptions.",
-                (
-                    "No targeted feedback was applied in this pass."
-                    if not feedback_messages
-                    else "Apply targeted backtracking feedback to the specific requirements mentioned by upstream agents before finalizing acceptance criteria and assumptions."
+                *(
+                    [
+                        f"Submit the raw requirement text and feedback messages to {runtime_config.model_id} for structured extraction."
+                        if runtime_config
+                        else "Submit the raw requirement text to the configured LLM for structured extraction.",
+                        "Validate the returned JSON structure, then normalize requirement IDs into stable REQ-### order.",
+                        (
+                            "No targeted feedback was applied in this pass."
+                            if not feedback_messages
+                            else "Apply targeted backtracking feedback before finalizing acceptance criteria and assumptions."
+                        ),
+                    ]
+                    if llm_active
+                    else [
+                        "Split the incoming requirement text into separate candidate requirement statements.",
+                        "Normalize each statement, assign deterministic IDs in sequence, and preserve the original wording.",
+                        "Classify priority from keyword matches such as 'must', 'måste', or 'should'.",
+                        "Expand each requirement with heuristic acceptance criteria and note missing or implicit error handling as assumptions.",
+                        (
+                            "No targeted feedback was applied in this pass."
+                            if not feedback_messages
+                            else "Apply targeted backtracking feedback to the specific requirements mentioned by upstream agents before finalizing acceptance criteria and assumptions."
+                        ),
+                    ]
                 ),
                 *detailed_reasoning,
             ],
             status="completed",
             agent_explanation=(
-                "This agent is deterministic. It splits the requirement text by line or sentence, "
-                "assigns IDs in order, classifies priority from simple keywords, and enriches each "
-                "requirement with heuristic acceptance criteria and assumptions."
+                (
+                    "This agent used a live LLM to extract structured requirements, acceptance criteria, and assumptions from the raw scenario text."
+                    if llm_active
+                    else "This agent is deterministic. It splits the requirement text by line or sentence, assigns IDs in order, classifies priority from simple keywords, and enriches each requirement with heuristic acceptance criteria and assumptions."
+                )
             ),
             decision_explanation=(
-                "No model judgment is used here. The output depends only on the input text and the "
-                "hard-coded keyword rules."
+                (
+                    f"Live model call used: {runtime_config.model_id} via {runtime_config.provider_strategy}."
+                    if llm_active and runtime_config
+                    else "No model judgment is used here. The output depends only on the input text and the hard-coded keyword rules."
+                )
             ),
+            reasoning_source=execution.get("reasoning_source", "structured_trace"),
         )
 
     def _build_design_trace(
@@ -241,7 +288,10 @@ class OrchestratorAgent:
         requirements: list,
         designs: list,
         feedback_messages: list[str],
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> StageTrace:
+        execution = self.test_designer.last_execution
+        llm_active = bool(execution.get("llm_used"))
         return StageTrace(
             iteration=iteration,
             stage_index=2,
@@ -278,31 +328,66 @@ class OrchestratorAgent:
                 ],
             ],
             reasoning_trace=[
-                "Read each structured requirement together with its acceptance criteria and assumptions.",
-                "Choose a test type from deterministic keyword routing such as gui/e2e, api/integration, unit, or scenario.",
-                "Build a test-case shell with fixed preconditions, reusable steps, expected results, and a generic oracle.",
-                "Carry forward requirement assumptions as design risks so later review can challenge weak testability.",
-                (
-                    "No targeted design feedback was applied in this pass."
-                    if not feedback_messages
-                    else "Incorporate targeted review feedback before finalizing steps, expected results, and oracle wording."
+                *(
+                    [
+                        f"Submit the structured requirements to {runtime_config.model_id} to generate concrete test cases."
+                        if runtime_config
+                        else "Submit the structured requirements to the configured LLM to generate concrete test cases.",
+                        "Validate the structured test-design JSON, then preserve one test case per returned requirement mapping.",
+                        (
+                            "No targeted design feedback was applied in this pass."
+                            if not feedback_messages
+                            else "Incorporate targeted review feedback before finalizing steps, expected results, and oracle wording."
+                        ),
+                        *(execution.get("notes") or []),
+                    ]
+                    if llm_active
+                    else [
+                        "Read each structured requirement together with its acceptance criteria and assumptions.",
+                        "Choose a test type from deterministic keyword routing such as gui/e2e, api/integration, unit, or scenario.",
+                        "Build a test-case shell with fixed preconditions, reusable steps, expected results, and a generic oracle.",
+                        "Carry forward requirement assumptions as design risks so later review can challenge weak testability.",
+                        (
+                            "No targeted design feedback was applied in this pass."
+                            if not feedback_messages
+                            else "Incorporate targeted review feedback before finalizing steps, expected results, and oracle wording."
+                        ),
+                    ]
                 ),
             ],
             status="completed",
             agent_explanation=(
-                "This agent converts each structured requirement into a test case design. The test "
-                "type is selected from keywords, and the rest of the design is filled from fixed templates."
+                (
+                    "This agent used a live LLM to convert structured requirements into concrete planned test cases with titles, steps, expected results, and oracle text."
+                    if llm_active
+                    else "This agent converts each structured requirement into a test case design. The test type is selected from keywords, and the rest of the design is filled from fixed templates."
+                )
             ),
             decision_explanation=(
-                "The label 'designs' means draft test cases before code generation. In this app they "
-                "are the planned test cases, each tied to a requirement ID."
+                (
+                    f"Live model call used: {runtime_config.model_id} via {runtime_config.provider_strategy}."
+                    if llm_active and runtime_config
+                    else "The label 'designs' means draft test cases before code generation. In this app they are the planned test cases, each tied to a requirement ID."
+                )
             ),
+            reasoning_source=execution.get("reasoning_source", "structured_trace"),
         )
 
     def _build_review_trace(
-        self, iteration: int, requirements: list, designs: list, review
+        self,
+        iteration: int,
+        requirements: list,
+        designs: list,
+        review,
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> StageTrace:
-        review_reasoning = self._build_review_reasoning(requirements, designs, review)
+        execution = self.reviewer.last_execution
+        llm_active = bool(execution.get("llm_used"))
+        review_reasoning = (
+            execution.get("notes") or self._build_review_reasoning(requirements, designs, review)
+            if llm_active
+            else self._build_review_reasoning(requirements, designs, review)
+        )
         return StageTrace(
             iteration=iteration,
             stage_index=3,
@@ -329,23 +414,38 @@ class OrchestratorAgent:
             ],
             status="approved" if review.approved else "changes requested",
             reasoning_trace=[
-                "Compute requirement coverage by checking whether each requirement ID appears in at least one designed test case.",
-                "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
-                "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
-                "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
+                *(
+                    [
+                        f"Submit the requirements and planned test cases to {runtime_config.model_id} for a structured QA review."
+                        if runtime_config
+                        else "Submit the requirements and planned test cases to the configured LLM for structured QA review.",
+                        "Use the model response to judge approval, coverage ratio, findings, and routing focus for the next repair step.",
+                    ]
+                    if llm_active
+                    else [
+                        "Compute requirement coverage by checking whether each requirement ID appears in at least one designed test case.",
+                        "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
+                        "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
+                        "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
+                    ]
+                ),
                 *review_reasoning,
             ],
             agent_explanation=(
-                "This review stage is a deterministic rule check, not an autonomous evaluator. It "
-                "computes requirement coverage from designed test cases, flags test cases with too few "
-                "expected results, and flags requirements that still contain assumptions."
+                (
+                    "This review stage used a live LLM to evaluate coverage quality, oracle strength, unresolved assumptions, and the most relevant backtracking target."
+                    if llm_active
+                    else "This review stage is a deterministic rule check, not an autonomous evaluator. It computes requirement coverage from designed test cases, flags test cases with too few expected results, and flags requirements that still contain assumptions."
+                )
             ),
             decision_explanation=(
-                "Approval becomes true only when every requirement has at least one designed test case "
-                "and the total number of findings stays at or below the hard-coded threshold. In this "
-                "implementation, findings mainly come from three sources: missing designed coverage, weak "
-                "oracle definitions, and unresolved assumptions."
+                (
+                    f"Live model call used: {runtime_config.model_id} via {runtime_config.provider_strategy}."
+                    if llm_active and runtime_config
+                    else "Approval becomes true only when every requirement has at least one designed test case and the total number of findings stays at or below the hard-coded threshold. In this implementation, findings mainly come from three sources: missing designed coverage, weak oracle definitions, and unresolved assumptions."
+                )
             ),
+            reasoning_source=execution.get("reasoning_source", "structured_trace"),
         )
 
     def _can_send_feedback(
@@ -367,6 +467,9 @@ class OrchestratorAgent:
         return True
 
     def _build_design_backtrack_feedback(self, requirements: list) -> list[str]:
+        llm_feedback = self.test_designer.last_execution.get("feedback_messages_to_requirements") or []
+        if llm_feedback:
+            return llm_feedback[:2]
         feedback = []
         for requirement in requirements:
             if requirement.assumptions:
@@ -376,6 +479,22 @@ class OrchestratorAgent:
         return feedback[:2]
 
     def _select_review_backtrack_route(self, requirements: list, review) -> dict | None:
+        routing_focus = set(self.reviewer.last_execution.get("routing_focus") or [])
+        if "test_design" in routing_focus and "requirements" not in routing_focus:
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Test Design Agent",
+                "feedback_messages": review.improvement_actions[:2]
+                or ["Strengthen oracle quality and expected results in the current test designs."],
+            }
+        if "requirements" in routing_focus and "test_design" not in routing_focus:
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Requirements Analyst",
+                "feedback_messages": review.improvement_actions[:2]
+                or ["Clarify ambiguous requirements and reduce assumptions before redesign."],
+            }
+
         weak_oracle_findings = [finding for finding in review.findings if "weak oracle definition" in finding]
         assumption_findings = [finding for finding in review.findings if "contains assumptions" in finding]
         missing_design_findings = [finding for finding in review.findings if "missing a designed test case" in finding]
@@ -416,9 +535,11 @@ class OrchestratorAgent:
         from_agent: str,
         to_agent: str,
         feedback_messages: list[str],
+        runtime_config: AgentRuntimeConfig | None,
         run_controls: RunControlConfig,
         total_feedback_messages: int,
     ) -> StageTrace:
+        llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
         return StageTrace(
             iteration=route_round,
             stage_index=4,
@@ -437,29 +558,43 @@ class OrchestratorAgent:
             ],
             status=f"backtrack to {to_agent.lower()}",
             reasoning_trace=[
-                "Read the feedback request and evaluate whether the configured feedback budgets still allow another targeted handoff.",
-                "Choose the smallest possible backtracking step instead of restarting the whole pipeline.",
-                f"Route the workflow directly from {from_agent} back to {to_agent} so downstream stages can be regenerated from the repaired state.",
+                *(
+                    [
+                        f"Apply live orchestration rules under {runtime_config.model_id}, while still enforcing the configured feedback budgets locally.",
+                        "Choose the smallest possible backtracking step instead of restarting the whole pipeline.",
+                        f"Route the workflow directly from {from_agent} back to {to_agent} so downstream stages can be regenerated from the repaired state.",
+                    ]
+                    if llm_active
+                    else [
+                        "Read the feedback request and evaluate whether the configured feedback budgets still allow another targeted handoff.",
+                        "Choose the smallest possible backtracking step instead of restarting the whole pipeline.",
+                        f"Route the workflow directly from {from_agent} back to {to_agent} so downstream stages can be regenerated from the repaired state.",
+                    ]
+                ),
             ],
             agent_explanation=(
-                "The orchestrator now works as a routing controller. Instead of forcing a full rerun, "
-                "it can send a targeted repair request back to the most relevant upstream agent."
+                "The orchestrator works as a routing controller. Instead of forcing a full rerun, it can send a targeted repair request back to the most relevant upstream agent."
             ),
             decision_explanation=(
-                "This is selective backtracking. The orchestrator does not start over from scratch here. "
-                "It routes the repair message to the exact agent that should respond next, then resumes the "
-                "pipeline from that point."
+                (
+                    f"Configured execution mode is LLM-backed with {runtime_config.model_id}, but budget enforcement is still applied locally for safety."
+                    if llm_active and runtime_config
+                    else "This is selective backtracking. The orchestrator does not start over from scratch here. It routes the repair message to the exact agent that should respond next, then resumes the pipeline from that point."
+                )
             ),
+            reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",
         )
 
     def _build_stop_orchestrator_trace(
         self,
         route_round: int,
         review,
+        runtime_config: AgentRuntimeConfig | None,
         run_controls: RunControlConfig,
         total_feedback_messages: int,
         stop_reason: str,
     ) -> StageTrace:
+        llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
         return StageTrace(
             iteration=route_round,
             stage_index=4,
@@ -483,16 +618,31 @@ class OrchestratorAgent:
             ],
             status="stop",
             reasoning_trace=[
-                "Read the current review status together with the remaining feedback budget.",
-                "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
-                "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
+                *(
+                    [
+                        f"Use the configured orchestration mode under {runtime_config.model_id} together with the local feedback-budget guards.",
+                        "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
+                        "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
+                    ]
+                    if llm_active
+                    else [
+                        "Read the current review status together with the remaining feedback budget.",
+                        "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
+                        "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
+                    ]
+                ),
             ],
             agent_explanation=(
                 "The orchestrator is the routing controller for the workflow. It either stops the run or sends targeted repair requests to earlier agents."
             ),
             decision_explanation=(
-                "The run stops when approval is reached or when no more valid agent-to-agent backtracking step can be taken under the configured limits."
+                (
+                    f"Configured execution mode is LLM-backed with {runtime_config.model_id}, but the final stop rule is still enforced locally against the configured limits."
+                    if llm_active and runtime_config
+                    else "The run stops when approval is reached or when no more valid agent-to-agent backtracking step can be taken under the configured limits."
+                )
             ),
+            reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",
         )
 
     def _explain_review_finding(self, finding: str) -> str:

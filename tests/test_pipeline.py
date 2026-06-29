@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ if str(SRC) not in sys.path:
 
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
+from qa_platform.agents import RequirementsAnalystAgent
 from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import save_run
@@ -119,23 +121,23 @@ class PipelineTests(unittest.TestCase):
             "HF cheapest/free credits",
             "Qwen 3 32B",
             "Keep routing explicit.",
-            "LLM-backed (preview)",
+            "LLM-backed",
             "HF cheapest/free credits",
             "Qwen 3 32B",
             "Extract strict requirement objects.",
-            "LLM-backed (preview)",
+            "LLM-backed",
             "HF fastest",
             "DeepSeek R1",
             "Design stronger oracles.",
             "Structured baseline",
-            "Ollama local (coming soon)",
+            "Ollama local",
             "Llama 3.3 70B Instruct",
             "Be strict during review.",
         )
 
         self.assertEqual(len(configs), 4)
         self.assertEqual(configs[1].agent_name, "Requirements Analyst Agent")
-        self.assertEqual(configs[1].execution_mode, "LLM-backed (preview)")
+        self.assertEqual(configs[1].execution_mode, "LLM-backed")
         self.assertEqual(configs[1].provider_strategy, "HF cheapest/free credits")
         self.assertEqual(configs[1].model_family, "Qwen 3 32B")
         self.assertEqual(configs[1].model_id, "Qwen/Qwen3-32B:cheapest")
@@ -197,6 +199,64 @@ class PipelineTests(unittest.TestCase):
             any("upstream feedback was applied" in line for line in second_requirements_trace.reasoning_trace)
         )
 
+    def test_requirements_agent_can_run_in_live_llm_mode(self) -> None:
+        configs = build_agent_runtime_configs(
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Route clearly.",
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "Qwen 3 32B",
+            "Extract strict requirement objects.",
+            "Structured baseline",
+            "HF fastest",
+            "DeepSeek R1",
+            "Design stronger oracles.",
+            "Structured baseline",
+            "HF fastest",
+            "DeepSeek R1",
+            "Review thoroughly.",
+        )
+        runtime_config = configs[1]
+
+        fake_response = (
+            {
+                "requirements": [
+                    {
+                        "original_text": "The user must be able to sign in with email and password.",
+                        "normalized_text": "The user must be able to sign in with email and password",
+                        "priority": "high",
+                        "acceptance_criteria": [
+                            "The user shall be authenticated when valid credentials are supplied.",
+                            "Invalid credentials shall produce a clear error message.",
+                        ],
+                        "assumptions": ["Password policy is not described explicitly."],
+                        "trace_notes": ["Mapped the line to one authentication requirement."],
+                    }
+                ],
+                "run_notes": ["Used the configured LLM schema for requirement extraction."],
+            },
+            {
+                "model_id": runtime_config.model_id,
+                "provider_strategy": runtime_config.provider_strategy,
+            },
+        )
+
+        with patch("qa_platform.agents.call_structured_llm", return_value=fake_response):
+            agent = RequirementsAnalystAgent()
+            result = agent.analyze(
+                "The user must be able to sign in with email and password.",
+                runtime_config=runtime_config,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].requirement_id, "REQ-001")
+        self.assertEqual(result[0].priority, "high")
+        self.assertEqual(agent.last_execution["reasoning_source"], "llm_structured_output")
+        self.assertTrue(agent.last_execution["llm_used"])
+        self.assertTrue(any("configured LLM schema" in note for note in agent.last_execution["notes"]))
+
     def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
         result = orchestrator.process(
@@ -231,6 +291,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Backtracking cycle", log_text)
             self.assertIn("How this agent works", log_text)
             self.assertIn("Execution:", log_text)
+            self.assertIn("Configured directive:", log_text)
 
             connection = sqlite3.connect(db_path)
             try:

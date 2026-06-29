@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+from typing import Any
 
+from .llm_runtime import call_structured_llm, is_llm_enabled
+from .models import AgentRuntimeConfig
 from .models import RequirementItem, ReviewReport, TestCaseDesign
 
 
@@ -17,13 +21,18 @@ def _split_requirements(requirements_text: str) -> list[str]:
 @dataclass
 class RequirementsAnalystAgent:
     name: str = "Requirements Analyst"
+    last_execution: dict[str, Any] = field(default_factory=dict)
 
     def analyze(
         self,
         requirements_text: str,
         feedback_messages: list[str] | None = None,
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> list[RequirementItem]:
         feedback_messages = feedback_messages or []
+        if is_llm_enabled(runtime_config):
+            return self._analyze_with_llm(requirements_text, feedback_messages, runtime_config)
+
         items = []
         for index, raw_text in enumerate(_split_requirements(requirements_text), start=1):
             requirement_id = f"REQ-{index:03d}"
@@ -41,6 +50,105 @@ class RequirementsAnalystAgent:
                     assumptions=assumptions,
                 )
             )
+        self.last_execution = {
+            "mode": "structured",
+            "reasoning_source": "structured_trace",
+            "notes": [],
+            "llm_used": False,
+        }
+        return items
+
+    def _analyze_with_llm(
+        self,
+        requirements_text: str,
+        feedback_messages: list[str],
+        runtime_config: AgentRuntimeConfig,
+    ) -> list[RequirementItem]:
+        system_prompt = (
+            f"You are {runtime_config.agent_name}.\n"
+            f"{runtime_config.directives}\n"
+            "Return only structured output. Extract only what the requirement text supports. "
+            "Make uncertainty explicit. Keep requirement order stable."
+        )
+        feedback_block = "\n".join(f"- {message}" for message in feedback_messages) or "- none"
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "requirements": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "original_text": {"type": "string"},
+                            "normalized_text": {"type": "string"},
+                            "priority": {"type": "string", "enum": ["high", "medium", "normal"]},
+                            "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+                            "assumptions": {"type": "array", "items": {"type": "string"}},
+                            "trace_notes": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": [
+                            "original_text",
+                            "normalized_text",
+                            "priority",
+                            "acceptance_criteria",
+                            "assumptions",
+                            "trace_notes",
+                        ],
+                    },
+                },
+                "run_notes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["requirements", "run_notes"],
+        }
+        user_prompt = (
+            "Raw requirement text:\n"
+            f"{requirements_text}\n\n"
+            "Incoming upstream feedback:\n"
+            f"{feedback_block}\n\n"
+            "Return one requirement object per requirement statement. "
+            "Acceptance criteria must be observable and testable. "
+            "Assumptions must stay explicit instead of being silently resolved."
+        )
+        response, metadata = call_structured_llm(
+            runtime_config=runtime_config,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_name="requirements_analysis",
+            schema=schema,
+        )
+        items = []
+        raw_items = response.get("requirements") or []
+        fallback_parts = _split_requirements(requirements_text)
+        for index, item in enumerate(raw_items, start=1):
+            original_text = _clean_text(item.get("original_text")) or (
+                fallback_parts[index - 1] if index - 1 < len(fallback_parts) else ""
+            )
+            normalized_text = _clean_text(item.get("normalized_text")) or original_text.strip().rstrip(".")
+            priority = _clean_priority(item.get("priority"))
+            acceptance_criteria = _clean_string_list(item.get("acceptance_criteria"))
+            if not acceptance_criteria:
+                acceptance_criteria = [f"The system shall satisfy the requirement: {normalized_text}"]
+            assumptions = _clean_string_list(item.get("assumptions"))
+            items.append(
+                RequirementItem(
+                    requirement_id=f"REQ-{index:03d}",
+                    original_text=original_text,
+                    normalized_text=normalized_text,
+                    priority=priority,
+                    acceptance_criteria=acceptance_criteria,
+                    assumptions=assumptions,
+                )
+            )
+        self.last_execution = {
+            "mode": "llm",
+            "reasoning_source": "llm_structured_output",
+            "notes": _clean_string_list(response.get("run_notes"))
+            + _flatten_trace_notes(raw_items, "trace_notes"),
+            "llm_used": True,
+            "metadata": metadata,
+        }
         return items
 
     def _extract_acceptance_criteria(self, text: str) -> list[str]:
@@ -118,13 +226,18 @@ class RequirementsAnalystAgent:
 @dataclass
 class TestDesignAgent:
     name: str = "Test Design Agent"
+    last_execution: dict[str, Any] = field(default_factory=dict)
 
     def design(
         self,
         requirements: list[RequirementItem],
         feedback_messages: list[str] | None = None,
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> list[TestCaseDesign]:
         feedback_messages = feedback_messages or []
+        if is_llm_enabled(runtime_config):
+            return self._design_with_llm(requirements, feedback_messages, runtime_config)
+
         designs = []
         for req in requirements:
             test_type = self._choose_test_type(req)
@@ -152,6 +265,125 @@ class TestDesignAgent:
                     risks=risks,
                 )
             )
+        self.last_execution = {
+            "mode": "structured",
+            "reasoning_source": "structured_trace",
+            "notes": [],
+            "llm_used": False,
+            "feedback_messages_to_requirements": self._feedback_messages_to_requirements(requirements),
+        }
+        return designs
+
+    def _design_with_llm(
+        self,
+        requirements: list[RequirementItem],
+        feedback_messages: list[str],
+        runtime_config: AgentRuntimeConfig,
+    ) -> list[TestCaseDesign]:
+        requirements_payload = [
+            {
+                "requirement_id": item.requirement_id,
+                "normalized_text": item.normalized_text,
+                "priority": item.priority,
+                "acceptance_criteria": item.acceptance_criteria,
+                "assumptions": item.assumptions,
+            }
+            for item in requirements
+        ]
+        feedback_block = "\n".join(f"- {message}" for message in feedback_messages) or "- none"
+        system_prompt = (
+            f"You are {runtime_config.agent_name}.\n"
+            f"{runtime_config.directives}\n"
+            "Produce concrete planned test cases, not placeholders. "
+            "Use action-oriented test titles. Keep traceability to requirement IDs."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "test_designs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "requirement_id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "test_type": {"type": "string"},
+                            "preconditions": {"type": "array", "items": {"type": "string"}},
+                            "steps": {"type": "array", "items": {"type": "string"}},
+                            "expected_results": {"type": "array", "items": {"type": "string"}},
+                            "oracle": {"type": "string"},
+                            "risks": {"type": "array", "items": {"type": "string"}},
+                            "trace_notes": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": [
+                            "requirement_id",
+                            "title",
+                            "test_type",
+                            "preconditions",
+                            "steps",
+                            "expected_results",
+                            "oracle",
+                            "risks",
+                            "trace_notes",
+                        ],
+                    },
+                },
+                "feedback_messages_to_requirements": {"type": "array", "items": {"type": "string"}},
+                "run_notes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["test_designs", "feedback_messages_to_requirements", "run_notes"],
+        }
+        user_prompt = (
+            "Structured requirements:\n"
+            f"{requirements_payload}\n\n"
+            "Incoming upstream feedback:\n"
+            f"{feedback_block}\n\n"
+            "Create one test case per requirement unless a requirement is too unclear to support strong design. "
+            "If a requirement is too unclear, keep the test design as strong as possible but also add targeted "
+            "feedback messages to the requirements analyst."
+        )
+        response, metadata = call_structured_llm(
+            runtime_config=runtime_config,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_name="test_design",
+            schema=schema,
+        )
+        raw_designs = response.get("test_designs") or []
+        designs = []
+        requirements_by_id = {item.requirement_id: item for item in requirements}
+        for index, item in enumerate(raw_designs, start=1):
+            requirement_id = _clean_text(item.get("requirement_id")) or f"REQ-{index:03d}"
+            mapped_requirement = requirements_by_id.get(requirement_id)
+            designs.append(
+                TestCaseDesign(
+                    test_case_id=f"TC-{index:03d}",
+                    requirement_id=requirement_id,
+                    title=_clean_text(item.get("title")) or self._fallback_llm_title(mapped_requirement, requirement_id),
+                    test_type=_clean_text(item.get("test_type")) or "scenario",
+                    preconditions=_clean_string_list(item.get("preconditions")) or ["The application is available."],
+                    steps=_clean_string_list(item.get("steps")) or self._build_steps(mapped_requirement) if mapped_requirement else [],
+                    expected_results=_clean_string_list(item.get("expected_results")) or (
+                        list(mapped_requirement.acceptance_criteria) if mapped_requirement else []
+                    ),
+                    oracle=_clean_text(item.get("oracle"))
+                    or "All expected results are satisfied and no unauthorized side effects are observed.",
+                    risks=_clean_string_list(item.get("risks")),
+                )
+            )
+        self.last_execution = {
+            "mode": "llm",
+            "reasoning_source": "llm_structured_output",
+            "notes": _clean_string_list(response.get("run_notes"))
+            + _flatten_trace_notes(raw_designs, "trace_notes"),
+            "llm_used": True,
+            "metadata": metadata,
+            "feedback_messages_to_requirements": _clean_string_list(
+                response.get("feedback_messages_to_requirements")
+            ),
+        }
         return designs
 
     def _choose_test_type(self, req: RequirementItem) -> str:
@@ -181,6 +413,21 @@ class TestDesignAgent:
             return cleaned
         return f"Test case for {req.requirement_id}"
 
+    def _fallback_llm_title(self, req: RequirementItem | None, requirement_id: str) -> str:
+        if not req:
+            return f"Test case for {requirement_id}"
+        text = req.normalized_text.strip().rstrip(".")
+        lowered = text.lower()
+        if any(keyword in lowered for keyword in ("sign in", "logga in", "login")):
+            return "Successful sign-in with valid credentials"
+        if any(keyword in lowered for keyword in ("error", "invalid", "ogiltig", "felmeddelande")):
+            return "Display clear error for invalid credentials"
+        if "admin" in lowered and any(keyword in lowered for keyword in ("overview", "översikt", "users", "användare")):
+            return "Admin views registered users overview"
+        if any(keyword in lowered for keyword in ("register", "registrera", "new account", "konto")):
+            return "Register a new account through the form"
+        return text if len(text) <= 72 else text[:69].rstrip() + "..."
+
     def _identify_risks(self, req: RequirementItem) -> list[str]:
         risks = []
         if req.assumptions:
@@ -188,6 +435,15 @@ class TestDesignAgent:
         if len(req.acceptance_criteria) < 2:
             risks.append("Limited specificity can reduce testability.")
         return risks
+
+    def _feedback_messages_to_requirements(self, requirements: list[RequirementItem]) -> list[str]:
+        feedback = []
+        for requirement in requirements:
+            if requirement.assumptions:
+                feedback.append(
+                    f"{requirement.requirement_id} needs clearer acceptance criteria and explicit error handling before strong test design can continue."
+                )
+        return feedback[:2]
 
     def _apply_feedback(
         self,
@@ -224,12 +480,17 @@ class TestDesignAgent:
 @dataclass
 class ReviewAgent:
     name: str = "Review Agent"
+    last_execution: dict[str, Any] = field(default_factory=dict)
 
     def review(
         self,
         requirements: list[RequirementItem],
         test_designs: list[TestCaseDesign],
+        runtime_config: AgentRuntimeConfig | None = None,
     ) -> ReviewReport:
+        if is_llm_enabled(runtime_config):
+            return self._review_with_llm(requirements, test_designs, runtime_config)
+
         findings = []
         improvements = []
 
@@ -263,9 +524,149 @@ class ReviewAgent:
         if approved and not findings:
             findings.append("No critical issues were identified.")
 
-        return ReviewReport(
+        report = ReviewReport(
             approved=approved,
             coverage_ratio=round(coverage_ratio, 2),
             findings=findings,
             improvement_actions=improvements,
         )
+        self.last_execution = {
+            "mode": "structured",
+            "reasoning_source": "structured_trace",
+            "notes": [],
+            "llm_used": False,
+            "routing_focus": self._infer_routing_focus(findings),
+        }
+        return report
+
+    def _review_with_llm(
+        self,
+        requirements: list[RequirementItem],
+        test_designs: list[TestCaseDesign],
+        runtime_config: AgentRuntimeConfig,
+    ) -> ReviewReport:
+        requirements_payload = [
+            {
+                "requirement_id": item.requirement_id,
+                "normalized_text": item.normalized_text,
+                "acceptance_criteria": item.acceptance_criteria,
+                "assumptions": item.assumptions,
+            }
+            for item in requirements
+        ]
+        designs_payload = [
+            {
+                "test_case_id": item.test_case_id,
+                "requirement_id": item.requirement_id,
+                "title": item.title,
+                "test_type": item.test_type,
+                "preconditions": item.preconditions,
+                "steps": item.steps,
+                "expected_results": item.expected_results,
+                "oracle": item.oracle,
+                "risks": item.risks,
+            }
+            for item in test_designs
+        ]
+        system_prompt = (
+            f"You are {runtime_config.agent_name}.\n"
+            f"{runtime_config.directives}\n"
+            "Review the planned test cases rigorously. "
+            "Do not approve generic placeholders just because there is nominal coverage."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "approved": {"type": "boolean"},
+                "coverage_ratio": {"type": "number"},
+                "findings": {"type": "array", "items": {"type": "string"}},
+                "improvement_actions": {"type": "array", "items": {"type": "string"}},
+                "routing_focus": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["requirements", "test_design"]},
+                },
+                "evaluation_notes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "approved",
+                "coverage_ratio",
+                "findings",
+                "improvement_actions",
+                "routing_focus",
+                "evaluation_notes",
+            ],
+        }
+        user_prompt = (
+            "Requirements under review:\n"
+            f"{requirements_payload}\n\n"
+            "Planned test cases under review:\n"
+            f"{designs_payload}\n\n"
+            "Return concrete findings. Use routing_focus to indicate whether the next repair should go to "
+            "the requirements analyst or the test design agent."
+        )
+        response, metadata = call_structured_llm(
+            runtime_config=runtime_config,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_name="review_report",
+            schema=schema,
+        )
+        report = ReviewReport(
+            approved=bool(response.get("approved")),
+            coverage_ratio=round(_clean_ratio(response.get("coverage_ratio")), 2),
+            findings=_clean_string_list(response.get("findings")),
+            improvement_actions=_clean_string_list(response.get("improvement_actions")),
+        )
+        if report.approved and not report.findings:
+            report.findings.append("No critical issues were identified.")
+        self.last_execution = {
+            "mode": "llm",
+            "reasoning_source": "llm_structured_output",
+            "notes": _clean_string_list(response.get("evaluation_notes")),
+            "llm_used": True,
+            "metadata": metadata,
+            "routing_focus": _clean_string_list(response.get("routing_focus")),
+        }
+        return report
+
+    def _infer_routing_focus(self, findings: list[str]) -> list[str]:
+        focus = []
+        if any("assumptions" in finding for finding in findings):
+            focus.append("requirements")
+        if any("weak oracle definition" in finding or "missing a designed test case" in finding for finding in findings):
+            focus.append("test_design")
+        return focus
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _clean_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _clean_priority(value: Any) -> str:
+    lowered = str(value or "").strip().lower()
+    if lowered in {"high", "medium", "normal"}:
+        return lowered
+    return "normal"
+
+
+def _clean_ratio(value: Any) -> float:
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return min(1.0, max(0.0, ratio))
+
+
+def _flatten_trace_notes(items: list[dict[str, Any]], key: str) -> list[str]:
+    notes = []
+    for item in items:
+        for note in _clean_string_list(item.get(key)):
+            notes.append(note)
+    return notes[:12]

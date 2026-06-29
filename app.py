@@ -53,8 +53,6 @@ def process_requirements(
         max_feedback_per_agent_pair=max(0, int(max_feedback_per_agent_pair)),
     )
     agent_configs = build_agent_runtime_configs(*agent_values)
-    preview_agents = [config.agent_name for config in agent_configs if config.execution_mode != "Structured baseline"]
-
     result = OrchestratorAgent(max_iterations=round_limit).process(
         title=normalized_title,
         requirements_text=normalized_requirements,
@@ -69,9 +67,10 @@ def process_requirements(
     payload["log_path"] = saved_run.log_path
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
-    preview_note = (
-        " LLM-backed selections are saved in the run configuration, but this first step still executes the structured baseline."
-        if preview_agents
+    live_llm_agents = [config.agent_name for config in agent_configs if config.execution_mode == "LLM-backed"]
+    llm_note = (
+        " Live LLM execution was enabled for: " + ", ".join(live_llm_agents) + "."
+        if live_llm_agents
         else ""
     )
     status = (
@@ -81,7 +80,7 @@ def process_requirements(
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
         f"Findings: {findings_count}. Improvement actions: {improvement_count}. "
-        f"Log file: {html.escape(payload['log_path'])}.{preview_note}"
+        f"Log file: {html.escape(payload['log_path'])}.{llm_note}"
         "</div>"
     )
     return status, build_workflow_report(payload)
@@ -98,13 +97,13 @@ def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
 
 
 def format_execution_mode_help(execution_mode: str) -> str:
-    if execution_mode == "LLM-backed (preview)":
-        return "LLM-backed (preview) stores the intended LLM setup and directives for this agent. Live LLM execution is not wired in yet."
+    if execution_mode == "LLM-backed":
+        return "LLM-backed enables live model execution where implemented and stores the resolved runtime details in the trace. Orchestration limits are still enforced locally."
     return "Structured baseline - deterministic implementation."
 
 
 def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict]:
-    is_llm = execution_mode == "LLM-backed (preview)"
+    is_llm = execution_mode == "LLM-backed"
     return (
         gr.update(visible=is_llm),
         gr.update(visible=is_llm),
@@ -858,10 +857,6 @@ def build_demo() -> gr.Blocks:
                     choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
                     value=DEFAULT_SCENARIO,
                 )
-                gr.Markdown(
-                    "Choose a preset, or switch to `Custom scenario` and write your own title and requirements below.",
-                    elem_classes=["scenario-help"],
-                )
                 title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
                 requirements_input = gr.Textbox(
                     label="Requirements",
@@ -1006,7 +1001,7 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
     controls_table = (
         "<table><thead><tr><th>Setting</th><th>Value</th><th>Meaning</th></tr></thead><tbody>"
         f"<tr><td>Maximum rounds</td><td>{html.escape(str(run_controls.get('max_rounds', 'Not set')))}</td><td>Upper limit for full pipeline passes.</td></tr>"
-        f"<tr><td>Maximum feedback messages</td><td>{html.escape(str(run_controls.get('max_feedback_messages', 'Not set')))}</td><td>Upper limit for direct agent-to-agent correction messages in future LLM-backed orchestration.</td></tr>"
+        f"<tr><td>Maximum feedback messages</td><td>{html.escape(str(run_controls.get('max_feedback_messages', 'Not set')))}</td><td>Upper limit for direct agent-to-agent correction messages during LLM-backed orchestration.</td></tr>"
         f"<tr><td>Maximum feedback per agent pair</td><td>{html.escape(str(run_controls.get('max_feedback_per_agent_pair', 'Not set')))}</td><td>Caps repeated back-and-forth between the same two agents.</td></tr>"
         "</tbody></table>"
     )
@@ -1021,7 +1016,7 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
     rows = []
     for config in agent_configs:
         directives = config.get("directives") or "No extra directives."
-        llm_active = config.get("execution_mode") == "LLM-backed (preview)"
+        llm_active = config.get("execution_mode") == "LLM-backed"
         model_id = config.get("model_id") or ("Not active in structured baseline" if not llm_active else "Not set")
         provider_strategy = config.get("provider_strategy") or ("Not active in structured baseline" if not llm_active else "Not set")
         model_family = config.get("model_family") or ("Not active in structured baseline" if not llm_active else "Not set")
@@ -1041,7 +1036,7 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
         "<p class='agent-config-text'>This run stores both the global control settings and the per-agent runtime setup. The feedback limits matter once model-backed agents can send targeted repair messages to each other.</p>"
         f"{controls_table}"
         "<h3>Agent runtime configuration</h3>"
-        "<p class='agent-config-text'>This run stores per-agent execution settings. `LLM-backed (preview)` means the intended model and directives are captured now, while the current baseline still executes deterministic logic.</p>"
+        "<p class='agent-config-text'>This run stores per-agent execution settings and the resolved live model details for every LLM-backed agent.</p>"
         "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Provider strategy</th><th>Model family</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"
@@ -1092,6 +1087,7 @@ def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) ->
                     stage_status=trace["status"],
                     execution_mode=runtime_config.get("execution_mode", "Structured baseline"),
                     model_used=runtime_config.get("model_id", ""),
+                    configured_directives=runtime_config.get("directives", ""),
                     input_summary=trace["input_summary"],
                     reasoning_trace=trace.get("reasoning_trace", []),
                     reasoning_source=trace.get("reasoning_source", "structured_trace"),
@@ -1112,6 +1108,7 @@ def build_stage_card(
     stage_status: str,
     execution_mode: str,
     model_used: str,
+    configured_directives: str,
     input_summary: list[str],
     reasoning_trace: list[str],
     reasoning_source: str,
@@ -1155,11 +1152,17 @@ def build_stage_card(
         if output_rest
         else ""
     )
+    configured_directive_block = (
+        f"<p class='agent-config-text'><strong>Configured directive:</strong> {html.escape(configured_directives)}</p>"
+        if configured_directives
+        else ""
+    )
     explanation_block = (
         "<details class='stage-details'>"
         "<summary>How this agent works</summary>"
         f"<p class='agent-config-text'>{html.escape(agent_explanation)}</p>"
         f"<p class='agent-config-text'>{html.escape(decision_explanation)}</p>"
+        f"{configured_directive_block}"
         "</details>"
         if agent_explanation or decision_explanation
         else ""
