@@ -357,6 +357,20 @@ button:hover {
   padding: 16px 18px 18px;
 }
 
+.io-summary {
+  margin: 0 0 10px;
+  color: #2b211a;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.agent-config-text {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
 .log-title {
   margin: 0 0 10px;
   font-size: 0.88rem;

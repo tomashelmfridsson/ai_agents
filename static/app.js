@@ -60,57 +60,19 @@ function buildWorkflowReport(payload) {
     )
     .join("");
 
-  const stages = [
-    buildStageCard(
-      1,
-      "Requirements analysis",
-      `${payload.requirements.length} requirement item(s) extracted`,
-      "Structured requirements",
-      payload.requirements.map(
-        (item) =>
-          `${item.requirement_id}: priority ${item.priority}, ${item.acceptance_criteria.length} acceptance criteria, ${item.assumptions.length} assumption(s).`,
+  const stages = (payload.stage_traces || [])
+    .map((trace, index) =>
+      buildStageCard(
+        index + 1,
+        trace.agent_name,
+        trace.status,
+        trace.input_summary || [],
+        trace.reasoning_trace || [],
+        trace.output_summary || [],
+        trace.reasoning_source || "structured_trace",
       ),
-    ),
-    buildStageCard(
-      2,
-      "Test design",
-      `${payload.test_designs.length} design(s) created`,
-      "Traceable test cases",
-      payload.test_designs.map(
-        (item) =>
-          `${item.test_case_id}: ${item.test_type} with ${item.steps.length} step(s) and ${item.expected_results.length} expected result(s).`,
-      ),
-    ),
-    buildStageCard(
-      3,
-      "Artifact generation",
-      `${payload.generated_artifacts.length} artifact(s) generated`,
-      "Selectors, test data, pseudocode",
-      payload.generated_artifacts.map(
-        (item) =>
-          `${item.artifact_id}: target ${item.target}, test name ${item.test_name}, ${item.selectors.length} selector suggestion(s).`,
-      ),
-    ),
-    buildStageCard(
-      4,
-      "Review",
-      "Coverage and assumptions reviewed",
-      "Review findings",
-      payload.review.findings.length ? payload.review.findings : ["No critical issues were identified."],
-    ),
-    buildStageCard(
-      5,
-      "Orchestration summary",
-      "Workflow pass completed",
-      "Iteration outcome",
-      [
-        `The workflow ended after ${payload.iterations} iteration(s).`,
-        `Coverage ratio: ${payload.review.coverage_ratio}.`,
-        `Approved: ${payload.review.approved ? "yes" : "no"}.`,
-        ...payload.review.improvement_actions,
-      ],
-    ),
-  ].join("");
+    )
+    .join("");
 
   return `
     <div class="report-shell">
@@ -130,10 +92,13 @@ function buildWorkflowReport(payload) {
   `;
 }
 
-function buildStageCard(index, role, status, outputType, logs) {
-  const items = (logs.length ? logs : ["No output produced."])
-    .map((log) => `<li>${escapeHtml(log)}</li>`)
-    .join("");
+function buildStageCard(index, role, status, inputSummary, reasoningTrace, outputSummary, reasoningSource) {
+  const inputLead = inputSummary[0] || "No input recorded.";
+  const inputItems = inputSummary.slice(1).map((log) => `<li>${escapeHtml(log)}</li>`).join("");
+  const reasoningLead = reasoningTrace[0] || "No reasoning trace recorded.";
+  const reasoningItems = reasoningTrace.slice(1).map((log) => `<li>${escapeHtml(log)}</li>`).join("");
+  const outputLead = outputSummary[0] || "No output recorded.";
+  const outputItems = outputSummary.slice(1).map((log) => `<li>${escapeHtml(log)}</li>`).join("");
 
   return `
     <section class="stage-card">
@@ -143,11 +108,18 @@ function buildStageCard(index, role, status, outputType, logs) {
           <div class="stage-role">${escapeHtml(role)}</div>
         </div>
         <div class="stage-meta"><strong>Status:</strong> ${escapeHtml(status)}</div>
-        <div class="stage-meta"><strong>Output:</strong> ${escapeHtml(outputType)}</div>
+        <div class="stage-meta"><strong>Trace source:</strong> ${escapeHtml(reasoningSource)}</div>
       </div>
       <div class="stage-body">
-        <div class="log-title">Execution log</div>
-        <ul class="log-list">${items}</ul>
+        <div class="log-title">Input</div>
+        <p class="io-summary">${escapeHtml(inputLead)}</p>
+        ${inputItems ? `<ul class="log-list">${inputItems}</ul>` : ""}
+        <div class="log-title">Reasoning trace</div>
+        <p class="io-summary">${escapeHtml(reasoningLead)}</p>
+        ${reasoningItems ? `<ul class="log-list">${reasoningItems}</ul>` : ""}
+        <div class="log-title">Output</div>
+        <p class="io-summary">${escapeHtml(outputLead)}</p>
+        ${outputItems ? `<ul class="log-list">${outputItems}</ul>` : ""}
       </div>
     </section>
   `;

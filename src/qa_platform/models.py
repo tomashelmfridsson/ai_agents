@@ -55,6 +55,8 @@ class StageTrace:
     input_summary: list[str]
     output_summary: list[str]
     status: str
+    reasoning_trace: list[str] = field(default_factory=list)
+    reasoning_source: str = "structured_trace"
     agent_explanation: str = ""
     decision_explanation: str = ""
 

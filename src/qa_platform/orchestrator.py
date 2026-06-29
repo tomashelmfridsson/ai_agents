@@ -84,6 +84,12 @@ class OrchestratorAgent:
                     for item in requirements[:4]
                 ],
             ],
+            reasoning_trace=[
+                "Split the incoming requirement text into separate candidate requirement statements.",
+                "Normalize each statement, assign deterministic IDs in sequence, and preserve the original wording.",
+                "Classify priority from keyword matches such as 'must', 'måste', or 'should'.",
+                "Expand each requirement with heuristic acceptance criteria and note missing or implicit error handling as assumptions.",
+            ],
             status="completed",
             agent_explanation=(
                 "This agent is deterministic. It splits the requirement text by line or sentence, "
@@ -126,6 +132,12 @@ class OrchestratorAgent:
                     )
                     for item in designs[:4]
                 ],
+            ],
+            reasoning_trace=[
+                "Read each structured requirement together with its acceptance criteria and assumptions.",
+                "Choose a test type from deterministic keyword routing such as gui/e2e, api/integration, unit, or scenario.",
+                "Build a test-case shell with fixed preconditions, reusable steps, expected results, and a generic oracle.",
+                "Carry forward requirement assumptions as design risks so later review can challenge weak testability.",
             ],
             status="completed",
             agent_explanation=(
@@ -170,6 +182,12 @@ class OrchestratorAgent:
                     for item in artifacts[:4]
                 ],
             ],
+            reasoning_trace=[
+                "Match every test design back to its source requirement by requirement ID.",
+                "Transform the chosen design into executable-looking artifacts such as test names, selectors, and test data placeholders.",
+                "Generate pseudocode from deterministic templates based on the selected test type.",
+                "Keep the result as a draft artifact only; no runtime execution or LLM judgment happens in this stage.",
+            ],
             status="completed",
             agent_explanation=(
                 "This agent generates concrete draft artifacts from the test case designs: names, "
@@ -207,13 +225,22 @@ class OrchestratorAgent:
                 ],
             ],
             status="approved" if review.approved else "changes requested",
+            reasoning_trace=[
+                "Compute requirement coverage by checking whether each requirement ID appears in at least one generated artifact.",
+                "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
+                "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
+                "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
+            ],
             agent_explanation=(
-                "This review stage acts as a hard quality gate. It checks coverage, the strength of "
-                "expected results, and whether assumptions remain unresolved."
+                "This review stage is a deterministic rule check, not an autonomous evaluator. It "
+                "computes requirement coverage from generated artifacts, flags test cases with too few "
+                "expected results, and flags requirements that still contain assumptions."
             ),
             decision_explanation=(
-                "Approval becomes true only when coverage is complete and the number of findings is "
-                "below the hard-coded threshold."
+                "Approval becomes true only when every requirement has at least one generated artifact "
+                "and the total number of findings stays at or below the hard-coded threshold. In this "
+                "implementation, findings mainly come from three sources: missing artifact coverage, weak "
+                "oracle definitions, and unresolved assumptions."
             ),
         )
 
@@ -246,19 +273,31 @@ class OrchestratorAgent:
                 *review.improvement_actions[:3],
             ],
             status="rerun" if should_rerun else "stop",
+            reasoning_trace=[
+                "Read the review approval signal, current findings, and remaining iteration budget.",
+                "Choose between full rerun and stop because this baseline orchestrator has no selective repair path.",
+                (
+                    "Route the workflow back to stage 1 for another full pass."
+                    if should_rerun
+                    else "Terminate the workflow because approval was reached or retry budget was exhausted."
+                ),
+            ],
             agent_explanation=(
-                "The orchestrator does not change prompts, data, or routing. It only decides whether "
-                "to stop or rerun the same sequence based on the review result and the iteration cap."
+                "The orchestrator is the central control component in this baseline. It is not acting "
+                "like an autonomous specialist agent. It evaluates the review result and then decides "
+                "whether to stop or rerun the whole pipeline."
             ),
             decision_explanation=(
                 "A rerun happens when review.approved is false and the maximum iteration limit has not "
-                "yet been reached. In practice, this means that at least one review finding remained "
-                "important enough to block approval, so the orchestrator starts the same five-agent pass again."
+                "yet been reached. The whole pipeline is rerun because this baseline has no selective "
+                "repair mechanism, no per-stage checkpoint resume, and no routing logic that can restart "
+                "from only the failing stage. In other words, the orchestrator can only repeat the full "
+                "sequence, not continue from the point where quality became insufficient."
                 if should_rerun
                 else (
                     "The pipeline stops because review.approved is true."
                     if review.approved
-                    else "The pipeline stops even though findings remain, because the maximum iteration limit was reached."
+                    else "The pipeline stops even though findings remain, because the maximum iteration limit was reached and this baseline has no more retry budget."
                 )
             ),
         )

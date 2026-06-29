@@ -561,6 +561,8 @@ def build_trace_sections(stage_traces: list[dict]) -> str:
                     role=trace["agent_name"],
                     stage_status=trace["status"],
                     input_summary=trace["input_summary"],
+                    reasoning_trace=trace.get("reasoning_trace", []),
+                    reasoning_source=trace.get("reasoning_source", "structured_trace"),
                     output_summary=trace["output_summary"],
                     agent_explanation=trace.get("agent_explanation", ""),
                     decision_explanation=trace.get("decision_explanation", ""),
@@ -577,21 +579,33 @@ def build_stage_card(
     role: str,
     stage_status: str,
     input_summary: list[str],
+    reasoning_trace: list[str],
+    reasoning_source: str,
     output_summary: list[str],
     agent_explanation: str,
     decision_explanation: str,
 ) -> str:
     input_lead = input_summary[0] if input_summary else "No input recorded."
+    reasoning_lead = reasoning_trace[0] if reasoning_trace else "No reasoning trace recorded."
     output_lead = output_summary[0] if output_summary else "No output recorded."
     input_rest = input_summary[1:] if len(input_summary) > 1 else []
+    reasoning_rest = reasoning_trace[1:] if len(reasoning_trace) > 1 else []
     output_rest = output_summary[1:] if len(output_summary) > 1 else []
     input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_rest)
+    reasoning_items = "".join(f"<li>{html.escape(log)}</li>" for log in reasoning_rest)
     output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_rest)
     input_details = (
         "<details class='io-details'><summary>Show input details</summary>"
         f"<ul class='log-list'>{input_items}</ul>"
         "</details>"
         if input_rest
+        else ""
+    )
+    reasoning_details = (
+        "<details class='io-details'><summary>Show reasoning details</summary>"
+        f"<ul class='log-list'>{reasoning_items}</ul>"
+        "</details>"
+        if reasoning_rest
         else ""
     )
     output_details = (
@@ -627,6 +641,12 @@ def build_stage_card(
         "<div class='log-title'>Input</div>"
         f"<p class='io-summary'>{html.escape(input_lead)}</p>"
         f"{input_details}"
+        "</div>"
+        "<div class='io-section'>"
+        "<div class='log-title'>Reasoning trace</div>"
+        f"<p class='io-summary'>{html.escape(reasoning_lead)}</p>"
+        f"<p class='agent-config-text'>Source: {html.escape(reasoning_source)}</p>"
+        f"{reasoning_details}"
         "</div>"
         "<div class='io-section'>"
         "<div class='log-title'>Output</div>"
