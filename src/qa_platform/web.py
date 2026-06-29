@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .literature import load_literature_markdown, render_markdown_document
 from .orchestrator import OrchestratorAgent
+from .storage import save_run
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -51,7 +52,12 @@ class QARequestHandler(BaseHTTPRequestHandler):
             return
 
         result = self.orchestrator.process(title=title, requirements_text=requirements)
-        self._send_json(result.to_dict(), HTTPStatus.OK)
+        response_payload = result.to_dict()
+        saved_run = save_run(response_payload)
+        response_payload["run_id"] = saved_run.run_id
+        response_payload["stored_at"] = saved_run.stored_at
+        response_payload["storage_path"] = saved_run.db_path
+        self._send_json(response_payload, HTTPStatus.OK)
 
     def log_message(self, format: str, *args) -> None:
         return

@@ -29,7 +29,7 @@ body {
 }
 
 .layout {
-  width: min(1140px, calc(100% - 32px));
+  width: min(1080px, calc(100% - 32px));
   margin: 0 auto;
   padding: 44px 0 64px;
 }
@@ -66,19 +66,20 @@ body {
 .doc-link {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(166, 69, 36, 0.22);
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--ink);
+  border: 1px solid rgba(61, 23, 10, 0.38);
+  background: linear-gradient(135deg, #7d2f17, #aa5a22);
+  color: #fff8f2;
   text-decoration: none;
   font-weight: 700;
+  font-size: 0.9rem;
   white-space: nowrap;
 }
 
 .doc-link:hover {
-  background: #fff;
+  filter: brightness(1.05);
 }
 
 h1,
@@ -90,16 +91,16 @@ h3 {
 
 h1 {
   max-width: 14ch;
-  font-size: clamp(2.4rem, 6vw, 4.8rem);
-  line-height: 0.95;
+  font-size: clamp(1.7rem, 3.4vw, 3.1rem);
+  line-height: 1.02;
 }
 
 .lede {
-  max-width: 74ch;
+  max-width: 68ch;
   margin: 0;
   color: var(--muted);
-  font-size: 1.06rem;
-  line-height: 1.7;
+  font-size: 0.96rem;
+  line-height: 1.65;
 }
 
 .panel {
@@ -111,32 +112,8 @@ h1 {
 }
 
 .panel + .panel,
-.info-grid + .panel,
 .workflow-strip + .panel {
   margin-top: 20px;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.info-card p,
-.info-card li {
-  color: var(--muted);
-  line-height: 1.7;
-  font-weight: 500;
-}
-
-.info-card p:last-child {
-  margin-bottom: 0;
-}
-
-.info-card ul {
-  margin: 10px 0 0 18px;
-  padding: 0;
 }
 
 .workflow-strip {

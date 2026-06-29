@@ -30,42 +30,6 @@
         </p>
       </section>
 
-      <section class="info-grid">
-        <article class="panel info-card">
-          <p class="section-label">Current baseline</p>
-          <p>
-            A fixed synchronous pipeline executes the same stages in order on every run. This
-            version is deterministic and intentionally non-agentic so future LLM and orchestration
-            variants can be compared against it.
-          </p>
-        </article>
-        <article class="panel info-card">
-          <p class="section-label">Research direction</p>
-          <p>
-            The target application compares LLM quality, orchestration patterns, observability,
-            local versus cloud inference, and QA-specific suitability across multiple agent
-            frameworks.
-          </p>
-        </article>
-        <article class="panel info-card">
-          <p class="section-label">Iterations</p>
-          <p>
-            In this baseline, the Orchestrator Agent coordinates one full pass across the
-            Requirements Analyst Agent, Test Design Agent, and Review Agent.
-            The orchestrator repeats the pass until approval or the iteration limit is reached.
-          </p>
-        </article>
-        <article class="panel info-card">
-          <p class="section-label">Technical flow</p>
-          <ul>
-            <li>Requirement parsing and normalization</li>
-            <li>Heuristic acceptance criteria extraction</li>
-            <li>Rule-based test design</li>
-            <li>Coverage and assumption review</li>
-          </ul>
-        </article>
-      </section>
-
       <section class="workflow-strip panel">
         <div class="workflow-step">
           <strong>Orchestrator Agent</strong>

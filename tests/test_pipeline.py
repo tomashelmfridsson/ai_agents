@@ -1,3 +1,6 @@
+import os
+import sqlite3
+import tempfile
 from pathlib import Path
 import sys
 import unittest
@@ -11,6 +14,7 @@ if str(SRC) not in sys.path:
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
+from qa_platform.storage import save_run
 
 
 class PipelineTests(unittest.TestCase):
@@ -130,6 +134,39 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(configs[1].model_id, "Qwen/Qwen3-32B:cheapest")
         self.assertIn("strict requirement objects", configs[1].directives)
         self.assertEqual(configs[3].model_id, "Ollama local / Llama 3.3 70B Instruct")
+
+    def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+        result = orchestrator.process(
+            title="Persistence demo",
+            requirements_text="The user must be able to sign in with email and password.",
+        )
+        payload = result.to_dict()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "qa_runs_test.sqlite3"
+            previous = os.environ.get("QA_RUNS_DB_PATH")
+            os.environ["QA_RUNS_DB_PATH"] = str(db_path)
+            try:
+                saved_run = save_run(payload)
+            finally:
+                if previous is None:
+                    os.environ.pop("QA_RUNS_DB_PATH", None)
+                else:
+                    os.environ["QA_RUNS_DB_PATH"] = previous
+
+            self.assertEqual(saved_run.run_id, 1)
+            self.assertTrue(db_path.exists())
+
+            connection = sqlite3.connect(db_path)
+            try:
+                row = connection.execute(
+                    "SELECT title, requirement_count, design_count, approved FROM qa_runs WHERE id = 1"
+                ).fetchone()
+            finally:
+                connection.close()
+
+            self.assertEqual(row, ("Persistence demo", 1, 1, 1))
 
 
 if __name__ == "__main__":

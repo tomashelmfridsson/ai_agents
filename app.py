@@ -29,6 +29,7 @@ from qa_platform.sample_scenarios import (
     SAMPLE_SCENARIOS,
     load_sample_scenario,
 )
+from qa_platform.storage import save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
@@ -48,6 +49,10 @@ def process_requirements(title: str, requirements: str, max_iterations: float, *
         agent_configs=agent_configs,
     )
     payload = result.to_dict()
+    saved_run = save_run(payload)
+    payload["run_id"] = saved_run.run_id
+    payload["stored_at"] = saved_run.stored_at
+    payload["storage_path"] = saved_run.db_path
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
     preview_note = (
@@ -57,6 +62,7 @@ def process_requirements(title: str, requirements: str, max_iterations: float, *
     )
     status = (
         "<div class='result-status'>"
+        f"Saved as run #{payload['run_id']}. "
         f"Completed after {payload['iterations']} of {iteration_limit} allowed iteration(s). "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
@@ -110,7 +116,7 @@ def build_demo() -> gr.Blocks:
     .gradio-container div {
       color: inherit;
     }
-    .app-shell { max-width: 1160px; margin: 0 auto; }
+    .app-shell { max-width: 1080px; margin: 0 auto; }
     .hero-card, .panel-card, .info-card {
       border-radius: 24px;
       border: 1px solid var(--app-line);
@@ -123,52 +129,38 @@ def build_demo() -> gr.Blocks:
     }
     .doc-pill-button,
     .doc-pill-button button {
-      display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+      display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
       border-radius: 999px; text-decoration: none; font-weight: 700;
-      color: var(--app-ink) !important;
-      background: rgba(255,255,255,0.97);
-      border: 1px solid rgba(143, 53, 24, 0.28);
+      color: #fff8f2 !important;
+      background: linear-gradient(135deg, #7d2f17, #aa5a22);
+      border: 1px solid rgba(61, 23, 10, 0.38);
+      font-size: 0.9rem;
     }
-    .doc-pill-button button:hover { background: #fff; }
+    .doc-pill-button button:hover { filter: brightness(1.05); }
     .doc-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       justify-content: flex-end;
     }
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }
-    .info-card { padding: 18px 20px; }
-    .info-label {
-      font-size: 0.76rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--app-accent) !important;
-      margin-bottom: 8px;
-      font-weight: 700;
-    }
-    .info-card p, .info-card li {
-      color: var(--app-muted) !important;
-      line-height: 1.7;
-      margin: 0;
-      font-size: 1rem;
-      font-weight: 500;
-    }
-    .info-card ul { margin: 10px 0 0 18px; padding: 0; }
     .workflow-strip {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 12px;
-      margin-top: 14px;
+      margin-top: 10px;
     }
     .workflow-step {
       border-radius: 18px;
       border: 1px solid var(--app-line);
       background: rgba(255, 253, 249, 0.99);
+      overflow: hidden;
+    }
+    .workflow-step summary {
+      list-style: none;
+      cursor: pointer;
       padding: 14px 16px;
+    }
+    .workflow-step summary::-webkit-details-marker {
+      display: none;
     }
     .workflow-step strong {
       display: block;
@@ -181,6 +173,18 @@ def build_demo() -> gr.Blocks:
       display: block;
       color: var(--app-muted) !important;
       font-size: 0.95rem;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+    .workflow-config {
+      padding: 0 16px 16px;
+      border-top: 1px solid var(--app-line);
+      background: rgba(250, 244, 235, 0.96);
+    }
+    .workflow-config-note {
+      margin: 10px 0 12px;
+      color: var(--app-muted) !important;
+      font-size: 0.92rem;
       line-height: 1.5;
       font-weight: 500;
     }
@@ -431,16 +435,16 @@ def build_demo() -> gr.Blocks:
                 gr.HTML(
                     """
                     <section style="padding: 28px;">
-                      <div style="display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
-                        <div style="max-width:62ch;">
+                      <div style="display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <div style="max-width:58ch;">
                           <p style="margin:0; text-transform:uppercase; letter-spacing:0.18em; font-size:0.8rem; color:var(--app-accent); font-weight:700;">Research prototype</p>
-                          <h1 style="margin:12px 0 0; font-size:clamp(2.4rem, 5vw, 4.7rem); line-height:0.95;">
+                          <h1 style="margin:10px 0 0; font-size:clamp(1.7rem, 3.4vw, 3.1rem); line-height:1.02; color:var(--app-ink);">
                             QA agent research workbench for LLM and orchestration comparisons
                           </h1>
                         </div>
                         <div class="doc-actions" id="literature-button-slot"></div>
                       </div>
-                      <p style="max-width:72ch; margin:18px 0 0; color:var(--app-muted); line-height:1.7; font-size:1.04rem; font-weight:500;">
+                      <p style="max-width:68ch; margin:14px 0 0; color:var(--app-muted); line-height:1.65; font-size:0.96rem; font-weight:500;">
                         The broader project evaluates multiple LLMs, local versus cloud inference, and alternative agentic orchestration patterns for QA. The current demo is the deterministic baseline: a synchronous rule-based workflow used as a controlled reference point.
                       </p>
                     </section>
@@ -458,41 +462,6 @@ def build_demo() -> gr.Blocks:
                     link_target="_blank",
                     elem_classes=["doc-pill-button"],
                 )
-
-            gr.HTML(
-                """
-                <section class="info-grid">
-                  <article class="info-card">
-                    <div class="info-label">Current baseline</div>
-                    <p>A fixed synchronous orchestrator runs the same four agent passes in the same order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
-                  </article>
-                  <article class="info-card">
-                    <div class="info-label">Research direction</div>
-                    <p>The target application compares LLM quality, orchestration patterns, observability, local versus cloud inference, and QA-specific suitability across multiple agent frameworks using a shared execution and reporting structure.</p>
-                  </article>
-                  <article class="info-card">
-                    <div class="info-label">Iterations</div>
-                    <p>In this baseline, the Orchestrator Agent coordinates one full pass across the Requirements Analyst Agent, Test Design Agent, and Review Agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
-                  </article>
-                  <article class="info-card">
-                    <div class="info-label">Technical flow</div>
-                    <ul>
-                      <li>Requirement extraction with heuristic enrichment</li>
-                      <li>Test case design from structured requirement items</li>
-                      <li>Review and orchestration decision-making</li>
-                      <li>Test case quality feedback for iteration decisions</li>
-                    </ul>
-                  </article>
-                </section>
-                <section class="workflow-strip">
-                  <div class="workflow-step"><strong>Orchestrator Agent</strong><span>Decide which agent should act next, collect outputs, and either stop the run or trigger more work based on the review result and iteration budget.</span></div>
-                  <div class="workflow-step"><strong>Requirements Analyst Agent</strong><span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span></div>
-                  <div class="workflow-step"><strong>Test Design Agent</strong><span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span></div>
-                  <div class="workflow-step"><strong>Review Agent</strong><span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span></div>
-                </section>
-                """
-            )
-
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Run workflow")
                 scenario_picker = gr.Dropdown(
@@ -517,7 +486,6 @@ def build_demo() -> gr.Blocks:
                     step=1,
                     value=2,
                 )
-                gr.Markdown("## Agent execution configuration")
                 gr.Markdown(
                     "Use `Structured baseline` for the current deterministic implementation, or choose `Model-backed (preview)` to save intended model settings per agent before we wire in live LLM execution. The GUI now separates provider strategy from model family so we can later plug in Hugging Face, Ollama, or custom OpenAI-compatible backends.",
                     elem_classes=["scenario-help"],
@@ -525,32 +493,29 @@ def build_demo() -> gr.Blocks:
                 agent_config_inputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
                     for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
-                        with gr.Group(elem_classes=["agent-config-card"]):
+                        with gr.Accordion(agent_name, open=True, elem_classes=["workflow-step"]):
                             hint = AGENT_MODEL_HINTS.get(agent_key, "")
-                            description_html = html.escape(description)
-                            hint_html = (
-                                f" <strong>Cheap/free candidate:</strong> {html.escape(hint)}"
-                                if hint
-                                else ""
-                            )
-                            gr.HTML(f"<h4>{html.escape(agent_name)}</h4><p>{description_html}{hint_html}</p>")
+                            description_text = description
+                            if hint:
+                                description_text += f"\n\nCheap/free candidate: {hint}"
+                            gr.Markdown(description_text, elem_classes=["workflow-config-note"])
                             execution_mode_input = gr.Dropdown(
-                                label=f"{agent_name} execution mode",
+                                label="Execution mode",
                                 choices=EXECUTION_MODE_CHOICES,
                                 value=EXECUTION_MODE_CHOICES[0],
                             )
                             provider_strategy_input = gr.Dropdown(
-                                label=f"{agent_name} provider strategy",
+                                label="Provider strategy",
                                 choices=PROVIDER_STRATEGY_CHOICES,
                                 value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
                             )
                             model_family_input = gr.Dropdown(
-                                label=f"{agent_name} model family",
+                                label="Model family",
                                 choices=MODEL_FAMILY_CHOICES,
                                 value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
                             )
                             directives_input = gr.Textbox(
-                                label=f"{agent_name} directives",
+                                label="Directives",
                                 value=default_directives,
                                 lines=3,
                             )
@@ -635,16 +600,21 @@ def build_summary_overview(payload: dict) -> str:
     approved = "yes" if review["approved"] else "no"
     findings = review["findings"]
     improvement_actions = review["improvement_actions"]
+    run_id = payload.get("run_id")
+    storage_path = payload.get("storage_path")
     lead = (
         f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
         f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} iteration(s) with "
         f"coverage ratio {review['coverage_ratio']} and approved={approved}."
     )
     bullets = [
+        f"Stored run ID: {run_id}" if run_id is not None else "Stored run ID: not available",
         f"Review findings: {len(findings)}",
         f"Improvement actions: {len(improvement_actions)}",
         f"Final approval decision: {approved}",
     ]
+    if storage_path:
+        bullets.append(f"Run database: {storage_path}")
     if findings:
         bullets.append(f"Most important review issue: {findings[0]}")
     if improvement_actions:
