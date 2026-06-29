@@ -1,4 +1,5 @@
 import html
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -33,6 +34,18 @@ from qa_platform.sample_scenarios import (
 from qa_platform.storage import save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
+
+
+APP_THEME = gr.themes.Soft(
+    primary_hue="amber",
+    secondary_hue="orange",
+    neutral_hue="stone",
+)
+
+
+def _blocks_support_launch_theming() -> bool:
+    launch_signature = inspect.signature(gr.Blocks.launch)
+    return "theme" in launch_signature.parameters and "css" in launch_signature.parameters
 
 
 def process_requirements(
@@ -865,8 +878,12 @@ CUSTOM_CSS = """
 
 
 def build_demo() -> gr.Blocks:
+    block_kwargs = {"title": "QA Agent Research Workbench"}
+    if not _blocks_support_launch_theming():
+        block_kwargs["theme"] = APP_THEME
+        block_kwargs["css"] = CUSTOM_CSS
 
-    with gr.Blocks(title="QA Agent Research Workbench") as demo:
+    with gr.Blocks(**block_kwargs) as demo:
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Group(elem_classes=["hero-card"]):
                 gr.HTML(
@@ -890,13 +907,11 @@ def build_demo() -> gr.Blocks:
                 gr.Button(
                     "Open literature review",
                     link=LITERATURE_URL,
-                    link_target="_blank",
                     elem_classes=["doc-pill-button"],
                 )
                 gr.Button(
                     "Open project brief",
                     link=PROJECT_BRIEF_URL,
-                    link_target="_blank",
                     elem_classes=["doc-pill-button"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
@@ -1420,13 +1435,11 @@ demo = build_demo()
 
 
 if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.getenv("PORT", "7860")),
-        theme=gr.themes.Soft(
-            primary_hue="amber",
-            secondary_hue="orange",
-            neutral_hue="stone",
-        ),
-        css=CUSTOM_CSS,
-    )
+    launch_kwargs = {
+        "server_name": "0.0.0.0",
+        "server_port": int(os.getenv("PORT", "7860")),
+    }
+    if _blocks_support_launch_theming():
+        launch_kwargs["theme"] = APP_THEME
+        launch_kwargs["css"] = CUSTOM_CSS
+    demo.launch(**launch_kwargs)
