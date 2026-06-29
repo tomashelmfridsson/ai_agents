@@ -77,6 +77,7 @@ class StageTrace:
     reasoning_source: str = "structured_trace"
     agent_explanation: str = ""
     decision_explanation: str = ""
+    duration_ms: int = 0
 
 
 @dataclass

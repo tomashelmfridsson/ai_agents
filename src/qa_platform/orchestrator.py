@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass, field
+import time
 
 from .agents import (
     RequirementsAnalystAgent,
@@ -46,11 +47,13 @@ class OrchestratorAgent:
         while True:
             if current_stage == "requirements":
                 requirements_runtime = runtime_lookup.get("requirements_analyst")
+                started_at = time.perf_counter()
                 requirements = self.requirements_analyst.analyze(
                     requirements_text,
                     requirements_feedback,
                     requirements_runtime,
                 )
+                duration_ms = self._elapsed_ms(started_at)
                 stage_traces.append(
                     self._build_requirements_trace(
                         route_round,
@@ -58,6 +61,7 @@ class OrchestratorAgent:
                         requirements,
                         requirements_feedback,
                         requirements_runtime,
+                        duration_ms,
                     )
                 )
                 requirements_feedback = []
@@ -66,7 +70,9 @@ class OrchestratorAgent:
 
             if current_stage == "design":
                 design_runtime = runtime_lookup.get("test_design")
+                started_at = time.perf_counter()
                 designs = self.test_designer.design(requirements, design_feedback, design_runtime)
+                duration_ms = self._elapsed_ms(started_at)
                 stage_traces.append(
                     self._build_design_trace(
                         route_round,
@@ -74,6 +80,7 @@ class OrchestratorAgent:
                         designs,
                         design_feedback,
                         design_runtime,
+                        duration_ms,
                     )
                 )
                 design_feedback = []
@@ -101,6 +108,7 @@ class OrchestratorAgent:
                             runtime_config=runtime_lookup.get("orchestrator"),
                             run_controls=control_config,
                             total_feedback_messages=total_feedback_messages,
+                            duration_ms=0,
                         )
                     )
                     requirements_feedback = design_backtrack_feedback
@@ -111,9 +119,11 @@ class OrchestratorAgent:
                 continue
 
             review_runtime = runtime_lookup.get("review")
+            started_at = time.perf_counter()
             review = self.reviewer.review(requirements, designs, review_runtime)
+            duration_ms = self._elapsed_ms(started_at)
             stage_traces.append(
-                self._build_review_trace(route_round, requirements, designs, review, review_runtime)
+                self._build_review_trace(route_round, requirements, designs, review, review_runtime, duration_ms)
             )
             if review.approved:
                 stage_traces.append(
@@ -124,6 +134,7 @@ class OrchestratorAgent:
                         run_controls=control_config,
                         total_feedback_messages=total_feedback_messages,
                         stop_reason="Stop pipeline because the review approved the result.",
+                        duration_ms=0,
                     )
                 )
                 break
@@ -152,6 +163,7 @@ class OrchestratorAgent:
                         runtime_config=runtime_lookup.get("orchestrator"),
                         run_controls=control_config,
                         total_feedback_messages=total_feedback_messages,
+                        duration_ms=0,
                     )
                 )
                 if backtrack_route["to_agent"] == "Requirements Analyst":
@@ -173,6 +185,7 @@ class OrchestratorAgent:
                     stop_reason=(
                         "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available."
                     ),
+                    duration_ms=0,
                 )
             )
             break
@@ -197,6 +210,7 @@ class OrchestratorAgent:
         requirements: list,
         feedback_messages: list[str],
         runtime_config: AgentRuntimeConfig | None = None,
+        duration_ms: int = 0,
     ) -> StageTrace:
         detailed_reasoning = []
         execution = self.requirements_analyst.last_execution
@@ -280,6 +294,7 @@ class OrchestratorAgent:
                 )
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
+            duration_ms=duration_ms,
         )
 
     def _build_design_trace(
@@ -289,6 +304,7 @@ class OrchestratorAgent:
         designs: list,
         feedback_messages: list[str],
         runtime_config: AgentRuntimeConfig | None = None,
+        duration_ms: int = 0,
     ) -> StageTrace:
         execution = self.test_designer.last_execution
         llm_active = bool(execution.get("llm_used"))
@@ -371,6 +387,7 @@ class OrchestratorAgent:
                 )
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
+            duration_ms=duration_ms,
         )
 
     def _build_review_trace(
@@ -380,6 +397,7 @@ class OrchestratorAgent:
         designs: list,
         review,
         runtime_config: AgentRuntimeConfig | None = None,
+        duration_ms: int = 0,
     ) -> StageTrace:
         execution = self.reviewer.last_execution
         llm_active = bool(execution.get("llm_used"))
@@ -446,6 +464,7 @@ class OrchestratorAgent:
                 )
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
+            duration_ms=duration_ms,
         )
 
     def _can_send_feedback(
@@ -538,6 +557,7 @@ class OrchestratorAgent:
         runtime_config: AgentRuntimeConfig | None,
         run_controls: RunControlConfig,
         total_feedback_messages: int,
+        duration_ms: int,
     ) -> StageTrace:
         llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
         return StageTrace(
@@ -583,6 +603,7 @@ class OrchestratorAgent:
                 )
             ),
             reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",
+            duration_ms=duration_ms,
         )
 
     def _build_stop_orchestrator_trace(
@@ -593,6 +614,7 @@ class OrchestratorAgent:
         run_controls: RunControlConfig,
         total_feedback_messages: int,
         stop_reason: str,
+        duration_ms: int,
     ) -> StageTrace:
         llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
         return StageTrace(
@@ -643,7 +665,11 @@ class OrchestratorAgent:
                 )
             ),
             reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",
+            duration_ms=duration_ms,
         )
+
+    def _elapsed_ms(self, started_at: float) -> int:
+        return max(0, int(round((time.perf_counter() - started_at) * 1000)))
 
     def _explain_review_finding(self, finding: str) -> str:
         if "weak oracle definition" in finding:

@@ -42,7 +42,7 @@ def process_requirements(
     max_feedback_messages: float,
     max_feedback_per_agent_pair: float,
     *agent_values: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
@@ -87,7 +87,7 @@ def process_requirements(
         f"Log file: {html.escape(payload['log_path'])}.{llm_note}"
         "</div>"
     )
-    return status, build_workflow_report(payload)
+    return status, build_workflow_report(payload), saved_run.log_path
 
 
 def mark_custom_scenario(*_args: str) -> str:
@@ -941,6 +941,11 @@ def build_demo() -> gr.Blocks:
                     show_label=False,
                     container=False,
                 )
+                log_file_output = gr.File(
+                    label="Download run log",
+                    value=None,
+                    interactive=False,
+                )
 
         run_button.click(
             fn=process_requirements,
@@ -952,7 +957,7 @@ def build_demo() -> gr.Blocks:
                 max_feedback_per_pair_input,
                 *agent_config_inputs,
             ],
-            outputs=[status_output, result_output],
+            outputs=[status_output, result_output, log_file_output],
         )
         scenario_picker.change(
             fn=load_sample_scenario,
@@ -1156,6 +1161,7 @@ def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) ->
                     execution_mode=runtime_config.get("execution_mode", "Structured baseline"),
                     model_used=runtime_config.get("model_id", ""),
                     configured_directives=runtime_config.get("directives", ""),
+                    duration_ms=int(trace.get("duration_ms", 0) or 0),
                     input_summary=trace["input_summary"],
                     reasoning_trace=trace.get("reasoning_trace", []),
                     reasoning_source=trace.get("reasoning_source", "structured_trace"),
@@ -1177,6 +1183,7 @@ def build_stage_card(
     execution_mode: str,
     model_used: str,
     configured_directives: str,
+    duration_ms: int,
     input_summary: list[str],
     reasoning_trace: list[str],
     reasoning_source: str,
@@ -1196,6 +1203,7 @@ def build_stage_card(
         if model_used
         else f"{runtime_label} / deterministic implementation"
     )
+    duration_label = f"{duration_ms} ms" if duration_ms > 0 else "under 1 ms"
     input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_rest)
     reasoning_items = "".join(f"<li>{html.escape(log)}</li>" for log in reasoning_rest)
     output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_rest)
@@ -1246,6 +1254,7 @@ def build_stage_card(
         "</div>"
         f"<div class='stage-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
         f"<div class='stage-meta'><strong>Execution:</strong> {html.escape(runtime_detail)}</div>"
+        f"<div class='stage-meta'><strong>Time:</strong> {html.escape(duration_label)}</div>"
         "<div class='stage-chevron'></div>"
         "</div>"
         "</summary>"

@@ -133,6 +133,7 @@ def build_run_log_text(
                     str(trace.get("agent_name", "")),
                     f"Status: {trace.get('status', '')}",
                     f"Execution: {execution_mode} / {model_id}",
+                    f"Time: {int(trace.get('duration_ms', 0) or 0)} ms",
                     f"Configured directive: {runtime_config.get('directives', '') or 'No directives configured.'}",
                 ]
             )
