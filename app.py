@@ -797,25 +797,25 @@ def build_demo() -> gr.Blocks:
                                         AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
                                     ),
                                     elem_classes=["llm-summary"],
-                                    visible=False,
+                                    visible=True,
                                 )
                                 provider_strategy_input = gr.Dropdown(
                                     label="Provider strategy",
                                     choices=PROVIDER_STRATEGY_CHOICES,
                                     value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
-                                    visible=False,
+                                    visible=True,
                                 )
                                 model_family_input = gr.Dropdown(
                                     label="Model family",
                                     choices=MODEL_FAMILY_CHOICES,
                                     value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
-                                    visible=False,
+                                    visible=True,
                                 )
                                 directives_input = gr.Textbox(
                                     label="Directives",
                                     value=default_directives,
                                     lines=3,
-                                    visible=False,
+                                    visible=True,
                                 )
                                 provider_strategy_input.change(
                                     fn=format_llm_config_summary,

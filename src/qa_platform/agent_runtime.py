@@ -3,7 +3,7 @@ from __future__ import annotations
 from .models import AgentRuntimeConfig
 
 
-EXECUTION_MODE_CHOICES = ["Structured baseline", "LLM-backed (preview)"]
+EXECUTION_MODE_CHOICES = ["LLM-backed (preview)", "Structured baseline"]
 PROVIDER_STRATEGY_CHOICES = [
     "HF cheapest/free credits",
     "HF fastest",

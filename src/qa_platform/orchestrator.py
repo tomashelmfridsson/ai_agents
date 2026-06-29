@@ -46,7 +46,12 @@ class OrchestratorAgent:
             if current_stage == "requirements":
                 requirements = self.requirements_analyst.analyze(requirements_text, requirements_feedback)
                 stage_traces.append(
-                    self._build_requirements_trace(route_round, requirements_text, requirements)
+                    self._build_requirements_trace(
+                        route_round,
+                        requirements_text,
+                        requirements,
+                        requirements_feedback,
+                    )
                 )
                 requirements_feedback = []
                 current_stage = "design"
@@ -54,7 +59,9 @@ class OrchestratorAgent:
 
             if current_stage == "design":
                 designs = self.test_designer.design(requirements, design_feedback)
-                stage_traces.append(self._build_design_trace(route_round, requirements, designs))
+                stage_traces.append(
+                    self._build_design_trace(route_round, requirements, designs, design_feedback)
+                )
                 design_feedback = []
                 design_backtrack_feedback = self._build_design_backtrack_feedback(requirements)
                 if (
@@ -164,10 +171,17 @@ class OrchestratorAgent:
             stage_traces=stage_traces,
         )
 
-    def _build_requirements_trace(self, iteration: int, requirements_text: str, requirements: list) -> StageTrace:
+    def _build_requirements_trace(
+        self,
+        iteration: int,
+        requirements_text: str,
+        requirements: list,
+        feedback_messages: list[str],
+    ) -> StageTrace:
         detailed_reasoning = []
         for item in requirements[:4]:
             detailed_reasoning.extend(self._explain_requirement_derivation(item))
+            detailed_reasoning.extend(self._explain_requirement_feedback_application(item, feedback_messages))
 
         return StageTrace(
             iteration=iteration,
@@ -176,8 +190,14 @@ class OrchestratorAgent:
             input_summary=[
                 f"Raw requirement lines: {len([line for line in requirements_text.splitlines() if line.strip()])}",
                 f"Input characters: {len(requirements_text)}",
+                (
+                    "Incoming feedback messages: none"
+                    if not feedback_messages
+                    else f"Incoming feedback messages: {len(feedback_messages)}"
+                ),
                 "Raw requirement text:",
                 requirements_text,
+                *feedback_messages,
             ],
             output_summary=[
                 f"Extracted {len(requirements)} requirement item(s).",
@@ -196,6 +216,11 @@ class OrchestratorAgent:
                 "Normalize each statement, assign deterministic IDs in sequence, and preserve the original wording.",
                 "Classify priority from keyword matches such as 'must', 'måste', or 'should'.",
                 "Expand each requirement with heuristic acceptance criteria and note missing or implicit error handling as assumptions.",
+                (
+                    "No targeted feedback was applied in this pass."
+                    if not feedback_messages
+                    else "Apply targeted backtracking feedback to the specific requirements mentioned by upstream agents before finalizing acceptance criteria and assumptions."
+                ),
                 *detailed_reasoning,
             ],
             status="completed",
@@ -210,7 +235,13 @@ class OrchestratorAgent:
             ),
         )
 
-    def _build_design_trace(self, iteration: int, requirements: list, designs: list) -> StageTrace:
+    def _build_design_trace(
+        self,
+        iteration: int,
+        requirements: list,
+        designs: list,
+        feedback_messages: list[str],
+    ) -> StageTrace:
         return StageTrace(
             iteration=iteration,
             stage_index=2,
@@ -218,6 +249,11 @@ class OrchestratorAgent:
             input_summary=[
                 f"Requirements received: {len(requirements)}",
                 f"Acceptance criteria seen: {sum(len(item.acceptance_criteria) for item in requirements)}",
+                (
+                    "Incoming feedback messages: none"
+                    if not feedback_messages
+                    else f"Incoming feedback messages: {len(feedback_messages)}"
+                ),
                 *[
                     (
                         f"{item.requirement_id}: \"{item.normalized_text}\" | "
@@ -246,6 +282,11 @@ class OrchestratorAgent:
                 "Choose a test type from deterministic keyword routing such as gui/e2e, api/integration, unit, or scenario.",
                 "Build a test-case shell with fixed preconditions, reusable steps, expected results, and a generic oracle.",
                 "Carry forward requirement assumptions as design risks so later review can challenge weak testability.",
+                (
+                    "No targeted design feedback was applied in this pass."
+                    if not feedback_messages
+                    else "Incorporate targeted review feedback before finalizing steps, expected results, and oracle wording."
+                ),
             ],
             status="completed",
             agent_explanation=(
@@ -522,6 +563,30 @@ class OrchestratorAgent:
             f"{item.requirement_id}: acceptance-criteria derivation -> {'; '.join(acceptance_rules)}.",
             f"{item.requirement_id}: assumptions derivation -> {'; '.join(assumption_rules)}.",
         ]
+
+    def _explain_requirement_feedback_application(
+        self,
+        item,
+        feedback_messages: list[str],
+    ) -> list[str]:
+        if not feedback_messages:
+            return []
+
+        combined_feedback = " ".join(feedback_messages).lower()
+        if item.requirement_id.lower() not in combined_feedback:
+            return [f"{item.requirement_id}: no targeted upstream feedback matched this requirement in this pass."]
+
+        effects = []
+        if "Observable success and failure outcomes shall be explicitly defined." in item.acceptance_criteria:
+            effects.append("added explicit observable-outcome acceptance criteria")
+        if "Negative and error flows shall be explicitly defined and testable." in item.acceptance_criteria:
+            effects.append("added explicit negative/error-flow acceptance criteria")
+        if not item.assumptions:
+            effects.append("removed prior assumptions that were addressed by the feedback")
+        if not effects:
+            effects.append("feedback matched this requirement but did not change the final structured output")
+
+        return [f"{item.requirement_id}: upstream feedback was applied -> {'; '.join(effects)}."]
 
     def _build_review_reasoning(self, requirements: list, designs: list, review) -> list[str]:
         covered_requirements = {design.requirement_id for design in designs}

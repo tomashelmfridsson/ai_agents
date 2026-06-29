@@ -171,6 +171,32 @@ class PipelineTests(unittest.TestCase):
             )
         )
 
+    def test_requirements_trace_shows_targeted_backtracking_feedback(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=2)
+        result = orchestrator.process(
+            title="Backtracking feedback demo",
+            requirements_text=(
+                "The user must be able to sign in with email and password.\n"
+                "An administrator shall be able to view an overview of registered users.\n"
+                "The user shall be able to register a new account through a form."
+            ),
+        )
+
+        second_requirements_trace = next(
+            trace
+            for trace in result.stage_traces
+            if trace.agent_name == "Requirements Analyst" and trace.iteration == 2
+        )
+        self.assertTrue(
+            any("Incoming feedback messages:" in line for line in second_requirements_trace.input_summary)
+        )
+        self.assertTrue(
+            any("REQ-001 needs clearer acceptance criteria" in line for line in second_requirements_trace.input_summary)
+        )
+        self.assertTrue(
+            any("upstream feedback was applied" in line for line in second_requirements_trace.reasoning_trace)
+        )
+
     def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
         result = orchestrator.process(
