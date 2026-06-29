@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .models import GeneratedArtifact, RequirementItem, ReviewReport, TestCaseDesign
+from .models import RequirementItem, ReviewReport, TestCaseDesign
 
 
 def _slugify(text: str) -> str:
@@ -133,79 +133,6 @@ class TestDesignAgent:
 
 
 @dataclass
-class TestGenerationAgent:
-    name: str = "Test Generation Agent"
-
-    def generate(
-        self, requirements: list[RequirementItem], test_designs: list[TestCaseDesign]
-    ) -> list[GeneratedArtifact]:
-        req_by_id = {req.requirement_id: req for req in requirements}
-        artifacts = []
-        for design in test_designs:
-            req = req_by_id[design.requirement_id]
-            artifacts.append(
-                GeneratedArtifact(
-                    artifact_id=f"ART-{design.test_case_id.split('-')[-1]}",
-                    requirement_id=design.requirement_id,
-                    design_id=design.test_case_id,
-                    target=design.test_type,
-                    test_name=f"test_{_slugify(req.normalized_text)[:50]}",
-                    test_data=self._build_test_data(req, design),
-                    selectors=self._suggest_selectors(req),
-                    pseudocode=self._build_pseudocode(req, design),
-                )
-            )
-        return artifacts
-
-    def _build_test_data(self, req: RequirementItem, design: TestCaseDesign) -> dict[str, str]:
-        return {
-            "positive_case": f"Valid data for {req.requirement_id}",
-            "negative_case": f"Invalid data for {req.requirement_id}",
-            "notes": f"Generated for test type {design.test_type}",
-        }
-
-    def _suggest_selectors(self, req: RequirementItem) -> list[str]:
-        slug = _slugify(req.normalized_text)
-        return [
-            f"[data-testid='{slug}-form']",
-            f"[data-testid='{slug}-submit']",
-            f"[data-testid='{slug}-feedback']",
-        ]
-
-    def _build_pseudocode(self, req: RequirementItem, design: TestCaseDesign) -> list[str]:
-        code = [
-            "setup_test_context()",
-            f"load_requirement_context('{req.requirement_id}')",
-        ]
-        if design.test_type == "unit":
-            code.extend(
-                [
-                    "result = execute_business_rule(valid_input)",
-                    "assert result.is_success",
-                    "assert execute_business_rule(invalid_input).is_error",
-                ]
-            )
-        elif design.test_type in {"gui/e2e", "scenario"}:
-            code.extend(
-                [
-                    "page.goto(app_url)",
-                    "page.fill(relevant_fields, positive_case_data)",
-                    "page.click(primary_action_selector)",
-                    "assert success_feedback_is_visible()",
-                ]
-            )
-        else:
-            code.extend(
-                [
-                    "response = client.post(endpoint, json=positive_case_data)",
-                    "assert response.status_code == 200",
-                    "assert response.json matches expected_contract",
-                ]
-            )
-        return code
-
-
-@dataclass
 class ReviewAgent:
     name: str = "Review Agent"
 
@@ -213,18 +140,17 @@ class ReviewAgent:
         self,
         requirements: list[RequirementItem],
         test_designs: list[TestCaseDesign],
-        artifacts: list[GeneratedArtifact],
     ) -> ReviewReport:
         findings = []
         improvements = []
 
-        covered_requirements = {artifact.requirement_id for artifact in artifacts}
+        covered_requirements = {design.requirement_id for design in test_designs}
         coverage_ratio = len(covered_requirements) / len(requirements) if requirements else 0.0
 
         for requirement in requirements:
             if requirement.requirement_id not in covered_requirements:
-                findings.append(f"{requirement.requirement_id} is missing a generated test artifact.")
-                improvements.append(f"Generate at least one test for {requirement.requirement_id}.")
+                findings.append(f"{requirement.requirement_id} is missing a designed test case.")
+                improvements.append(f"Design at least one test for {requirement.requirement_id}.")
 
         for design in test_designs:
             if len(design.expected_results) < 2:

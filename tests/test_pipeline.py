@@ -13,7 +13,7 @@ from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 
 
 class PipelineTests(unittest.TestCase):
-    def test_pipeline_produces_traceable_artifacts(self) -> None:
+    def test_pipeline_produces_traceable_test_designs(self) -> None:
         orchestrator = OrchestratorAgent()
         result = orchestrator.process(
             title="Login demo",
@@ -25,10 +25,10 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(len(result.requirements), 2)
         self.assertEqual(len(result.test_designs), 2)
-        self.assertEqual(len(result.generated_artifacts), 2)
+        self.assertEqual(len(result.generated_artifacts), 0)
         self.assertEqual(result.review.coverage_ratio, 1.0)
         self.assertGreaterEqual(result.iterations, 1)
-        self.assertEqual(len(result.stage_traces), result.iterations * 5)
+        self.assertEqual(len(result.stage_traces), result.iterations * 4)
         self.assertEqual(result.stage_traces[0].agent_name, "Requirements Analyst")
         self.assertEqual(result.stage_traces[-1].agent_name, "Orchestrator Agent")
         self.assertTrue(all(trace.reasoning_trace for trace in result.stage_traces))
@@ -37,8 +37,8 @@ class PipelineTests(unittest.TestCase):
         )
 
         requirement_ids = {item.requirement_id for item in result.requirements}
-        artifact_ids = {item.requirement_id for item in result.generated_artifacts}
-        self.assertEqual(requirement_ids, artifact_ids)
+        design_ids = {item.requirement_id for item in result.test_designs}
+        self.assertEqual(requirement_ids, design_ids)
 
     def test_review_flags_vague_requirements(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
@@ -82,7 +82,7 @@ class PipelineTests(unittest.TestCase):
             ),
         )
 
-        reasoning = result.stage_traces[3].reasoning_trace
+        reasoning = result.stage_traces[2].reasoning_trace
         self.assertFalse(result.review.approved)
         self.assertTrue(any("coverage_ratio=1.0" in line for line in reasoning))
         self.assertTrue(any("Weak-oracle checks triggered for:" in line for line in reasoning))

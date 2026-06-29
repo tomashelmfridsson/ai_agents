@@ -424,7 +424,7 @@ def build_demo() -> gr.Blocks:
                 <section class="info-grid">
                   <article class="info-card">
                     <div class="info-label">Current baseline</div>
-                    <p>A fixed synchronous orchestrator runs the same five agent passes in the same order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
+                    <p>A fixed synchronous orchestrator runs the same four agent passes in the same order on every run. This version is deterministic and intentionally non-agentic so future LLM and orchestration variants can be compared against it.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Research direction</div>
@@ -432,15 +432,15 @@ def build_demo() -> gr.Blocks:
                   </article>
                   <article class="info-card">
                     <div class="info-label">Iterations</div>
-                    <p>In this baseline, the Orchestrator Agent coordinates one full pass across the Requirements Analyst Agent, Test Design Agent, Test Generation Agent, and Review Agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
+                    <p>In this baseline, the Orchestrator Agent coordinates one full pass across the Requirements Analyst Agent, Test Design Agent, and Review Agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Technical flow</div>
                     <ul>
                       <li>Requirement extraction with heuristic enrichment</li>
                       <li>Test case design from structured requirement items</li>
-                      <li>Draft artifact generation from test case designs</li>
                       <li>Review and orchestration decision-making</li>
+                      <li>Test case quality feedback for iteration decisions</li>
                     </ul>
                   </article>
                 </section>
@@ -448,7 +448,6 @@ def build_demo() -> gr.Blocks:
                   <div class="workflow-step"><strong>Orchestrator Agent</strong><span>Decide which agent should act next, collect outputs, and either stop the run or trigger more work based on the review result and iteration budget.</span></div>
                   <div class="workflow-step"><strong>Requirements Analyst Agent</strong><span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span></div>
                   <div class="workflow-step"><strong>Test Design Agent</strong><span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span></div>
-                  <div class="workflow-step"><strong>Test Generation Agent</strong><span>Generate draft artifacts such as test names, selectors, test data, and pseudocode from the planned test cases.</span></div>
                   <div class="workflow-step"><strong>Review Agent</strong><span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span></div>
                 </section>
                 """
@@ -528,7 +527,6 @@ def build_workflow_report(payload: dict) -> str:
         <div class='diagram-node'><strong>Orchestrator Agent</strong><span>Controls routing, collects results, and decides whether another pass is needed.</span></div>
         <div class='diagram-node'><strong>Requirements Analyst Agent</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
         <div class='diagram-node'><strong>Test Design Agent</strong><span>Test type selection, steps, oracle, expected results.</span></div>
-        <div class='diagram-node'><strong>Test Generation Agent</strong><span>Selectors, test data, pseudocode, target mapping.</span></div>
         <div class='diagram-node'><strong>Review Agent</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
       </div>
     </section>
@@ -552,8 +550,7 @@ def build_summary_overview(payload: dict) -> str:
     improvement_actions = review["improvement_actions"]
     lead = (
         f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
-        f"{len(payload['test_designs'])} planned test case(s), and {len(payload['generated_artifacts'])} "
-        f"generated artifact(s). The run ended after {payload['iterations']} iteration(s) with "
+        f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} iteration(s) with "
         f"coverage ratio {review['coverage_ratio']} and approved={approved}."
     )
     bullets = [
@@ -591,7 +588,7 @@ def build_trace_overview(payload: dict) -> str:
     return (
         "<section class='diagram-card'>"
         "<h3>Requirement to test case mapping</h3>"
-        "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created in stage 2. Each one is linked to a requirement ID before artifacts are generated in stage 3.</p>"
+        "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each one is linked directly to a requirement ID and reviewed without a separate generation stage.</p>"
         "<table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"

@@ -6,7 +6,6 @@ from .agents import (
     RequirementsAnalystAgent,
     ReviewAgent,
     TestDesignAgent,
-    TestGenerationAgent,
 )
 from .models import PipelineResult, StageTrace
 
@@ -15,14 +14,12 @@ from .models import PipelineResult, StageTrace
 class OrchestratorAgent:
     requirements_analyst: RequirementsAnalystAgent = field(default_factory=RequirementsAnalystAgent)
     test_designer: TestDesignAgent = field(default_factory=TestDesignAgent)
-    test_generator: TestGenerationAgent = field(default_factory=TestGenerationAgent)
     reviewer: ReviewAgent = field(default_factory=ReviewAgent)
     max_iterations: int = 2
 
     def process(self, title: str, requirements_text: str) -> PipelineResult:
         requirements = []
         designs = []
-        artifacts = []
         review = None
         stage_traces = []
 
@@ -33,11 +30,9 @@ class OrchestratorAgent:
             )
             designs = self.test_designer.design(requirements)
             stage_traces.append(self._build_design_trace(iteration, requirements, designs))
-            artifacts = self.test_generator.generate(requirements, designs)
-            stage_traces.append(self._build_generation_trace(iteration, designs, artifacts))
-            review = self.reviewer.review(requirements, designs, artifacts)
+            review = self.reviewer.review(requirements, designs)
             stage_traces.append(
-                self._build_review_trace(iteration, requirements, designs, artifacts, review)
+                self._build_review_trace(iteration, requirements, designs, review)
             )
             stage_traces.append(self._build_orchestrator_trace(iteration, review))
             if review.approved:
@@ -46,7 +41,7 @@ class OrchestratorAgent:
                     source_requirements=requirements_text,
                     requirements=requirements,
                     test_designs=designs,
-                    generated_artifacts=artifacts,
+                    generated_artifacts=[],
                     review=review,
                     iterations=iteration,
                     stage_traces=stage_traces,
@@ -57,7 +52,7 @@ class OrchestratorAgent:
             source_requirements=requirements_text,
             requirements=requirements,
             test_designs=designs,
-            generated_artifacts=artifacts,
+            generated_artifacts=[],
             review=review,
             iterations=self.max_iterations,
             stage_traces=stage_traces,
@@ -157,72 +152,23 @@ class OrchestratorAgent:
             ),
         )
 
-    def _build_generation_trace(self, iteration: int, designs: list, artifacts: list) -> StageTrace:
+    def _build_review_trace(
+        self, iteration: int, requirements: list, designs: list, review
+    ) -> StageTrace:
+        review_reasoning = self._build_review_reasoning(requirements, designs, review)
         return StageTrace(
             iteration=iteration,
             stage_index=3,
-            agent_name="Test Generation Agent",
-            input_summary=[
-                f"Test case designs received: {len(designs)}",
-                f"Distinct test types: {len({item.test_type for item in designs})}",
-                *[
-                    (
-                        f"{item.test_case_id} for {item.requirement_id}: "
-                        f"title=\"{item.title}\" | type={item.test_type} | "
-                        f"steps={' | '.join(item.steps)} | "
-                        f"expected results={' | '.join(item.expected_results)} | "
-                        f"oracle={item.oracle}"
-                    )
-                    for item in designs[:4]
-                ],
-            ],
-            output_summary=[
-                f"Generated {len(artifacts)} artifact(s).",
-                *[
-                    (
-                        f"{item.artifact_id} for {item.requirement_id}/{item.design_id}: "
-                        f"test_name={item.test_name} | target={item.target} | "
-                        f"selectors={' | '.join(item.selectors)} | "
-                        f"test_data={item.test_data} | "
-                        f"pseudocode={' | '.join(item.pseudocode)}"
-                    )
-                    for item in artifacts[:4]
-                ],
-            ],
-            reasoning_trace=[
-                "Match every test design back to its source requirement by requirement ID.",
-                "Transform the chosen design into executable-looking artifacts such as test names, selectors, and test data placeholders.",
-                "Generate pseudocode from deterministic templates based on the selected test type.",
-                "Keep the result as a draft artifact only; no runtime execution or LLM judgment happens in this stage.",
-            ],
-            status="completed",
-            agent_explanation=(
-                "This agent generates concrete draft artifacts from the test case designs: names, "
-                "test data placeholders, selectors, and pseudocode. It still uses deterministic templates."
-            ),
-            decision_explanation=(
-                "This stage does not execute tests. It only creates candidate test artifacts that a "
-                "later LLM-based or execution-based pipeline could refine and run."
-            ),
-        )
-
-    def _build_review_trace(
-        self, iteration: int, requirements: list, designs: list, artifacts: list, review
-    ) -> StageTrace:
-        review_reasoning = self._build_review_reasoning(requirements, designs, artifacts, review)
-        return StageTrace(
-            iteration=iteration,
-            stage_index=4,
             agent_name="Review Agent",
             input_summary=[
                 f"Requirements inspected: {len(requirements)}",
-                f"Artifacts inspected: {len(artifacts)}",
+                f"Designed test cases inspected: {len(designs)}",
                 *[
                     (
-                        f"{item.requirement_id}: artifact coverage present via {item.design_id} / {item.artifact_id} | "
-                        f"test_name={item.test_name}"
+                        f"{item.requirement_id}: covered by designed test case {item.test_case_id} | "
+                        f"title={item.title}"
                     )
-                    for item in artifacts[:4]
+                    for item in designs[:4]
                 ],
             ],
             output_summary=[
@@ -236,7 +182,7 @@ class OrchestratorAgent:
             ],
             status="approved" if review.approved else "changes requested",
             reasoning_trace=[
-                "Compute requirement coverage by checking whether each requirement ID appears in at least one generated artifact.",
+                "Compute requirement coverage by checking whether each requirement ID appears in at least one designed test case.",
                 "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
                 "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
                 "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
@@ -244,13 +190,13 @@ class OrchestratorAgent:
             ],
             agent_explanation=(
                 "This review stage is a deterministic rule check, not an autonomous evaluator. It "
-                "computes requirement coverage from generated artifacts, flags test cases with too few "
+                "computes requirement coverage from designed test cases, flags test cases with too few "
                 "expected results, and flags requirements that still contain assumptions."
             ),
             decision_explanation=(
-                "Approval becomes true only when every requirement has at least one generated artifact "
+                "Approval becomes true only when every requirement has at least one designed test case "
                 "and the total number of findings stays at or below the hard-coded threshold. In this "
-                "implementation, findings mainly come from three sources: missing artifact coverage, weak "
+                "implementation, findings mainly come from three sources: missing designed coverage, weak "
                 "oracle definitions, and unresolved assumptions."
             ),
         )
@@ -260,7 +206,7 @@ class OrchestratorAgent:
         stopped_by_limit = (not review.approved) and iteration >= self.max_iterations
         return StageTrace(
             iteration=iteration,
-            stage_index=5,
+            stage_index=4,
             agent_name="Orchestrator Agent",
             input_summary=[
                 f"Review approval signal: {review.approved}",
@@ -324,9 +270,9 @@ class OrchestratorAgent:
                 f"{finding} This means the requirement text leaves something implicit, so an automated "
                 "test may reflect a guess rather than a confirmed business rule."
             )
-        if "missing a generated test artifact" in finding:
+        if "missing a designed test case" in finding:
             return (
-                f"{finding} This means the requirement currently has no generated candidate test output."
+                f"{finding} This means the requirement currently has no designed test candidate."
             )
         return finding
 
@@ -382,16 +328,14 @@ class OrchestratorAgent:
             f"{item.requirement_id}: assumptions derivation -> {'; '.join(assumption_rules)}.",
         ]
 
-    def _build_review_reasoning(
-        self, requirements: list, designs: list, artifacts: list, review
-    ) -> list[str]:
-        covered_requirements = {artifact.requirement_id for artifact in artifacts}
+    def _build_review_reasoning(self, requirements: list, designs: list, review) -> list[str]:
+        covered_requirements = {design.requirement_id for design in designs}
         coverage_target = len(requirements)
         coverage_hits = len(covered_requirements)
         threshold = max(1, len(requirements) // 2)
         reasoning = [
             (
-                f"Coverage check: {coverage_hits}/{coverage_target} requirements have at least one generated artifact, "
+                f"Coverage check: {coverage_hits}/{coverage_target} requirements have at least one designed test case, "
                 f"so coverage_ratio={review.coverage_ratio}."
             ),
             (
@@ -407,7 +351,7 @@ class OrchestratorAgent:
             if requirement.requirement_id not in covered_requirements
         ]
         reasoning.append(
-            "Missing artifact coverage: "
+            "Missing designed test coverage: "
             + (", ".join(missing_requirements) if missing_requirements else "none")
             + "."
         )
@@ -442,10 +386,10 @@ class OrchestratorAgent:
             f"Findings threshold OK: {len(review.findings) <= threshold}."
         )
         reasoning.append(
-            "Final decision: Approved=False because coverage passed but the findings count exceeded the threshold."
-            if not review.approved and review.coverage_ratio == 1.0 and len(review.findings) > threshold
-            else (
-                "Final decision: Approved=False because artifact coverage was incomplete."
+                "Final decision: Approved=False because coverage passed but the findings count exceeded the threshold."
+                if not review.approved and review.coverage_ratio == 1.0 and len(review.findings) > threshold
+                else (
+                "Final decision: Approved=False because designed test coverage was incomplete."
                 if not review.approved and review.coverage_ratio < 1.0
                 else "Final decision: Approved=True because coverage passed and findings stayed within threshold."
             )

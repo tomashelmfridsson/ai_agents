@@ -114,7 +114,6 @@ function buildWorkflowReport(payload) {
     ["Iterations", String(payload.iterations)],
     ["Requirements", String(payload.requirements.length)],
     ["Designs", String(payload.test_designs.length)],
-    ["Artifacts", String(payload.generated_artifacts.length)],
     ["Coverage", String(payload.review.coverage_ratio)],
   ];
 
@@ -150,10 +149,10 @@ function buildWorkflowReport(payload) {
         <h3>Pipeline visualization</h3>
         <div class="diagram-flow">
           <div class="diagram-node"><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
-          <div class="diagram-node"><strong>Requirements analyst</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
-          <div class="diagram-node"><strong>Test designer</strong><span>Test type selection, steps, oracle, expected results.</span></div>
-          <div class="diagram-node"><strong>Artifact generator</strong><span>Selectors, test data, pseudocode, target mapping.</span></div>
-          <div class="diagram-node"><strong>Reviewer</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
+          <div class="diagram-node"><strong>Orchestrator Agent</strong><span>Controls routing, collects results, and decides whether another pass is needed.</span></div>
+          <div class="diagram-node"><strong>Requirements Analyst Agent</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
+          <div class="diagram-node"><strong>Test Design Agent</strong><span>Test type selection, steps, oracle, expected results.</span></div>
+          <div class="diagram-node"><strong>Review Agent</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
         </div>
       </section>
       <div class="stage-grid">${stages}</div>
