@@ -20,6 +20,7 @@ from qa_platform.agent_runtime import (
     PROVIDER_STRATEGY_CHOICES,
     build_agent_runtime_configs,
 )
+from qa_platform.llm_runtime import LLMRuntimeError
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import (
@@ -45,7 +46,7 @@ def process_requirements(
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
-        raise gr.Error("The requirements field is required.")
+        raise gr.Error("Requirements saknas. Fyll i minst ett krav innan du kör workflow.")
     round_limit = max(1, int(max_rounds))
     run_controls = RunControlConfig(
         max_rounds=round_limit,
@@ -53,12 +54,15 @@ def process_requirements(
         max_feedback_per_agent_pair=max(0, int(max_feedback_per_agent_pair)),
     )
     agent_configs = build_agent_runtime_configs(*agent_values)
-    result = OrchestratorAgent(max_iterations=round_limit).process(
-        title=normalized_title,
-        requirements_text=normalized_requirements,
-        agent_configs=agent_configs,
-        run_controls=run_controls,
-    )
+    try:
+        result = OrchestratorAgent(max_iterations=round_limit).process(
+            title=normalized_title,
+            requirements_text=normalized_requirements,
+            agent_configs=agent_configs,
+            run_controls=run_controls,
+        )
+    except LLMRuntimeError as exc:
+        raise gr.Error(format_user_error(str(exc))) from exc
     payload = result.to_dict()
     saved_run = save_run(payload)
     payload["run_id"] = saved_run.run_id
@@ -88,6 +92,41 @@ def process_requirements(
 
 def mark_custom_scenario(*_args: str) -> str:
     return "Custom scenario"
+
+
+def format_user_error(raw_message: str) -> str:
+    lowered = raw_message.lower()
+    if "hf_token is required" in lowered:
+        return (
+            "Live LLM-körning kunde inte starta. `HF_TOKEN` saknas, så Hugging Face-backenden kan inte användas. "
+            "Lägg till token i `.env` eller byt agenten till `Structured baseline`, `Ollama local` eller `Custom OpenAI-compatible`."
+        )
+    if "openai_base_url is required" in lowered:
+        return (
+            "Live LLM-körning kunde inte starta. `OPENAI_BASE_URL` saknas för `Custom OpenAI-compatible`. "
+            "Ange en bas-URL i miljön eller välj en annan provider-strategi."
+        )
+    if "access denied by the routed provider" in lowered or "cloudflare 1010" in lowered:
+        return (
+            "Live LLM-körningen stoppades av den routade modellen hos providerledet. "
+            "Det betyder att backend-anropet nekades innan agenten kunde få svar. "
+            "Prova `Ollama local`, `Custom OpenAI-compatible` eller en annan Hugging Face-strategi/modell."
+        )
+    if "could not reach model endpoint" in lowered:
+        return (
+            "Live LLM-körningen kunde inte nå modellens endpoint. Kontrollera nätverk, lokal backend eller bas-URL och försök igen."
+        )
+    if "model response did not contain" in lowered or "could not locate a json object" in lowered:
+        return (
+            "Modellen svarade, men i ett format som inte kunde tolkas korrekt. "
+            "Prova samma agent igen, byt modell eller använd `Structured baseline` tills modellen är stabil."
+        )
+    if "live llm call failed" in lowered:
+        return (
+            "Live LLM-körningen misslyckades för en agent. "
+            "Öppna loggfilen efter körningen för tekniska detaljer, eller byt provider/modell för agenten som stoppades."
+        )
+    return f"Körningen stoppades av ett fel: {raw_message}"
 
 
 def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
@@ -167,6 +206,30 @@ def build_demo() -> gr.Blocks:
     .gradio-container span,
     .gradio-container div {
       color: inherit;
+    }
+    .gradio-container .toast-wrap,
+    .gradio-container .toast-wrap *,
+    .gradio-container .toast,
+    .gradio-container .toast *,
+    .gradio-container [role="alert"],
+    .gradio-container [role="alert"] *,
+    .gradio-container .error,
+    .gradio-container .error * {
+      color: #1d140d !important;
+    }
+    .gradio-container .toast-wrap,
+    .gradio-container .toast,
+    .gradio-container [role="alert"],
+    .gradio-container .error {
+      background: linear-gradient(180deg, #fff8f1, #f8e8d9) !important;
+      border: 1px solid rgba(143, 53, 24, 0.32) !important;
+      box-shadow: 0 18px 40px rgba(50, 28, 8, 0.18) !important;
+    }
+    .gradio-container .toast-title,
+    .gradio-container .toast-text,
+    .gradio-container .toast-body,
+    .gradio-container [role="alert"] strong {
+      color: #1d140d !important;
     }
     .app-shell { max-width: 1080px; margin: 0 auto; }
     .hero-card, .hero-card > div, .panel-card, .panel-card > div, .info-card, .info-card > div {
@@ -867,11 +930,16 @@ def build_demo() -> gr.Blocks:
 
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Result")
-                status_output = gr.Markdown(
+                status_output = gr.HTML(
                     value="<div class='result-status'>Waiting for input.</div>"
+                    ,
+                    show_label=False,
+                    container=False,
                 )
                 result_output = gr.HTML(
-                    value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, review findings, and orchestration decisions.</div>"
+                    value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, review findings, and orchestration decisions.</div>",
+                    show_label=False,
+                    container=False,
                 )
 
         run_button.click(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 from urllib import error, request
@@ -81,6 +82,16 @@ def call_structured_llm(
     temperature: float = 0.2,
 ) -> tuple[dict[str, Any], LLMCallMetadata]:
     load_local_env()
+    if runtime_config.provider_strategy.startswith("HF "):
+        return _call_hf_structured_llm(
+            runtime_config=runtime_config,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_name=schema_name,
+            schema=schema,
+            temperature=temperature,
+        )
+
     endpoint, api_key = _resolve_endpoint_and_key(runtime_config)
     messages = [
         {"role": "system", "content": system_prompt.strip()},
@@ -153,6 +164,130 @@ def call_structured_llm(
     )
 
 
+def _call_hf_structured_llm(
+    runtime_config: AgentRuntimeConfig,
+    system_prompt: str,
+    user_prompt: str,
+    schema_name: str,
+    schema: dict[str, Any],
+    temperature: float,
+) -> tuple[dict[str, Any], LLMCallMetadata]:
+    token = os.environ.get("HF_TOKEN", "").strip()
+    if not token:
+        raise LLMRuntimeError("HF_TOKEN is required for Hugging Face live LLM execution.")
+
+    errors: list[str] = []
+    for model_id in _candidate_model_ids(runtime_config):
+        try:
+            content, usage = _post_hf_inference_chat_completion(
+                api_key=token,
+                model_id=model_id,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            system_prompt.strip()
+                            + "\nReturn only valid JSON matching the requested schema. "
+                            + "Do not add markdown fences or commentary."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            user_prompt.strip()
+                            + "\nJSON schema to satisfy exactly:\n"
+                            + json.dumps(
+                                {
+                                    "name": schema_name,
+                                    "schema": schema,
+                                },
+                                ensure_ascii=False,
+                            )
+                        ),
+                    },
+                ],
+                temperature=temperature,
+            )
+            return _extract_json_object(content), LLMCallMetadata(
+                endpoint="huggingface_hub.InferenceClient.chat_completion",
+                model_id=model_id,
+                provider_strategy=runtime_config.provider_strategy,
+                response_format_used=False,
+                usage=usage,
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{model_id} inference-client attempt: {exc}")
+
+    endpoint, api_key = _resolve_endpoint_and_key(runtime_config)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "schema": schema,
+            "strict": True,
+        },
+    }
+    messages = [
+        {"role": "system", "content": system_prompt.strip()},
+        {"role": "user", "content": user_prompt.strip()},
+    ]
+    for model_id in _candidate_model_ids(runtime_config):
+        try:
+            payload = _post_chat_completion(
+                endpoint=endpoint,
+                api_key=api_key,
+                model_id=model_id,
+                messages=messages,
+                temperature=temperature,
+                response_format=response_format,
+            )
+            content = _extract_message_content(payload)
+            return json.loads(content), LLMCallMetadata(
+                endpoint=endpoint,
+                model_id=model_id,
+                provider_strategy=runtime_config.provider_strategy,
+                response_format_used=True,
+                usage=payload.get("usage") or {},
+            )
+        except (LLMRuntimeError, json.JSONDecodeError) as first_error:
+            errors.append(f"{model_id} router structured-output attempt: {first_error}")
+            fallback_system_prompt = (
+                system_prompt.strip()
+                + "\nReturn only valid JSON matching the requested schema. Do not add markdown fences or commentary."
+            )
+            fallback_user_prompt = (
+                user_prompt.strip()
+                + "\nJSON schema to satisfy exactly:\n"
+                + json.dumps(schema, ensure_ascii=False)
+            )
+            try:
+                fallback_payload = _post_chat_completion(
+                    endpoint=endpoint,
+                    api_key=api_key,
+                    model_id=model_id,
+                    messages=[
+                        {"role": "system", "content": fallback_system_prompt},
+                        {"role": "user", "content": fallback_user_prompt},
+                    ],
+                    temperature=temperature,
+                    response_format=None,
+                )
+                content = _extract_message_content(fallback_payload)
+                return _extract_json_object(content), LLMCallMetadata(
+                    endpoint=endpoint,
+                    model_id=model_id,
+                    provider_strategy=runtime_config.provider_strategy,
+                    response_format_used=False,
+                    usage=fallback_payload.get("usage") or {},
+                )
+            except Exception as second_error:  # noqa: BLE001
+                errors.append(f"{model_id} router fallback attempt: {second_error}")
+
+    raise LLMRuntimeError(
+        f"Live LLM call failed for {runtime_config.agent_name}. Attempts: {' | '.join(errors)}"
+    )
+
+
 def _resolve_endpoint_and_key(runtime_config: AgentRuntimeConfig) -> tuple[str, str]:
     strategy = runtime_config.provider_strategy
     if strategy in {"HF cheapest/free credits", "HF fastest"}:
@@ -190,6 +325,48 @@ def _normalize_chat_endpoint(base_url: str) -> str:
     if base_url.endswith("/v1"):
         return f"{base_url}/chat/completions"
     return f"{base_url}/v1/chat/completions"
+
+
+def _post_hf_inference_chat_completion(
+    api_key: str,
+    model_id: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+) -> tuple[str, dict[str, Any]]:
+    try:
+        huggingface_hub = import_module("huggingface_hub")
+    except ModuleNotFoundError as exc:
+        raise LLMRuntimeError(
+            "huggingface_hub is not installed. Install it to use Hugging Face live execution."
+        ) from exc
+
+    client = huggingface_hub.InferenceClient(model=model_id, token=api_key)
+    try:
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=2000,
+            temperature=temperature,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise LLMRuntimeError(str(exc)) from exc
+
+    choice = response.choices[0]
+    message = getattr(choice, "message", None)
+    content = None
+    if message is not None:
+        content = getattr(message, "content", None)
+        if content is None and isinstance(message, dict):
+            content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise LLMRuntimeError("Model response did not contain text content.")
+
+    usage_obj = getattr(response, "usage", None)
+    usage = {
+        "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
+        "completion_tokens": getattr(usage_obj, "completion_tokens", None),
+        "total_tokens": getattr(usage_obj, "total_tokens", None),
+    }
+    return content, {key: value for key, value in usage.items() if value is not None}
 
 
 def _post_chat_completion(
