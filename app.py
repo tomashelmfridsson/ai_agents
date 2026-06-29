@@ -12,13 +12,13 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from qa_platform.orchestrator import OrchestratorAgent
-
-
-DEFAULT_TITLE = "Demo: web application for login and registration"
-DEFAULT_REQUIREMENTS = """The user must be able to sign in with email and password.
-The system shall display a clear error message when credentials are invalid.
-An administrator shall be able to view an overview of registered users.
-The user shall be able to register a new account through a form."""
+from qa_platform.sample_scenarios import (
+    DEFAULT_REQUIREMENTS,
+    DEFAULT_SCENARIO,
+    DEFAULT_TITLE,
+    SAMPLE_SCENARIOS,
+    load_sample_scenario,
+)
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 
@@ -393,7 +393,7 @@ def build_demo() -> gr.Blocks:
                   </article>
                   <article class="info-card">
                     <div class="info-label">Iterations</div>
-                    <p>An iteration is one full pass through all five agents: requirements analyst, test design agent, test generation agent, review agent, and orchestrator agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
+                    <p>In this baseline, the Orchestrator Agent coordinates one full pass across the Requirements Analyst Agent, Test Design Agent, Test Generation Agent, and Review Agent. The orchestrator repeats the pass until approval or the iteration limit is reached.</p>
                   </article>
                   <article class="info-card">
                     <div class="info-label">Technical flow</div>
@@ -406,17 +406,22 @@ def build_demo() -> gr.Blocks:
                   </article>
                 </section>
                 <section class="workflow-strip">
-                  <div class="workflow-step"><strong>1. Requirements analyst</strong><span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span></div>
-                  <div class="workflow-step"><strong>2. Test design agent</strong><span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span></div>
-                  <div class="workflow-step"><strong>3. Test generation agent</strong><span>Generate draft artifacts such as test names, selectors, test data, and pseudocode from the planned test cases.</span></div>
-                  <div class="workflow-step"><strong>4. Review agent</strong><span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span></div>
-                  <div class="workflow-step"><strong>5. Orchestrator agent</strong><span>Either stop the run or start another full iteration based on the review result and the iteration limit.</span></div>
+                  <div class="workflow-step"><strong>Orchestrator Agent</strong><span>Decide which agent should act next, collect outputs, and either stop the run or trigger more work based on the review result and iteration budget.</span></div>
+                  <div class="workflow-step"><strong>Requirements Analyst Agent</strong><span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span></div>
+                  <div class="workflow-step"><strong>Test Design Agent</strong><span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span></div>
+                  <div class="workflow-step"><strong>Test Generation Agent</strong><span>Generate draft artifacts such as test names, selectors, test data, and pseudocode from the planned test cases.</span></div>
+                  <div class="workflow-step"><strong>Review Agent</strong><span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span></div>
                 </section>
                 """
             )
 
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Run workflow")
+                scenario_picker = gr.Dropdown(
+                    label="Preset scenario",
+                    choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
+                    value=DEFAULT_SCENARIO,
+                )
                 title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
                 requirements_input = gr.Textbox(
                     label="Requirements",
@@ -446,6 +451,11 @@ def build_demo() -> gr.Blocks:
             inputs=[title_input, requirements_input, max_iterations_input],
             outputs=[status_output, result_output],
         )
+        scenario_picker.change(
+            fn=load_sample_scenario,
+            inputs=[scenario_picker, title_input, requirements_input],
+            outputs=[title_input, requirements_input],
+        )
 
     return demo
 
@@ -462,10 +472,11 @@ def build_workflow_report(payload: dict) -> str:
       <h3>Pipeline visualization</h3>
       <div class='diagram-flow'>
         <div class='diagram-node'><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
-        <div class='diagram-node'><strong>Requirements analyst</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
-        <div class='diagram-node'><strong>Test designer</strong><span>Test type selection, steps, oracle, expected results.</span></div>
-        <div class='diagram-node'><strong>Artifact generator</strong><span>Selectors, test data, pseudocode, target mapping.</span></div>
-        <div class='diagram-node'><strong>Reviewer</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
+        <div class='diagram-node'><strong>Orchestrator Agent</strong><span>Controls routing, collects results, and decides whether another pass is needed.</span></div>
+        <div class='diagram-node'><strong>Requirements Analyst Agent</strong><span>Requirement IDs, priority tags, assumptions, acceptance criteria.</span></div>
+        <div class='diagram-node'><strong>Test Design Agent</strong><span>Test type selection, steps, oracle, expected results.</span></div>
+        <div class='diagram-node'><strong>Test Generation Agent</strong><span>Selectors, test data, pseudocode, target mapping.</span></div>
+        <div class='diagram-node'><strong>Review Agent</strong><span>Coverage ratio, findings, improvement actions, approval signal.</span></div>
       </div>
     </section>
     """

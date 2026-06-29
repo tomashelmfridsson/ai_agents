@@ -62,6 +62,10 @@ class OrchestratorAgent:
         )
 
     def _build_requirements_trace(self, iteration: int, requirements_text: str, requirements: list) -> StageTrace:
+        detailed_reasoning = []
+        for item in requirements[:4]:
+            detailed_reasoning.extend(self._explain_requirement_derivation(item))
+
         return StageTrace(
             iteration=iteration,
             stage_index=1,
@@ -89,6 +93,7 @@ class OrchestratorAgent:
                 "Normalize each statement, assign deterministic IDs in sequence, and preserve the original wording.",
                 "Classify priority from keyword matches such as 'must', 'måste', or 'should'.",
                 "Expand each requirement with heuristic acceptance criteria and note missing or implicit error handling as assumptions.",
+                *detailed_reasoning,
             ],
             status="completed",
             agent_explanation=(
@@ -318,3 +323,55 @@ class OrchestratorAgent:
                 f"{finding} This means the requirement currently has no generated candidate test output."
             )
         return finding
+
+    def _explain_requirement_derivation(self, item) -> list[str]:
+        lowered = item.normalized_text.lower()
+        priority_signal = (
+            "keyword match on 'must/måste/critical/viktig'"
+            if item.priority == "high"
+            else (
+                "keyword match on 'should/bör/nice'"
+                if item.priority == "medium"
+                else "no priority keyword matched, so the fallback priority is 'normal'"
+            )
+        )
+
+        acceptance_rules = [
+            "base rule: every requirement gets a generic acceptance criterion that repeats the requirement intent"
+        ]
+        if any(keyword in lowered for keyword in ("login", "logga in", "autentis", "sign in")):
+            acceptance_rules.append(
+                "authentication rule triggered by 'login/logga in/autentis/sign in', so authentication success and invalid-credential error criteria were added"
+            )
+        if any(keyword in lowered for keyword in ("visa", "display", "list", "översikt", "dashboard")):
+            acceptance_rules.append(
+                "presentation rule triggered by 'display/list/översikt/dashboard', so a visibility and non-empty-state criterion was added"
+            )
+        if any(keyword in lowered for keyword in ("skapa", "save", "spara", "registrera", "submit")):
+            acceptance_rules.append(
+                "submission rule triggered by 'save/spara/registrera/submit', so validation and success-confirmation criteria were added"
+            )
+        if any(keyword in lowered for keyword in ("admin", "behörighet", "access", "roll")):
+            acceptance_rules.append(
+                "authorization rule triggered by 'admin/behörighet/access/roll', so unauthorized-access protection was added"
+            )
+
+        assumption_rules = []
+        if "The requirement likely needs more explicit acceptance criteria." in item.assumptions:
+            assumption_rules.append(
+                "only one acceptance criterion was produced at first, so the requirement was marked as underspecified"
+            )
+        if "Error handling is not explicit and should be reviewed." in item.assumptions:
+            assumption_rules.append(
+                "the raw requirement text does not explicitly mention error handling keywords such as 'error', 'invalid', 'fel', or 'ogiltig', so an error-handling assumption was added"
+            )
+        if not assumption_rules:
+            assumption_rules.append("no extra assumption rule was triggered for this requirement")
+
+        return [
+            f"{item.requirement_id}: raw text -> \"{item.original_text}\"",
+            f"{item.requirement_id}: normalized text -> \"{item.normalized_text}\" after trimming whitespace and trailing punctuation.",
+            f"{item.requirement_id}: priority -> {item.priority} because of {priority_signal}.",
+            f"{item.requirement_id}: acceptance-criteria derivation -> {'; '.join(acceptance_rules)}.",
+            f"{item.requirement_id}: assumptions derivation -> {'; '.join(assumption_rules)}.",
+        ]

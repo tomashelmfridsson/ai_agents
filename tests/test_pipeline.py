@@ -9,6 +9,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from qa_platform.orchestrator import OrchestratorAgent
+from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 
 
 class PipelineTests(unittest.TestCase):
@@ -49,6 +50,25 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(result.review.approved)
         self.assertTrue(result.review.findings)
         self.assertTrue(any("REQ-001" in finding for finding in result.review.findings))
+
+    def test_sample_scenario_loader_uses_selected_preset(self) -> None:
+        title, requirements = load_sample_scenario("Scenario 4", DEFAULT_TITLE, "")
+
+        self.assertEqual(title, "Support ticket creation and status tracking")
+        self.assertIn("create a support ticket", requirements)
+
+    def test_requirements_trace_explains_derivation_for_req_001(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+        result = orchestrator.process(
+            title="Login demo",
+            requirements_text="The user must be able to sign in with email and password.",
+        )
+
+        reasoning = result.stage_traces[0].reasoning_trace
+        self.assertTrue(any("REQ-001: raw text" in line for line in reasoning))
+        self.assertTrue(any("priority -> high" in line for line in reasoning))
+        self.assertTrue(any("authentication rule triggered" in line for line in reasoning))
+        self.assertTrue(any("error-handling assumption was added" in line for line in reasoning))
 
 
 if __name__ == "__main__":

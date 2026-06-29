@@ -50,8 +50,9 @@
         <article class="panel info-card">
           <p class="section-label">Iterations</p>
           <p>
-            An iteration is one full pass through analysis, design, generation, and review. The
-            orchestrator repeats the pass until approval or the iteration limit is reached.
+            In this baseline, the Orchestrator Agent coordinates one full pass across the
+            Requirements Analyst Agent, Test Design Agent, Test Generation Agent, and Review Agent.
+            The orchestrator repeats the pass until approval or the iteration limit is reached.
           </p>
         </article>
         <article class="panel info-card">
@@ -67,29 +68,40 @@
 
       <section class="workflow-strip panel">
         <div class="workflow-step">
-          <strong>1. Parse</strong>
-          <span>Normalize the scenario and split requirement statements.</span>
+          <strong>Orchestrator Agent</strong>
+          <span>Decide which agent should act next, collect outputs, and either stop the run or trigger more work based on the review result and iteration budget.</span>
         </div>
         <div class="workflow-step">
-          <strong>2. Analyze</strong>
-          <span>Extract requirement IDs, assumptions, and acceptance criteria.</span>
+          <strong>Requirements Analyst Agent</strong>
+          <span>Split the input into requirement items and enrich them with priority, acceptance criteria, and assumptions.</span>
         </div>
         <div class="workflow-step">
-          <strong>3. Design</strong>
-          <span>Create test-case structures, steps, expected results, and oracles.</span>
+          <strong>Test Design Agent</strong>
+          <span>Turn each requirement item into a planned test case with type, steps, expected results, and oracle.</span>
         </div>
         <div class="workflow-step">
-          <strong>4. Generate</strong>
-          <span>Produce selectors, test data, and pseudocode artifacts.</span>
+          <strong>Test Generation Agent</strong>
+          <span>Generate draft artifacts such as test names, selectors, test data, and pseudocode from the planned test cases.</span>
         </div>
         <div class="workflow-step">
-          <strong>5. Review</strong>
-          <span>Check coverage, findings, and approval status before the next iteration.</span>
+          <strong>Review Agent</strong>
+          <span>Evaluate coverage, assumptions, and the strength of the planned checks to decide whether the result is good enough.</span>
         </div>
       </section>
 
       <section class="panel">
         <form id="qa-form">
+          <label for="scenario-preset">Preset scenario</label>
+          <select id="scenario-preset" name="scenario-preset">
+            <option value="custom">Custom scenario</option>
+            <option value="Scenario 1" selected>Scenario 1</option>
+            <option value="Scenario 2">Scenario 2</option>
+            <option value="Scenario 3">Scenario 3</option>
+            <option value="Scenario 4">Scenario 4</option>
+            <option value="Scenario 5">Scenario 5</option>
+            <option value="Scenario 6">Scenario 6</option>
+          </select>
+
           <label for="title">Scenario</label>
           <input
             id="title"
