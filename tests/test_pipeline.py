@@ -34,12 +34,15 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result.generated_artifacts), 0)
         self.assertEqual(result.review.coverage_ratio, 1.0)
         self.assertGreaterEqual(result.iterations, 1)
-        self.assertEqual(len(result.stage_traces), result.iterations * 4)
+        self.assertGreaterEqual(len(result.stage_traces), 4)
         self.assertEqual(result.stage_traces[0].agent_name, "Requirements Analyst")
         self.assertEqual(result.stage_traces[-1].agent_name, "Orchestrator Agent")
         self.assertTrue(all(trace.reasoning_trace for trace in result.stage_traces))
         self.assertTrue(
             all(trace.reasoning_source == "structured_trace" for trace in result.stage_traces)
+        )
+        self.assertTrue(
+            any("backtrack" in trace.status for trace in result.stage_traces if trace.agent_name == "Orchestrator Agent")
         )
         self.assertEqual(result.run_controls.max_rounds, 2)
         self.assertEqual(result.run_controls.max_feedback_messages, 0)
@@ -163,7 +166,7 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(any("Maximum feedback messages: 6" in line for line in orchestrator_trace.input_summary))
         self.assertTrue(
             any(
-                "Feedback budgets may exist in run configuration" in line
+                "remaining feedback budget" in line.lower() or "targeted backtracking" in line.lower()
                 for line in orchestrator_trace.reasoning_trace
             )
         )

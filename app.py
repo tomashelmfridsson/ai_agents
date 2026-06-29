@@ -76,7 +76,7 @@ def process_requirements(
     status = (
         "<div class='result-status'>"
         f"Saved as run #{payload['run_id']}. "
-        f"Completed after {payload['iterations']} of {round_limit} allowed round(s). "
+        f"Completed with {payload['iterations']} backtracking cycle(s) within a limit of {round_limit}. "
         f"Coverage ratio: {payload['review']['coverage_ratio']}. "
         f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
         f"Findings: {findings_count}. Improvement actions: {improvement_count}.{preview_note}"
@@ -331,6 +331,34 @@ def build_demo() -> gr.Blocks:
     .agent-accordion .label-wrap span,
     .agent-accordion .label-wrap p,
     .agent-accordion .icon-wrap {
+      color: #130d08 !important;
+      fill: #130d08 !important;
+    }
+    .controls-accordion {
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      border-radius: 18px;
+      overflow: hidden;
+      background: var(--app-paper-3) !important;
+      margin-bottom: 12px;
+    }
+    .controls-accordion > div,
+    .controls-accordion section,
+    .controls-accordion details {
+      background: var(--app-paper-3) !important;
+    }
+    .controls-accordion button,
+    .controls-accordion summary,
+    .controls-accordion [role="button"] {
+      background: linear-gradient(180deg, rgba(255, 252, 247, 1), rgba(248, 239, 226, 1)) !important;
+      color: #130d08 !important;
+      font-weight: 800 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+    .controls-accordion .label-wrap,
+    .controls-accordion .label-wrap span,
+    .controls-accordion .label-wrap p,
+    .controls-accordion .icon-wrap {
       color: #130d08 !important;
       fill: #130d08 !important;
     }
@@ -699,37 +727,37 @@ def build_demo() -> gr.Blocks:
                 gr.HTML(build_pipeline_visualization_section())
             with gr.Group(elem_classes=["panel-card", "configuration-panel"]):
                 gr.Markdown("## Configuration")
-                gr.HTML("<div class='config-subhead'>Run controls</div>")
-                max_iterations_input = gr.Slider(
-                    label="Maximum rounds",
-                    minimum=1,
-                    maximum=5,
-                    step=1,
-                    value=2,
-                )
-                max_feedback_messages_input = gr.Slider(
-                    label="Maximum feedback messages",
-                    minimum=0,
-                    maximum=12,
-                    step=1,
-                    value=4,
-                )
-                max_feedback_per_pair_input = gr.Slider(
-                    label="Maximum feedback messages per agent pair",
-                    minimum=0,
-                    maximum=4,
-                    step=1,
-                    value=2,
-                )
-                gr.HTML(
-                    """
-                    <div class="baseline-note">
-                      <strong>Agent feedback budget</strong> defines how much direct back-and-forth the future LLM agents may use.
-                      Use it to stop Requirements Analyst, Test Design, and Review from sending too many correction messages to each other.
-                      The current structured baseline stores these limits now, but still reruns the full pipeline instead of routing targeted feedback.
-                    </div>
-                    """
-                )
+                with gr.Accordion("Run controls", open=False, elem_classes=["controls-accordion"]):
+                    max_iterations_input = gr.Slider(
+                        label="Maximum rounds",
+                        minimum=1,
+                        maximum=5,
+                        step=1,
+                        value=2,
+                    )
+                    max_feedback_messages_input = gr.Slider(
+                        label="Maximum feedback messages",
+                        minimum=0,
+                        maximum=12,
+                        step=1,
+                        value=4,
+                    )
+                    max_feedback_per_pair_input = gr.Slider(
+                        label="Maximum feedback messages per agent pair",
+                        minimum=0,
+                        maximum=4,
+                        step=1,
+                        value=2,
+                    )
+                    gr.HTML(
+                        """
+                        <div class="baseline-note">
+                          <strong>Agent feedback budget</strong> defines how much direct back-and-forth the future LLM agents may use.
+                          Use it to stop Requirements Analyst, Test Design, and Review from sending too many correction messages to each other.
+                          The current structured baseline stores these limits now, but still reruns the full pipeline instead of routing targeted feedback.
+                        </div>
+                        """
+                    )
                 gr.HTML("<div class='config-subhead'>Per-agent model setup</div>")
                 agent_config_inputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
@@ -879,14 +907,16 @@ def build_workflow_report(payload: dict) -> str:
     )
     trace_overview = build_trace_overview(payload)
 
-    trace_sections = build_trace_sections(payload["stage_traces"])
+    trace_sections = build_trace_sections(
+        payload["stage_traces"],
+        payload.get("agent_configs", []),
+    )
 
     return (
         "<div class='report-shell'>"
         f"{summary_html}"
         f"{config_html}"
         f"{trace_overview}"
-        f"{build_pipeline_visualization_section()}"
         "<div class='stage-grid'>"
         + trace_sections
         + "</div></div>"
@@ -903,7 +933,7 @@ def build_summary_overview(payload: dict) -> str:
     storage_path = payload.get("storage_path")
     lead = (
         f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
-        f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} iteration(s) with "
+        f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} backtracking cycle(s) with "
         f"coverage ratio {review['coverage_ratio']} and approved={approved}."
     )
     bullets = [
@@ -1004,6 +1034,20 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
     )
 
 
+def normalize_agent_name(agent_name: str) -> str:
+    normalized = (agent_name or "").strip().lower()
+    if normalized.endswith(" agent"):
+        normalized = normalized[: -len(" agent")]
+    return normalized
+
+
+def build_agent_runtime_lookup(agent_configs: list[dict]) -> dict[str, dict]:
+    lookup: dict[str, dict] = {}
+    for config in agent_configs:
+        lookup[normalize_agent_name(config.get("agent_name", ""))] = config
+    return lookup
+
+
 def group_stage_traces_by_iteration(stage_traces: list[dict]) -> dict[int, list[dict]]:
     grouped: dict[int, list[dict]] = {}
     for trace in stage_traces:
@@ -1011,17 +1055,19 @@ def group_stage_traces_by_iteration(stage_traces: list[dict]) -> dict[int, list[
     return grouped
 
 
-def build_trace_sections(stage_traces: list[dict]) -> str:
+def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) -> str:
     sections = []
     run_index = 1
+    runtime_lookup = build_agent_runtime_lookup(agent_configs)
     for iteration, traces in group_stage_traces_by_iteration(stage_traces).items():
         sections.append(
             "<section class='diagram-card'>"
-            f"<h3>Iteration {iteration} execution</h3>"
-            "<p class='agent-config-text'>Below is the full sequence of agent passes for this iteration, with explicit input, output, and decision context.</p>"
+            f"<h3>Backtracking cycle {iteration}</h3>"
+            "<p class='agent-config-text'>Below is the full sequence of agent passes for this backtracking cycle, with explicit input, output, and routing context.</p>"
             "</section>"
         )
         for trace in traces:
+            runtime_config = runtime_lookup.get(normalize_agent_name(trace["agent_name"]), {})
             sections.append(
                 build_stage_card(
                     run_index=run_index,
@@ -1029,6 +1075,8 @@ def build_trace_sections(stage_traces: list[dict]) -> str:
                     stage_index=trace["stage_index"],
                     role=trace["agent_name"],
                     stage_status=trace["status"],
+                    execution_mode=runtime_config.get("execution_mode", "Structured baseline"),
+                    model_used=runtime_config.get("model_id", ""),
                     input_summary=trace["input_summary"],
                     reasoning_trace=trace.get("reasoning_trace", []),
                     reasoning_source=trace.get("reasoning_source", "structured_trace"),
@@ -1047,6 +1095,8 @@ def build_stage_card(
     stage_index: int,
     role: str,
     stage_status: str,
+    execution_mode: str,
+    model_used: str,
     input_summary: list[str],
     reasoning_trace: list[str],
     reasoning_source: str,
@@ -1060,6 +1110,12 @@ def build_stage_card(
     input_rest = input_summary[1:] if len(input_summary) > 1 else []
     reasoning_rest = reasoning_trace[1:] if len(reasoning_trace) > 1 else []
     output_rest = output_summary[1:] if len(output_summary) > 1 else []
+    runtime_label = execution_mode or "Structured baseline"
+    runtime_detail = (
+        f"{runtime_label} / {model_used}"
+        if model_used
+        else f"{runtime_label} / deterministic implementation"
+    )
     input_items = "".join(f"<li>{html.escape(log)}</li>" for log in input_rest)
     reasoning_items = "".join(f"<li>{html.escape(log)}</li>" for log in reasoning_rest)
     output_items = "".join(f"<li>{html.escape(log)}</li>" for log in output_rest)
@@ -1099,11 +1155,11 @@ def build_stage_card(
         "<summary>"
         "<div class='stage-head'>"
         "<div>"
-        f"<div class='stage-index'>Run {run_index} • Iteration {iteration} • Stage {stage_index}</div>"
+        f"<div class='stage-index'>Run {run_index} • Cycle {iteration} • Stage {stage_index}</div>"
         f"<div class='stage-role'>{html.escape(role)}</div>"
         "</div>"
         f"<div class='stage-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
-        f"<div class='stage-meta'><strong>Agent pass:</strong> {html.escape(role)}</div>"
+        f"<div class='stage-meta'><strong>Execution:</strong> {html.escape(runtime_detail)}</div>"
         "<div class='stage-chevron'></div>"
         "</div>"
         "</summary>"

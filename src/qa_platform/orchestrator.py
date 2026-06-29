@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections import defaultdict
 
 from .agents import (
     RequirementsAnalystAgent,
@@ -34,32 +35,121 @@ class OrchestratorAgent:
             max_feedback_messages=0,
             max_feedback_per_agent_pair=0,
         )
+        pair_feedback_counts: dict[tuple[str, str], int] = defaultdict(int)
+        total_feedback_messages = 0
+        route_round = 1
+        requirements_feedback: list[str] = []
+        design_feedback: list[str] = []
+        current_stage = "requirements"
 
-        for iteration in range(1, self.max_iterations + 1):
-            requirements = self.requirements_analyst.analyze(requirements_text)
-            stage_traces.append(
-                self._build_requirements_trace(iteration, requirements_text, requirements)
-            )
-            designs = self.test_designer.design(requirements)
-            stage_traces.append(self._build_design_trace(iteration, requirements, designs))
+        while True:
+            if current_stage == "requirements":
+                requirements = self.requirements_analyst.analyze(requirements_text, requirements_feedback)
+                stage_traces.append(
+                    self._build_requirements_trace(route_round, requirements_text, requirements)
+                )
+                requirements_feedback = []
+                current_stage = "design"
+                continue
+
+            if current_stage == "design":
+                designs = self.test_designer.design(requirements, design_feedback)
+                stage_traces.append(self._build_design_trace(route_round, requirements, designs))
+                design_feedback = []
+                design_backtrack_feedback = self._build_design_backtrack_feedback(requirements)
+                if (
+                    design_backtrack_feedback
+                    and route_round < control_config.max_rounds
+                    and self._can_send_feedback(
+                    from_agent="Test Design Agent",
+                    to_agent="Requirements Analyst",
+                    message_count=1,
+                    run_controls=control_config,
+                    total_feedback_messages=total_feedback_messages,
+                    pair_feedback_counts=pair_feedback_counts,
+                    )
+                ):
+                    total_feedback_messages += 1
+                    pair_feedback_counts[("Test Design Agent", "Requirements Analyst")] += 1
+                    stage_traces.append(
+                        self._build_targeted_orchestrator_trace(
+                            route_round=route_round,
+                            from_agent="Test Design Agent",
+                            to_agent="Requirements Analyst",
+                            feedback_messages=design_backtrack_feedback,
+                            run_controls=control_config,
+                            total_feedback_messages=total_feedback_messages,
+                        )
+                    )
+                    requirements_feedback = design_backtrack_feedback
+                    route_round += 1
+                    current_stage = "requirements"
+                    continue
+                current_stage = "review"
+                continue
+
             review = self.reviewer.review(requirements, designs)
             stage_traces.append(
-                self._build_review_trace(iteration, requirements, designs, review)
+                self._build_review_trace(route_round, requirements, designs, review)
             )
-            stage_traces.append(self._build_orchestrator_trace(iteration, review, control_config))
             if review.approved:
-                return PipelineResult(
-                    title=title,
-                    source_requirements=requirements_text,
-                    requirements=requirements,
-                    test_designs=designs,
-                    generated_artifacts=[],
-                    review=review,
-                    iterations=iteration,
-                    run_controls=control_config,
-                    agent_configs=runtime_configs,
-                    stage_traces=stage_traces,
+                stage_traces.append(
+                    self._build_stop_orchestrator_trace(
+                        route_round=route_round,
+                        review=review,
+                        run_controls=control_config,
+                        total_feedback_messages=total_feedback_messages,
+                        stop_reason="Stop pipeline because the review approved the result.",
+                    )
                 )
+                break
+
+            backtrack_route = self._select_review_backtrack_route(requirements, review)
+            if (
+                backtrack_route
+                and route_round < control_config.max_rounds
+                and self._can_send_feedback(
+                from_agent=backtrack_route["from_agent"],
+                to_agent=backtrack_route["to_agent"],
+                message_count=1,
+                run_controls=control_config,
+                total_feedback_messages=total_feedback_messages,
+                pair_feedback_counts=pair_feedback_counts,
+                )
+            ):
+                total_feedback_messages += 1
+                pair_feedback_counts[(backtrack_route["from_agent"], backtrack_route["to_agent"])] += 1
+                stage_traces.append(
+                    self._build_targeted_orchestrator_trace(
+                        route_round=route_round,
+                        from_agent=backtrack_route["from_agent"],
+                        to_agent=backtrack_route["to_agent"],
+                        feedback_messages=backtrack_route["feedback_messages"],
+                        run_controls=control_config,
+                        total_feedback_messages=total_feedback_messages,
+                    )
+                )
+                if backtrack_route["to_agent"] == "Requirements Analyst":
+                    requirements_feedback = backtrack_route["feedback_messages"]
+                    current_stage = "requirements"
+                else:
+                    design_feedback = backtrack_route["feedback_messages"]
+                    current_stage = "design"
+                route_round += 1
+                continue
+
+            stage_traces.append(
+                self._build_stop_orchestrator_trace(
+                    route_round=route_round,
+                    review=review,
+                    run_controls=control_config,
+                    total_feedback_messages=total_feedback_messages,
+                    stop_reason=(
+                        "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available."
+                    ),
+                )
+            )
+            break
 
         return PipelineResult(
             title=title,
@@ -68,7 +158,7 @@ class OrchestratorAgent:
             test_designs=designs,
             generated_artifacts=[],
             review=review,
-            iterations=self.max_iterations,
+            iterations=route_round,
             run_controls=control_config,
             agent_configs=runtime_configs,
             stage_traces=stage_traces,
@@ -217,12 +307,120 @@ class OrchestratorAgent:
             ),
         )
 
-    def _build_orchestrator_trace(
-        self, iteration: int, review, run_controls: RunControlConfig
+    def _can_send_feedback(
+        self,
+        from_agent: str,
+        to_agent: str,
+        message_count: int,
+        run_controls: RunControlConfig,
+        total_feedback_messages: int,
+        pair_feedback_counts: dict[tuple[str, str], int],
+    ) -> bool:
+        if run_controls.max_feedback_messages and (
+            total_feedback_messages + message_count > run_controls.max_feedback_messages
+        ):
+            return False
+        pair_limit = run_controls.max_feedback_per_agent_pair
+        if pair_limit and pair_feedback_counts[(from_agent, to_agent)] + message_count > pair_limit:
+            return False
+        return True
+
+    def _build_design_backtrack_feedback(self, requirements: list) -> list[str]:
+        feedback = []
+        for requirement in requirements:
+            if requirement.assumptions:
+                feedback.append(
+                    f"{requirement.requirement_id} needs clearer acceptance criteria and explicit error handling before strong test design can continue."
+                )
+        return feedback[:2]
+
+    def _select_review_backtrack_route(self, requirements: list, review) -> dict | None:
+        weak_oracle_findings = [finding for finding in review.findings if "weak oracle definition" in finding]
+        assumption_findings = [finding for finding in review.findings if "contains assumptions" in finding]
+        missing_design_findings = [finding for finding in review.findings if "missing a designed test case" in finding]
+
+        if weak_oracle_findings or missing_design_findings:
+            feedback_messages = []
+            if weak_oracle_findings:
+                feedback_messages.append(
+                    "Strengthen weak oracle definitions by adding more explicit expected results and negative scenarios."
+                )
+            if missing_design_findings:
+                feedback_messages.append(
+                    "Design missing test coverage for every uncovered requirement."
+                )
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Test Design Agent",
+                "feedback_messages": feedback_messages,
+            }
+
+        if assumption_findings:
+            targeted_requirements = [item.requirement_id for item in requirements if item.assumptions]
+            feedback_messages = [
+                f"{requirement_id} must reduce assumptions by clarifying acceptance criteria and negative or error behavior."
+                for requirement_id in targeted_requirements[:2]
+            ]
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Requirements Analyst",
+                "feedback_messages": feedback_messages,
+            }
+
+        return None
+
+    def _build_targeted_orchestrator_trace(
+        self,
+        route_round: int,
+        from_agent: str,
+        to_agent: str,
+        feedback_messages: list[str],
+        run_controls: RunControlConfig,
+        total_feedback_messages: int,
     ) -> StageTrace:
-        should_rerun = (not review.approved) and iteration < self.max_iterations
         return StageTrace(
-            iteration=iteration,
+            iteration=route_round,
+            stage_index=4,
+            agent_name="Orchestrator Agent",
+            input_summary=[
+                f"Backtracking request from: {from_agent}",
+                f"Backtracking target: {to_agent}",
+                f"Maximum rounds: {run_controls.max_rounds}",
+                f"Maximum feedback messages: {run_controls.max_feedback_messages}",
+                f"Maximum feedback per agent pair: {run_controls.max_feedback_per_agent_pair}",
+                f"Feedback messages already used: {total_feedback_messages}",
+            ],
+            output_summary=[
+                f"Send targeted feedback from {from_agent} to {to_agent}.",
+                *feedback_messages,
+            ],
+            status=f"backtrack to {to_agent.lower()}",
+            reasoning_trace=[
+                "Read the feedback request and evaluate whether the configured feedback budgets still allow another targeted handoff.",
+                "Choose the smallest possible backtracking step instead of restarting the whole pipeline.",
+                f"Route the workflow directly from {from_agent} back to {to_agent} so downstream stages can be regenerated from the repaired state.",
+            ],
+            agent_explanation=(
+                "The orchestrator now works as a routing controller. Instead of forcing a full rerun, "
+                "it can send a targeted repair request back to the most relevant upstream agent."
+            ),
+            decision_explanation=(
+                "This is selective backtracking. The orchestrator does not start over from scratch here. "
+                "It routes the repair message to the exact agent that should respond next, then resumes the "
+                "pipeline from that point."
+            ),
+        )
+
+    def _build_stop_orchestrator_trace(
+        self,
+        route_round: int,
+        review,
+        run_controls: RunControlConfig,
+        total_feedback_messages: int,
+        stop_reason: str,
+    ) -> StageTrace:
+        return StageTrace(
+            iteration=route_round,
             stage_index=4,
             agent_name="Orchestrator Agent",
             input_summary=[
@@ -231,17 +429,10 @@ class OrchestratorAgent:
                 f"Maximum rounds: {run_controls.max_rounds}",
                 f"Maximum feedback messages: {run_controls.max_feedback_messages}",
                 f"Maximum feedback per agent pair: {run_controls.max_feedback_per_agent_pair}",
-                "Selective feedback routing: disabled in structured baseline",
+                f"Feedback messages already used: {total_feedback_messages}",
             ],
             output_summary=[
-                "Stop pipeline because the review approved the result."
-                if review.approved
-                else (
-                    "Start another full iteration because the review did not approve the result "
-                    "and another pass is still allowed."
-                    if should_rerun
-                    else "Stop pipeline because the maximum number of iterations has been reached."
-                ),
+                stop_reason,
                 (
                     f"Primary reason: {review.findings[0]}"
                     if review.findings
@@ -249,34 +440,17 @@ class OrchestratorAgent:
                 ),
                 *review.improvement_actions[:3],
             ],
-            status="rerun" if should_rerun else "stop",
+            status="stop",
             reasoning_trace=[
-                "Read the review approval signal, current findings, and remaining iteration budget.",
-                "Choose between full rerun and stop because this baseline orchestrator has no selective repair path.",
-                "Feedback budgets may exist in run configuration, but this deterministic baseline cannot route a targeted message from one agent directly back to another.",
-                (
-                    "Route the workflow back to stage 1 for another full pass."
-                    if should_rerun
-                    else "Terminate the workflow because approval was reached or retry budget was exhausted."
-                ),
+                "Read the current review status together with the remaining feedback budget.",
+                "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
+                "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
             ],
             agent_explanation=(
-                "The orchestrator is the central control component in this baseline. It is not acting "
-                "like an autonomous specialist agent. It evaluates the review result and then decides "
-                "whether to stop or rerun the whole pipeline."
+                "The orchestrator is the routing controller for the workflow. It either stops the run or sends targeted repair requests to earlier agents."
             ),
             decision_explanation=(
-                "A rerun happens when review.approved is false and the maximum iteration limit has not "
-                "yet been reached. The whole pipeline is rerun because this baseline has no selective "
-                "repair mechanism, no per-stage checkpoint resume, and no routing logic that can restart "
-                "from only the failing stage. In other words, the orchestrator can only repeat the full "
-                "sequence, not continue from the point where quality became insufficient."
-                if should_rerun
-                else (
-                    "The pipeline stops because review.approved is true."
-                    if review.approved
-                    else "The pipeline stops even though findings remain, because the maximum iteration limit was reached and this baseline has no more retry budget."
-                )
+                "The run stops when approval is reached or when no more valid agent-to-agent backtracking step can be taken under the configured limits."
             ),
         )
 

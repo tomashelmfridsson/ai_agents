@@ -24,13 +24,19 @@ def _split_requirements(requirements_text: str) -> list[str]:
 class RequirementsAnalystAgent:
     name: str = "Requirements Analyst"
 
-    def analyze(self, requirements_text: str) -> list[RequirementItem]:
+    def analyze(
+        self,
+        requirements_text: str,
+        feedback_messages: list[str] | None = None,
+    ) -> list[RequirementItem]:
+        feedback_messages = feedback_messages or []
         items = []
         for index, raw_text in enumerate(_split_requirements(requirements_text), start=1):
             requirement_id = f"REQ-{index:03d}"
             normalized = raw_text.strip().rstrip(".")
             criteria = self._extract_acceptance_criteria(normalized)
             assumptions = self._build_assumptions(normalized, criteria)
+            criteria, assumptions = self._apply_feedback(requirement_id, criteria, assumptions, feedback_messages)
             items.append(
                 RequirementItem(
                     requirement_id=requirement_id,
@@ -74,12 +80,57 @@ class RequirementsAnalystAgent:
             return "medium"
         return "normal"
 
+    def _apply_feedback(
+        self,
+        requirement_id: str,
+        criteria: list[str],
+        assumptions: list[str],
+        feedback_messages: list[str],
+    ) -> tuple[list[str], list[str]]:
+        if not feedback_messages:
+            return criteria, assumptions
+
+        combined_feedback = " ".join(feedback_messages).lower()
+        updated_criteria = list(criteria)
+        updated_assumptions = list(assumptions)
+        feedback_targets_requirement = requirement_id.lower() in combined_feedback or "requirement" in combined_feedback
+
+        if feedback_targets_requirement and "acceptance criteria" in combined_feedback:
+            clarification = "Observable success and failure outcomes shall be explicitly defined."
+            if clarification not in updated_criteria:
+                updated_criteria.append(clarification)
+            updated_assumptions = [
+                assumption
+                for assumption in updated_assumptions
+                if "more explicit acceptance criteria" not in assumption.lower()
+            ]
+
+        if feedback_targets_requirement and any(
+            phrase in combined_feedback
+            for phrase in ("error handling", "negative path", "invalid credentials", "invalid input")
+        ):
+            clarification = "Negative and error flows shall be explicitly defined and testable."
+            if clarification not in updated_criteria:
+                updated_criteria.append(clarification)
+            updated_assumptions = [
+                assumption
+                for assumption in updated_assumptions
+                if "error handling is not explicit" not in assumption.lower()
+            ]
+
+        return updated_criteria, updated_assumptions
+
 
 @dataclass
 class TestDesignAgent:
     name: str = "Test Design Agent"
 
-    def design(self, requirements: list[RequirementItem]) -> list[TestCaseDesign]:
+    def design(
+        self,
+        requirements: list[RequirementItem],
+        feedback_messages: list[str] | None = None,
+    ) -> list[TestCaseDesign]:
+        feedback_messages = feedback_messages or []
         designs = []
         for req in requirements:
             test_type = self._choose_test_type(req)
@@ -87,7 +138,12 @@ class TestDesignAgent:
             title = f"Verify {req.requirement_id.lower()} {_slugify(req.normalized_text)[:40]}"
             steps = self._build_steps(req)
             expected_results = [criterion for criterion in req.acceptance_criteria]
-            oracle = "All expected results are satisfied and no unauthorized side effects are observed."
+            steps, expected_results, oracle = self._apply_feedback(
+                req.requirement_id,
+                steps,
+                expected_results,
+                feedback_messages,
+            )
             risks = self._identify_risks(req)
             designs.append(
                 TestCaseDesign(
@@ -130,6 +186,37 @@ class TestDesignAgent:
         if len(req.acceptance_criteria) < 2:
             risks.append("Limited specificity can reduce testability.")
         return risks
+
+    def _apply_feedback(
+        self,
+        requirement_id: str,
+        steps: list[str],
+        expected_results: list[str],
+        feedback_messages: list[str],
+    ) -> tuple[list[str], list[str], str]:
+        combined_feedback = " ".join(feedback_messages).lower()
+        targets_requirement = requirement_id.lower() in combined_feedback or not feedback_messages
+
+        updated_steps = list(steps)
+        updated_expected_results = list(expected_results)
+        oracle = "All expected results are satisfied and no unauthorized side effects are observed."
+
+        if feedback_messages and targets_requirement and any(
+            phrase in combined_feedback
+            for phrase in ("weak oracle", "more expected results", "negative scenarios", "negative case")
+        ):
+            extra_result = "Negative and boundary outcomes shall be verified explicitly against the acceptance criteria."
+            if extra_result not in updated_expected_results:
+                updated_expected_results.append(extra_result)
+            extra_step = "Compare positive, negative, and boundary outcomes against explicit expected results."
+            if extra_step not in updated_steps:
+                updated_steps.append(extra_step)
+            oracle = (
+                "Every positive, negative, and boundary expectation must be explicitly satisfied, "
+                "and the system must not introduce unauthorized side effects."
+            )
+
+        return updated_steps, updated_expected_results, oracle
 
 
 @dataclass
