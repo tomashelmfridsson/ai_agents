@@ -70,6 +70,27 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(any("authentication rule triggered" in line for line in reasoning))
         self.assertTrue(any("error-handling assumption was added" in line for line in reasoning))
 
+    def test_review_trace_explains_false_decision_with_threshold_math(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+        result = orchestrator.process(
+            title="Preset login demo",
+            requirements_text=(
+                "The user must be able to sign in with email and password.\n"
+                "The system shall display a clear error message when credentials are invalid.\n"
+                "An administrator shall be able to view an overview of registered users.\n"
+                "The user shall be able to register a new account through a form."
+            ),
+        )
+
+        reasoning = result.stage_traces[3].reasoning_trace
+        self.assertFalse(result.review.approved)
+        self.assertTrue(any("coverage_ratio=1.0" in line for line in reasoning))
+        self.assertTrue(any("Weak-oracle checks triggered for:" in line for line in reasoning))
+        self.assertTrue(any("Approval threshold: findings must be <= 2" in line for line in reasoning))
+        self.assertTrue(
+            any("Final decision: Approved=False because coverage passed" in line for line in reasoning)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

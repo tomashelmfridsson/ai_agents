@@ -48,6 +48,10 @@ def process_requirements(title: str, requirements: str, max_iterations: float) -
     return status, build_workflow_report(payload)
 
 
+def mark_custom_scenario(*_args: str) -> str:
+    return "Custom scenario"
+
+
 def build_demo() -> gr.Blocks:
     theme = gr.themes.Soft(
         primary_hue="amber",
@@ -171,15 +175,37 @@ def build_demo() -> gr.Blocks:
     }
     .gradio-container textarea,
     .gradio-container input,
+    .gradio-container select,
     .gradio-container .scroll-hide,
     .gradio-container .input-container {
       background: rgba(255, 255, 255, 0.99) !important;
       color: var(--app-ink) !important;
       border-color: var(--app-line) !important;
     }
+    .gradio-container select,
+    .gradio-container option {
+      background: #fffaf4 !important;
+      color: var(--app-ink) !important;
+    }
+    .gradio-container [role="listbox"],
+    .gradio-container [role="option"] {
+      background: #fffaf4 !important;
+      color: var(--app-ink) !important;
+    }
+    .gradio-container [role="option"][aria-selected="true"] {
+      background: rgba(203, 145, 50, 0.22) !important;
+      color: var(--app-ink) !important;
+    }
     .gradio-container textarea::placeholder,
     .gradio-container input::placeholder {
       color: var(--app-soft) !important;
+    }
+    .scenario-help {
+      margin: -2px 0 8px;
+      color: var(--app-muted) !important;
+      font-size: 0.93rem;
+      line-height: 1.5;
+      font-weight: 500;
     }
     .gradio-container button.primary,
     .gradio-container button[variant="primary"] {
@@ -279,15 +305,27 @@ def build_demo() -> gr.Blocks:
     }
     .stage-grid { display: grid; gap: 14px; }
     .stage-card { overflow: hidden; }
+    .stage-toggle {
+      border-bottom: 1px solid var(--app-line);
+    }
+    .stage-toggle summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .stage-toggle summary::-webkit-details-marker {
+      display: none;
+    }
     .stage-head {
       display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
       gap: 12px; padding: 16px 18px;
       background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(246,236,224,0.96));
-      border-bottom: 1px solid var(--app-line);
     }
     .stage-index { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--app-accent) !important; font-weight: 700; }
     .stage-role { font-size: 1.08rem; font-weight: 700; color: var(--app-ink) !important; }
     .stage-meta { font-size: 0.92rem; color: var(--app-muted) !important; align-self: end; font-weight: 500; }
+    .stage-chevron { justify-self: end; align-self: center; color: var(--app-accent) !important; font-weight: 700; }
+    .stage-toggle[open] .stage-chevron::before { content: "Collapse"; }
+    .stage-toggle:not([open]) .stage-chevron::before { content: "Expand"; }
     .stage-body { padding: 16px 18px 18px; }
     .stage-details {
       margin-bottom: 16px;
@@ -342,6 +380,7 @@ def build_demo() -> gr.Blocks:
     }
     @media (max-width: 820px) {
       .stage-head { grid-template-columns: 1fr; }
+      .stage-chevron { justify-self: start; }
       .doc-actions { justify-content: flex-start; }
     }
     """
@@ -422,6 +461,10 @@ def build_demo() -> gr.Blocks:
                     choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
                     value=DEFAULT_SCENARIO,
                 )
+                gr.Markdown(
+                    "Choose a preset, or switch to `Custom scenario` and write your own title and requirements below.",
+                    elem_classes=["scenario-help"],
+                )
                 title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
                 requirements_input = gr.Textbox(
                     label="Requirements",
@@ -455,6 +498,16 @@ def build_demo() -> gr.Blocks:
             fn=load_sample_scenario,
             inputs=[scenario_picker, title_input, requirements_input],
             outputs=[title_input, requirements_input],
+        )
+        title_input.input(
+            fn=mark_custom_scenario,
+            inputs=[title_input],
+            outputs=[scenario_picker],
+        )
+        requirements_input.input(
+            fn=mark_custom_scenario,
+            inputs=[requirements_input],
+            outputs=[scenario_picker],
         )
 
     return demo
@@ -637,6 +690,8 @@ def build_stage_card(
     )
     return (
         "<section class='stage-card'>"
+        "<details class='stage-toggle'>"
+        "<summary>"
         "<div class='stage-head'>"
         "<div>"
         f"<div class='stage-index'>Run {run_index} • Iteration {iteration} • Stage {stage_index}</div>"
@@ -644,7 +699,9 @@ def build_stage_card(
         "</div>"
         f"<div class='stage-meta'><strong>Status:</strong> {html.escape(stage_status)}</div>"
         f"<div class='stage-meta'><strong>Agent pass:</strong> {html.escape(role)}</div>"
+        "<div class='stage-chevron'></div>"
         "</div>"
+        "</summary>"
         "<div class='stage-body'>"
         f"{explanation_block}"
         "<div class='io-stack'>"
@@ -666,6 +723,7 @@ def build_stage_card(
         "</div>"
         "</div>"
         "</div>"
+        "</details>"
         "</section>"
     )
 

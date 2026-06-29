@@ -59,6 +59,18 @@ scenarioPresetNode?.addEventListener("change", () => {
   requirementsNode.value = scenario.requirements;
 });
 
+titleNode?.addEventListener("input", () => {
+  if (scenarioPresetNode) {
+    scenarioPresetNode.value = "custom";
+  }
+});
+
+requirementsNode?.addEventListener("input", () => {
+  if (scenarioPresetNode) {
+    scenarioPresetNode.value = "custom";
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -159,25 +171,30 @@ function buildStageCard(index, role, status, inputSummary, reasoningTrace, outpu
 
   return `
     <section class="stage-card">
-      <div class="stage-head">
-        <div>
-          <div class="stage-index">Stage ${index}</div>
-          <div class="stage-role">${escapeHtml(role)}</div>
+      <details class="stage-toggle">
+        <summary>
+          <div class="stage-head">
+            <div>
+              <div class="stage-index">Stage ${index}</div>
+              <div class="stage-role">${escapeHtml(role)}</div>
+            </div>
+            <div class="stage-meta"><strong>Status:</strong> ${escapeHtml(status)}</div>
+            <div class="stage-meta"><strong>Trace source:</strong> ${escapeHtml(reasoningSource)}</div>
+            <div class="stage-chevron"></div>
+          </div>
+        </summary>
+        <div class="stage-body">
+          <div class="log-title">Input</div>
+          <p class="io-summary">${escapeHtml(inputLead)}</p>
+          ${inputItems ? `<ul class="log-list">${inputItems}</ul>` : ""}
+          <div class="log-title">Reasoning trace</div>
+          <p class="io-summary">${escapeHtml(reasoningLead)}</p>
+          ${reasoningItems ? `<ul class="log-list">${reasoningItems}</ul>` : ""}
+          <div class="log-title">Output</div>
+          <p class="io-summary">${escapeHtml(outputLead)}</p>
+          ${outputItems ? `<ul class="log-list">${outputItems}</ul>` : ""}
         </div>
-        <div class="stage-meta"><strong>Status:</strong> ${escapeHtml(status)}</div>
-        <div class="stage-meta"><strong>Trace source:</strong> ${escapeHtml(reasoningSource)}</div>
-      </div>
-      <div class="stage-body">
-        <div class="log-title">Input</div>
-        <p class="io-summary">${escapeHtml(inputLead)}</p>
-        ${inputItems ? `<ul class="log-list">${inputItems}</ul>` : ""}
-        <div class="log-title">Reasoning trace</div>
-        <p class="io-summary">${escapeHtml(reasoningLead)}</p>
-        ${reasoningItems ? `<ul class="log-list">${reasoningItems}</ul>` : ""}
-        <div class="log-title">Output</div>
-        <p class="io-summary">${escapeHtml(outputLead)}</p>
-        ${outputItems ? `<ul class="log-list">${outputItems}</ul>` : ""}
-      </div>
+      </details>
     </section>
   `;
 }

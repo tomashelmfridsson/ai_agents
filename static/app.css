@@ -196,9 +196,23 @@ textarea {
   color: var(--ink);
 }
 
+select,
+option {
+  background: #fffaf4;
+  color: var(--ink);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--soft);
+}
+
+.scenario-help {
+  margin: -2px 0 8px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.93rem;
+  font-weight: 500;
 }
 
 textarea {
@@ -325,13 +339,25 @@ button:hover {
   overflow: hidden;
 }
 
+.stage-toggle {
+  border-bottom: 1px solid var(--line);
+}
+
+.stage-toggle summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.stage-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
 .stage-head {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
   gap: 12px;
   padding: 16px 18px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 236, 224, 0.96));
-  border-bottom: 1px solid var(--line);
 }
 
 .stage-index {
@@ -353,6 +379,21 @@ button:hover {
   color: var(--muted);
   align-self: end;
   font-weight: 500;
+}
+
+.stage-chevron {
+  justify-self: end;
+  align-self: center;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.stage-toggle[open] .stage-chevron::before {
+  content: "Collapse";
+}
+
+.stage-toggle:not([open]) .stage-chevron::before {
+  content: "Expand";
 }
 
 .stage-body {
@@ -406,6 +447,10 @@ button:hover {
     flex-direction: column;
     align-items: flex-start;
     grid-template-columns: 1fr;
+  }
+
+  .stage-chevron {
+    justify-self: start;
   }
 
   .panel {

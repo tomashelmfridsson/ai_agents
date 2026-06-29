@@ -36,7 +36,9 @@ class OrchestratorAgent:
             artifacts = self.test_generator.generate(requirements, designs)
             stage_traces.append(self._build_generation_trace(iteration, designs, artifacts))
             review = self.reviewer.review(requirements, designs, artifacts)
-            stage_traces.append(self._build_review_trace(iteration, requirements, artifacts, review))
+            stage_traces.append(
+                self._build_review_trace(iteration, requirements, designs, artifacts, review)
+            )
             stage_traces.append(self._build_orchestrator_trace(iteration, review))
             if review.approved:
                 return PipelineResult(
@@ -204,7 +206,10 @@ class OrchestratorAgent:
             ),
         )
 
-    def _build_review_trace(self, iteration: int, requirements: list, artifacts: list, review) -> StageTrace:
+    def _build_review_trace(
+        self, iteration: int, requirements: list, designs: list, artifacts: list, review
+    ) -> StageTrace:
+        review_reasoning = self._build_review_reasoning(requirements, designs, artifacts, review)
         return StageTrace(
             iteration=iteration,
             stage_index=4,
@@ -235,6 +240,7 @@ class OrchestratorAgent:
                 "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
                 "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
                 "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
+                *review_reasoning,
             ],
             agent_explanation=(
                 "This review stage is a deterministic rule check, not an autonomous evaluator. It "
@@ -375,3 +381,73 @@ class OrchestratorAgent:
             f"{item.requirement_id}: acceptance-criteria derivation -> {'; '.join(acceptance_rules)}.",
             f"{item.requirement_id}: assumptions derivation -> {'; '.join(assumption_rules)}.",
         ]
+
+    def _build_review_reasoning(
+        self, requirements: list, designs: list, artifacts: list, review
+    ) -> list[str]:
+        covered_requirements = {artifact.requirement_id for artifact in artifacts}
+        coverage_target = len(requirements)
+        coverage_hits = len(covered_requirements)
+        threshold = max(1, len(requirements) // 2)
+        reasoning = [
+            (
+                f"Coverage check: {coverage_hits}/{coverage_target} requirements have at least one generated artifact, "
+                f"so coverage_ratio={review.coverage_ratio}."
+            ),
+            (
+                "Covered requirement IDs: "
+                + (", ".join(sorted(covered_requirements)) if covered_requirements else "none")
+                + "."
+            ),
+        ]
+
+        missing_requirements = [
+            requirement.requirement_id
+            for requirement in requirements
+            if requirement.requirement_id not in covered_requirements
+        ]
+        reasoning.append(
+            "Missing artifact coverage: "
+            + (", ".join(missing_requirements) if missing_requirements else "none")
+            + "."
+        )
+
+        weak_oracle_designs = [
+            f"{design.test_case_id} ({len(design.expected_results)} expected result(s))"
+            for design in designs
+            if len(design.expected_results) < 2
+        ]
+        reasoning.append(
+            "Weak-oracle checks triggered for: "
+            + (", ".join(weak_oracle_designs) if weak_oracle_designs else "none")
+            + "."
+        )
+
+        assumption_requirements = [
+            f"{requirement.requirement_id} ({len(requirement.assumptions)} assumption(s))"
+            for requirement in requirements
+            if requirement.assumptions
+        ]
+        reasoning.append(
+            "Assumption checks triggered for: "
+            + (", ".join(assumption_requirements) if assumption_requirements else "none")
+            + "."
+        )
+
+        reasoning.append(
+            f"Approval threshold: findings must be <= {threshold} when coverage_ratio is 1.0."
+        )
+        reasoning.append(
+            f"Observed findings: {len(review.findings)}. Coverage OK: {review.coverage_ratio == 1.0}. "
+            f"Findings threshold OK: {len(review.findings) <= threshold}."
+        )
+        reasoning.append(
+            "Final decision: Approved=False because coverage passed but the findings count exceeded the threshold."
+            if not review.approved and review.coverage_ratio == 1.0 and len(review.findings) > threshold
+            else (
+                "Final decision: Approved=False because artifact coverage was incomplete."
+                if not review.approved and review.coverage_ratio < 1.0
+                else "Final decision: Approved=True because coverage passed and findings stayed within threshold."
+            )
+        )
+        return reasoning
