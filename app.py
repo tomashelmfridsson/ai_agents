@@ -123,19 +123,30 @@ def build_demo() -> gr.Blocks:
       color: inherit;
     }
     .app-shell { max-width: 1080px; margin: 0 auto; }
-    .hero-card, .panel-card, .info-card {
+    .hero-card, .hero-card > div, .panel-card, .panel-card > div, .info-card, .info-card > div {
       border-radius: 24px;
-      border: 1px solid var(--app-line);
-      background: linear-gradient(180deg, var(--app-paper), var(--app-paper-2));
-      box-shadow: 0 18px 42px rgba(50, 28, 8, 0.14);
+      border: 1px solid var(--app-line) !important;
+      background: linear-gradient(180deg, var(--app-paper), var(--app-paper-2)) !important;
+      box-shadow: 0 18px 42px rgba(50, 28, 8, 0.14) !important;
     }
     .hero-card {
       overflow: hidden;
       background:
         radial-gradient(circle at top right, rgba(203, 145, 50, 0.18), transparent 28%),
-        linear-gradient(180deg, rgba(255, 252, 247, 0.99), rgba(245, 234, 220, 0.99));
-      border: 1px solid rgba(29, 20, 13, 0.16);
-      box-shadow: 0 20px 46px rgba(50, 28, 8, 0.16);
+        linear-gradient(180deg, rgba(255, 252, 247, 1), rgba(245, 234, 220, 1)) !important;
+      border: 1px solid rgba(29, 20, 13, 0.16) !important;
+      box-shadow: 0 20px 46px rgba(50, 28, 8, 0.16) !important;
+    }
+    .hero-card * {
+      color: var(--app-ink) !important;
+    }
+    .panel-card {
+      background: linear-gradient(180deg, rgba(255, 251, 246, 1), rgba(246, 236, 223, 1)) !important;
+    }
+    .panel-card > div,
+    .panel-card .block,
+    .panel-card .gr-group {
+      background: transparent !important;
     }
     .panel-card, .info-card, .metric-card, .stage-card, .diagram-card, .diagram-node, .workflow-step {
       color: var(--app-ink) !important;
@@ -190,9 +201,13 @@ def build_demo() -> gr.Blocks:
     }
     .workflow-step {
       border-radius: 18px;
-      border: 1px solid var(--app-line);
-      background: rgba(255, 253, 249, 0.99);
+      border: 1px solid var(--app-line) !important;
+      background: rgba(255, 253, 249, 1) !important;
       padding: 14px 16px 16px;
+    }
+    .workflow-step > div,
+    .workflow-step .block {
+      background: transparent !important;
     }
     .workflow-step strong {
       display: block;
@@ -283,6 +298,22 @@ def build_demo() -> gr.Blocks:
     .gradio-container .form,
     .gradio-container .wrap,
     .gradio-container .container {
+      color: var(--app-ink) !important;
+    }
+    .gradio-container .gr-group,
+    .gradio-container .block {
+      background-color: transparent !important;
+    }
+    .panel-card h2,
+    .panel-card h3,
+    .panel-card label,
+    .panel-card p,
+    .panel-card span,
+    .panel-card div,
+    .workflow-step p,
+    .workflow-step label,
+    .workflow-step span,
+    .workflow-step div {
       color: var(--app-ink) !important;
     }
     .gradio-container textarea,
