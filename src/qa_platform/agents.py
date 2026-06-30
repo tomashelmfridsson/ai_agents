@@ -114,6 +114,11 @@ class RequirementsAnalystAgent:
             f"{requirements_text}\n\n"
             "Incoming upstream feedback:\n"
             f"{feedback_block}\n\n"
+            "Important update rules:\n"
+            "- Keep one requirement object for each original requirement statement.\n"
+            "- Revise only the targeted requirement objects when feedback names specific requirement IDs.\n"
+            "- Preserve untargeted requirements instead of dropping them.\n"
+            "- Never return an empty requirements array when the source text contains requirement statements.\n\n"
             "Return one requirement object per requirement statement. "
             "Acceptance criteria must be observable and testable. "
             "Assumptions must stay explicit instead of being silently resolved."
@@ -144,6 +149,12 @@ class RequirementsAnalystAgent:
                 )
             )
         items, validation_findings = self._standardize_requirement_items(items)
+        items, validation_findings = self._recover_previous_requirements_if_needed(
+            items,
+            validation_findings,
+            feedback_messages,
+            run_session,
+        )
         self.last_execution = {
             "mode": "llm",
             "reasoning_source": "llm_structured_output",
@@ -156,6 +167,48 @@ class RequirementsAnalystAgent:
         }
         self._update_memory(run_session, items, feedback_messages, validation_findings)
         return items
+
+    def _recover_previous_requirements_if_needed(
+        self,
+        items: list[RequirementItem],
+        validation_findings: list[str],
+        feedback_messages: list[str],
+        run_session: RunSession | None,
+    ) -> tuple[list[RequirementItem], list[str]]:
+        if items or not feedback_messages or not run_session:
+            return items, validation_findings
+
+        previous_items = run_session.working_memory.read_shared("requirements", [])
+        if not previous_items:
+            return items, validation_findings
+
+        recovered_items = []
+        for raw_item in previous_items:
+            if not isinstance(raw_item, dict):
+                continue
+            recovered_items.append(
+                RequirementItem(
+                    requirement_id=str(raw_item.get("requirement_id", "")).strip(),
+                    original_text=str(raw_item.get("original_text", "")).strip(),
+                    normalized_text=str(raw_item.get("normalized_text", "")).strip(),
+                    priority=_clean_priority(raw_item.get("priority")),
+                    acceptance_criteria=_clean_string_list(raw_item.get("acceptance_criteria")),
+                    assumptions=_clean_string_list(raw_item.get("assumptions")),
+                )
+            )
+
+        recovered_items, recovered_findings = self._standardize_requirement_items(recovered_items)
+        if not recovered_items:
+            return items, validation_findings
+
+        fallback_findings = [
+            *validation_findings,
+            "Requirements Analyst returned no valid items after feedback, so the previous valid requirement set was preserved for this round.",
+        ]
+        for finding in recovered_findings:
+            if finding not in fallback_findings:
+                fallback_findings.append(finding)
+        return recovered_items, fallback_findings
 
     def _update_memory(
         self,
@@ -547,9 +600,18 @@ class TestDesignAgent:
     def _feedback_messages_to_requirements(self, requirements: list[RequirementItem]) -> list[str]:
         feedback = []
         for requirement in requirements:
-            if requirement.assumptions:
+            if len(requirement.acceptance_criteria) < 2:
                 feedback.append(
-                    f"{requirement.requirement_id} needs clearer acceptance criteria and explicit error handling before strong test design can continue."
+                    f"{requirement.requirement_id} needs clearer acceptance criteria before strong test design can continue."
+                )
+                continue
+            lowered_criteria = " ".join(requirement.acceptance_criteria).lower()
+            if not any(
+                phrase in lowered_criteria
+                for phrase in ("error", "invalid", "negative", "failure")
+            ):
+                feedback.append(
+                    f"{requirement.requirement_id} needs explicit negative or error-path acceptance criteria before strong test design can continue."
                 )
         return feedback[:2]
 

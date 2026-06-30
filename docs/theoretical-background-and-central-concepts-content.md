@@ -1,8 +1,63 @@
-## Översikt
+## Innehåll
 
-Detta kapitel introducerar centrala begrepp som är värdefulla för att förstå AI-baserade system, agentarkitekturer och kvalitetssäkring inom mjukvaruutveckling. Kapitlet fungerar som en teoretisk grund för fortsatt litteraturstudie, analys och metodval.
+- [Artificiell intelligens](#artificiell-intelligens)
+- [Maskininlärning](#maskininlarning)
+- [Djupinlärning](#djupinlarning)
+- [Foundation Models](#foundation-models)
+- [Generativ AI](#generativ-ai)
+- [Large Language Models](#large-language-models)
+- [Prompt Engineering](#prompt-engineering)
+- [Embeddings](#embeddings)
+- [Vector Databases](#vector-databases)
+- [Retrieval-Augmented Generation](#retrieval-augmented-generation)
+- [AI Agent](#ai-agent)
+- [Agentic AI](#agentic-ai)
+- [Multi-Agent System](#multi-agent-system)
+- [Orchestrator](#orchestrator)
+- [Agent Memory](#agent-memory)
+- [Planning](#planning)
+- [Reflection och Review](#reflection-och-review)
+- [Tool Calling](#tool-calling)
+- [Function Calling](#function-calling)
+- [Model Context Protocol](#model-context-protocol)
+- [Software Engineering](#software-engineering)
+- [AI for Software Engineering](#ai-for-software-engineering)
+- [Agentic Software Engineering](#agentic-software-engineering)
+- [Software Quality Assurance](#software-quality-assurance)
+- [Verification and Validation](#verification-and-validation)
+- [Requirement](#requirement)
+- [Acceptance Criteria](#acceptance-criteria)
+- [Requirement Traceability](#requirement-traceability)
+- [Test Design](#test-design)
+- [Test Oracle](#test-oracle)
+- [Unit Test](#unit-test)
+- [Integration Test](#integration-test)
+- [GUI Test](#gui-test)
+- [End-to-End Test](#end-to-end-test)
+- [Test Automation](#test-automation)
+- [Test-Driven Development](#test-driven-development)
+- [Self-Healing](#self-healing)
+- [Code Coverage](#code-coverage)
+- [Requirement Coverage](#requirement-coverage)
+- [Test Pass Rate](#test-pass-rate)
+- [Iterationscykler](#iterationscykler)
+- [Exekveringstid](#exekveringstid)
+- [Code Quality](#code-quality)
+- [SonarQube](#sonarqube)
+- [Agent Framework](#agent-framework)
+- [Modellagnostisk arkitektur](#modellagnostisk-arkitektur)
+- [Lokala och molnbaserade modeller](#lokala-och-molnbaserade-modeller)
+- [Ollama](#ollama)
+- [Hugging Face](#hugging-face)
+- [GitHub och GitHub Pages](#github-och-github-pages)
+- [Continuous Integration](#continuous-integration)
+- [Demonstrator](#demonstrator)
+- [Artefakt](#artefakt)
+- [Sammanfattning](#sammanfattning)
 
-## 2.1 Artificiell intelligens
+---
+
+## Artificiell intelligens
 
 Artificiell intelligens, ofta förkortat AI, är ett samlingsbegrepp för system som kan utföra uppgifter som traditionellt har krävt mänsklig intelligens. Det kan exempelvis handla om problemlösning, beslutsfattande, mönsterigenkänning, språkbearbetning, planering eller lärande.
 
@@ -12,7 +67,7 @@ AI kan delas in i flera nivåer. På en övergripande nivå finns artificiell in
 
 AI är i detta sammanhang inte ett mål i sig, utan ett medel för att undersöka hur kvalitetssäkringsarbete kan stödjas av agentbaserade system.
 
-## 2.2 Maskininlärning
+## Maskininlärning
 
 Maskininlärning är ett område inom AI där modeller tränas på data för att kunna identifiera mönster och göra prediktioner eller generera output. Till skillnad från traditionell programmering, där regler specificeras explicit, lär sig modellen statistiska samband från exempel.
 
@@ -24,7 +79,7 @@ Maskininlärning brukar ofta delas in i tre huvudtyper:
 
 Maskininlärning är relevant eftersom LLM:er bygger på modeller som tränats på stora mängder text och kod. I många tillämpningar tränas inte egna modeller, utan befintliga modeller används som komponenter i större system.
 
-## 2.3 Djupinlärning
+## Djupinlärning
 
 Djupinlärning är en underkategori av maskininlärning där neurala nätverk med flera lager används för att representera komplexa samband i data. Djupinlärning har haft stor betydelse för utvecklingen av moderna AI-system, särskilt inom bildanalys, taligenkänning, naturlig språkbehandling och kodgenerering.
 
@@ -32,7 +87,7 @@ Djupinlärning är här främst relevant som teknisk grund till de språkmodelle
 
 Detta har betydelse för QA eftersom genererade testfall kan se rimliga ut utan att vara kompletta, korrekta eller spårbara mot krav. Därför behövs granskning, mätetal och iterativa feedbackmekanismer.
 
-## 2.4 Foundation Models
+## Foundation Models
 
 Foundation Models är stora, generella AI-modeller tränade på mycket omfattande datamängder och som kan anpassas till många olika uppgifter. En språkmodell som GPT, Claude, Llama, Qwen eller Gemini kan ses som exempel på foundation models.
 
@@ -40,7 +95,7 @@ Ett kännetecken för foundation models är att de inte är tränade för en end
 
 Foundation models används ofta som den underliggande intelligensen i agenter. Själva modellen är dock inte samma sak som en agent. En modell genererar text eller kod. En agent kombinerar modellen med mål, instruktioner, verktyg, minne och ett arbetsflöde.
 
-## 2.5 Generativ AI
+## Generativ AI
 
 Generativ AI avser AI-system som kan skapa nytt innehåll. Det kan vara text, programkod, bilder, ljud, testfall, dokumentation eller andra artefakter. Inom mjukvaruutveckling används generativ AI exempelvis för kravanalys, kodgenerering, testgenerering, dokumentation, refaktorering och felsökning.
 
@@ -56,7 +111,7 @@ Generativ AI är relevant eftersom agenter kan skapa nya QA-artefakter. Exempel 
 
 En viktig begränsning är att generativ AI kan producera output som verkar korrekt men som innehåller fel, saknar täckning eller bygger på implicita antaganden. Därför räcker det inte att generera testfall. Testfallen måste också kunna granskas, spåras mot krav och helst exekveras.
 
-## 2.6 Large Language Models
+## Large Language Models
 
 Large Language Models, ofta förkortat LLM:er, är stora språkmodeller tränade på omfattande text- och kodmängder. De används för att förstå och generera naturligt språk och programkod. Moderna LLM:er bygger vanligtvis på Transformer-arkitekturen och har visat stark förmåga inom bland annat textgenerering, kodgenerering, sammanfattning och frågebesvarande.
 
@@ -88,7 +143,7 @@ LLM:er är centrala i många sådana system, men de har flera begränsningar:
 
 Därför behövs agentorkestrering, granskningsloopar och utvärderingsmått.
 
-## 2.7 Prompt Engineering
+## Prompt Engineering
 
 Prompt engineering innebär att formulera instruktioner till en språkmodell på ett sätt som ökar sannolikheten för användbar output. En prompt kan innehålla uppgift, kontext, formatkrav, exempel och begränsningar.
 
@@ -105,7 +160,7 @@ Prompt engineering är viktigt eftersom små skillnader i instruktioner kan påv
 
 I ett forskningsprojekt bör promptar behandlas som en del av metoden. De bör versioneras, dokumenteras och kunna återanvändas.
 
-## 2.8 Embeddings
+## Embeddings
 
 Embeddings är numeriska representationer av text, kod eller andra objekt. Syftet är att placera semantiskt liknande innehåll nära varandra i ett vektorrum. Detta gör det möjligt att söka efter innehåll baserat på betydelse snarare än exakta nyckelord.
 
@@ -113,7 +168,7 @@ Exempelvis kan två formuleringar som “appen ska visa felmeddelande vid nätve
 
 Embeddings används ofta i RAG-system för att hitta relevanta dokument, krav, testfall eller tidigare buggrapporter. De blir särskilt relevanta när agenter ska kunna återanvända tidigare testdesign, befintliga testfall eller domänkunskap.
 
-## 2.9 Vector Databases
+## Vector Databases
 
 En vektordatabas lagrar embeddings och gör det möjligt att söka efter semantiskt liknande innehåll. Istället för att bara matcha ord kan en vektordatabas hitta innehåll som är begreppsmässigt relevant.
 
@@ -129,7 +184,7 @@ I ett QA-sammanhang kan en vektordatabas användas för att lagra:
 
 Vektordatabaser är ofta inte huvudfokus i en första analys, men de kan stödja ett agentiskt system genom att ge agenterna tillgång till tidigare kunskap. Detta blir särskilt relevant när en enkel demonstrator utvecklas till ett mer realistiskt QA-stöd.
 
-## 2.10 Retrieval-Augmented Generation
+## Retrieval-Augmented Generation
 
 Retrieval-Augmented Generation, RAG, är en teknik där en språkmodell kombineras med informationssökning. Istället för att enbart förlita sig på modellens interna parametrar hämtas relevant information från externa dokument eller databaser och ges som kontext till modellen. Den ursprungliga RAG-idén kombinerar parametrisk kunskap i modellen med icke-parametrisk kunskap i en extern informationskälla. ([arXiv](https://arxiv.org/abs/2005.11401?utm_source=chatgpt.com))
 
@@ -151,7 +206,7 @@ RAG kan användas som stödkomponent, men behöver inte vara huvudbidraget i en 
 
 RAG kan därför integreras i exempelvis Test Design Agent, som kan söka efter tidigare testfall eller tidigare krav innan nya testfall skapas.
 
-## 2.11 AI Agent
+## AI Agent
 
 En AI-agent är ett system som använder en AI-modell, ofta en LLM, för att utföra en uppgift mer autonomt än en vanlig chatbot. En agent kan ha ett mål, instruktioner, tillgång till verktyg, minne, möjlighet att läsa och skriva filer samt förmåga att interagera med andra system.
 
@@ -169,7 +224,7 @@ I forskning om LLM-baserade agenter inom software engineering beskrivs agenter o
 
 I ett QA-arbetsflöde kan en agent beskrivas som en specialiserad komponent med ett tydligt ansvar, exempelvis kravanalys, testdesign, testgenerering eller granskning.
 
-## 2.12 Agentic AI
+## Agentic AI
 
 Agentic AI beskriver AI-system som inte bara genererar svar, utan också kan agera mot mål över flera steg. Det innebär att systemet kan planera, välja verktyg, utföra handlingar, utvärdera resultat och eventuellt iterera.
 
@@ -177,7 +232,7 @@ Agentic AI skiljer sig från vanlig generativ AI genom graden av handlingsförm�
 
 Agentisk AI används ofta för att beskriva en övergripande arkitektur där en orkestrator koordinerar flera specialiserade agenter. Detta är centralt när fokus inte bara ligger på att generera enstaka artefakter, utan på att undersöka hur ett fler-stegsflöde kan stödja kravbaserad testdesign.
 
-## 2.13 Multi-Agent System
+## Multi-Agent System
 
 Ett Multi-Agent System består av flera agenter som samarbetar eller samordnas för att lösa en uppgift. Varje agent kan ha en särskild roll, specialisering eller uppgift.
 
@@ -193,7 +248,7 @@ Ett exempel på rolluppdelning är följande agenter:
 
 Syftet med denna uppdelning är att efterlikna ett QA-arbetsflöde där kravanalys, testdesign, testimplementation och granskning är olika aktiviteter. Multi-agent-arkitekturen gör det också möjligt att använda olika modeller för olika uppgifter.
 
-## 2.14 Orchestrator
+## Orchestrator
 
 En orkestrator är en komponent eller agent som styr arbetsflödet mellan andra agenter. Orkestratorn ansvarar för att delegera uppgifter, samla resultat, initiera iterationer och avgöra när arbetsflödet kan gå vidare.
 
@@ -221,7 +276,7 @@ Skillnaden är viktig. I en hårdkodad kedja sker stegen alltid i samma ordning.
 
 I agentiska system är orkestratorn central eftersom den gör det möjligt att gå bortom en enkel hårdkodad agentkedja.
 
-## 2.15 Agent Memory
+## Agent Memory
 
 Agentminne syftar på information som en agent kan behålla eller återanvända över tid. Det kan vara korttidsminne under en körning eller långtidsminne mellan olika körningar.
 
@@ -239,7 +294,7 @@ Minnet kan implementeras på olika sätt, exempelvis som JSON-filer, databaspost
 
 Agentminne är viktigt för QA eftersom testdesign ofta bygger på tidigare erfarenhet. Ett system som kan återanvända tidigare testmönster kan potentiellt skapa mer konsekventa och relevanta tester.
 
-## 2.16 Planning
+## Planning
 
 Planning innebär att en agent eller orkestrator bryter ner ett mål i delsteg. I ett QA-system kan målet vara att skapa testartefakter från krav. Detta kan delas upp i kravanalys, acceptanskriterier, testdesign, testgenerering och granskning.
 
@@ -259,7 +314,7 @@ Plan:
 6. Iterera vid behov
 ```
 
-## 2.17 Reflection och Review
+## Reflection och Review
 
 Reflection innebär att ett AI-system granskar sitt eget eller en annan agents output och försöker identifiera brister. Termen används ofta i praktiken i form av en Review Agent eller motsvarande granskningssteg.
 
@@ -274,7 +329,7 @@ Review Agent har en viktig QA-roll. Den ska inte primärt skapa nya testfall, ut
 
 Review Agent kan därmed fungera som en kvalitetsgrind mellan agentstegen.
 
-## 2.18 Tool Calling
+## Tool Calling
 
 Tool Calling innebär att en agent kan använda externa verktyg för att utföra handlingar. Det kan exempelvis vara att läsa filer, skriva JSON, söka i dokument, köra tester eller anropa ett API.
 
@@ -291,7 +346,7 @@ I ett sådant system kan tool calling användas för att:
 
 Detta gör systemet mer integrerat och närmare ett verkligt QA-arbetsflöde.
 
-## 2.19 Function Calling
+## Function Calling
 
 Function Calling är en specifik form av tool calling där modellen anropar fördefinierade funktioner med strukturerade argument. Det kan exempelvis handla om att modellen returnerar ett JSON-objekt som sedan används för att anropa en funktion i programmet.
 
@@ -307,7 +362,7 @@ Exempel:
 
 Function Calling är särskilt relevant när man vill ha strukturerad output från en LLM. Det kan användas för att skapa konsekventa kravobjekt, testdesignobjekt och granskningsresultat.
 
-## 2.20 Model Context Protocol
+## Model Context Protocol
 
 Model Context Protocol, MCP, är en öppen standard för att koppla AI-applikationer till externa datakällor och verktyg. Syftet är att skapa ett standardiserat sätt för AI-system att få åtkomst till kontext, data och funktioner. ([Anthropic](https://www.anthropic.com/news/model-context-protocol?utm_source=chatgpt.com))
 
@@ -315,7 +370,7 @@ MCP kan beskrivas som ett integrationslager mellan AI-modeller och omgivande sys
 
 MCP är relevant som ett möjligt integrationsmönster. För en första prototyp är det inte säkert att MCP behöver implementeras, men begreppet är viktigt eftersom moderna agentplattformar allt oftare använder standardiserade verktygsintegrationer.
 
-## 2.21 Software Engineering
+## Software Engineering
 
 Software Engineering avser systematisk utveckling, drift och underhåll av mjukvarusystem. Det omfattar kravhantering, design, implementation, testning, deployment, underhåll och kvalitetssäkring.
 
@@ -323,7 +378,7 @@ Detta projekt är placerat inom software engineering eftersom det undersöker hu
 
 Fokus ligger inte på AI som fristående teknik, utan på hur AI kan integreras i en mjukvaruprocess.
 
-## 2.22 AI for Software Engineering
+## AI for Software Engineering
 
 AI for Software Engineering innebär användning av AI-tekniker för att stödja mjukvaruutveckling. Exempel är kodgenerering, kravanalys, testgenerering, felsökning, refaktorering, dokumentation och kodgranskning.
 
@@ -331,7 +386,7 @@ LLM-baserade agenter har blivit särskilt intressanta inom software engineering 
 
 I detta sammanhang fokuseras AI for Software Engineering på QA och testrelaterade aktiviteter snarare än generell kodproduktion.
 
-## 2.23 Agentic Software Engineering
+## Agentic Software Engineering
 
 Agentic Software Engineering innebär att agentiska AI-system används för att stödja eller automatisera delar av mjukvaruutvecklingsprocessen. Skillnaden mot enklare AI-assistenter är att agentiska system kan arbeta över flera steg, använda verktyg och samordna flera specialiserade roller.
 
@@ -346,7 +401,7 @@ Exempel på agentiska software engineering-flöden är:
 
 Agentic Software Engineering kan användas för att skapa QA-orienterade arbetsflöden där agenter transformerar krav till testdesign och testartefakter.
 
-## 2.24 Software Quality Assurance
+## Software Quality Assurance
 
 Software Quality Assurance, QA, omfattar processer, metoder och aktiviteter som syftar till att säkerställa mjukvarukvalitet. QA handlar inte bara om att hitta fel genom testning, utan även om att bygga kvalitet genom kravhantering, granskning, processkontroll, spårbarhet och förbättring.
 
@@ -362,7 +417,7 @@ Viktiga QA-aspekter i projektet är:
 - mätbar kvalitet
 - iterationscykler
 
-## 2.25 Verification and Validation
+## Verification and Validation
 
 Verification and Validation, ofta förkortat V&V, är centrala begrepp inom kvalitetssäkring.
 
@@ -373,7 +428,7 @@ I denna kontext kan verification kopplas till att genererade tester spåras mot 
 
 Ett agentiskt QA-system kan potentiellt stödja både verification och validation, men den första prototypen bör främst fokusera på verification.
 
-## 2.26 Requirement
+## Requirement
 
 Ett krav beskriver en egenskap, funktion, begränsning eller kvalitet som ett system ska uppfylla. Krav kan vara funktionella eller icke-funktionella.
 
@@ -391,7 +446,7 @@ Systemet ska visa svar inom två sekunder.
 
 I kravdrivna agentflöden är krav ofta den huvudsakliga inputen. En Requirements Analyst Agent kan bryta ner kravtext till strukturerade krav med ID, beskrivning, aktör, handling, villkor och acceptanskriterier.
 
-## 2.27 Acceptance Criteria
+## Acceptance Criteria
 
 Acceptanskriterier beskriver under vilka villkor ett krav anses vara uppfyllt. De gör kravet mer testbart och fungerar som brygga mellan krav och testdesign.
 
@@ -408,7 +463,7 @@ Acceptanskriterier:
 
 Acceptanskriterier är centrala eftersom en Test Design Agent kan använda dem för att skapa testfall.
 
-## 2.28 Requirement Traceability
+## Requirement Traceability
 
 Requirement Traceability innebär att krav kan kopplas till andra artefakter, exempelvis acceptanskriterier, testfall, kod eller buggrapporter. Spårbarhet är viktigt för att kunna visa att varje krav har verifierats.
 
@@ -424,7 +479,7 @@ Exempel:
 
 Spårbarhet är också viktigt för Review Agent, som kan identifiera krav utan testtäckning.
 
-## 2.29 Test Design
+## Test Design
 
 Testdesign är processen att utforma testfall baserat på krav, risker, systembeteende och acceptanskriterier. Testdesign handlar inte bara om att skriva testkod, utan om att bestämma vad som ska testas, varför det ska testas och hur testet ska avgöra om resultatet är korrekt.
 
@@ -440,7 +495,7 @@ En Test Design Agent kan vara ansvarig för att skapa en testdesign som innehål
 
 Testdesign är en central QA-aktivitet och bör särskiljas från testgenerering. Testdesign beskriver vad som ska testas. Testgenerering skapar de konkreta testartefakterna.
 
-## 2.30 Test Oracle
+## Test Oracle
 
 Ett testorakel avgör om ett testresultat är korrekt eller felaktigt. Utan ett testorakel kan ett test exekveras, men det går inte att veta om resultatet är rätt.
 
@@ -454,7 +509,7 @@ Detta är ett testorakel eftersom det anger förväntat beteende.
 
 I AI-genererad testdesign är testorakel särskilt viktigt. Ett vanligt problem är att modeller genererar teststeg utan tydliga förväntade resultat. Därför bör Test Design Agent alltid tvingas ange testorakel.
 
-## 2.31 Unit Test
+## Unit Test
 
 Ett enhetstest testar en liten isolerad del av systemet, exempelvis en funktion, klass eller komponent. Enhetstester är ofta snabba och används för att verifiera logik på låg nivå.
 
@@ -467,13 +522,13 @@ I sådana system kan enhetstester användas för att testa exempelvis:
 
 Enhetstester är särskilt viktiga i ett TDD-flöde eftersom de kan skapas tidigt och användas för att styra implementation.
 
-## 2.32 Integration Test
+## Integration Test
 
 Ett integrationstest verifierar att flera komponenter fungerar tillsammans. Exempelvis kan ett integrationstest kontrollera att en backend-komponent korrekt anropar ett externt API och hanterar svaret.
 
 Integrationstester blir relevanta när en demonstrator eller applikation innehåller både frontend, backend och extern API-koppling.
 
-## 2.33 GUI Test
+## GUI Test
 
 Ett GUI-test testar systemet genom det grafiska användargränssnittet. Det kan exempelvis kontrollera att knappar, textfält och felmeddelanden fungerar som förväntat.
 
@@ -489,7 +544,7 @@ GUI-tester kräver ofta selektorer, exempelvis:
 
 Därför behöver Test Design Agent definiera selektorer som senare implementationen måste följa.
 
-## 2.34 End-to-End Test
+## End-to-End Test
 
 Ett End-to-End-test, E2E-test, testar ett systemflöde från användarens perspektiv genom flera lager av systemet. Ett E2E-test kan exempelvis öppna webbsidan, klicka på en knapp, vänta på ett API-svar och kontrollera att resultatet visas.
 
@@ -497,7 +552,7 @@ E2E-tester är ofta mer realistiska än enhetstester men också långsammare och
 
 E2E-tester kan användas för att verifiera att hela flödet från krav till fungerande användarinteraktion är korrekt.
 
-## 2.35 Test Automation
+## Test Automation
 
 Testautomation innebär att tester exekveras automatiskt av verktyg istället för manuellt av en människa. Testautomation är centralt i moderna CI/CD-flöden.
 
@@ -508,7 +563,7 @@ Testautomation är relevant på två nivåer:
 
 Detta gör att projektet ligger nära både AI-assisterad testdesign och automatiserad QA.
 
-## 2.36 Test-Driven Development
+## Test-Driven Development
 
 Test-Driven Development, TDD, är en utvecklingsmetodik där tester skrivs före produktionskoden. Ett klassiskt TDD-flöde beskrivs ofta som:
 
@@ -524,7 +579,7 @@ Det betyder:
 
 TDD kan användas som designprincip. Då skapar Test Design Agent och Test Generation Agent testdesign och testfall innan eventuell implementation sker. En Implementation Agent eller motsvarande komponent kan sedan skapa eller modifiera kod tills testerna passerar.
 
-## 2.37 Self-Healing
+## Self-Healing
 
 Self-healing innebär att ett system automatiskt upptäcker fel, analyserar orsaken och försöker korrigera problemet. I kontexten av agentisk mjukvaruutveckling kan self-healing innebära att en agent kör tester, läser felmeddelanden, modifierar kod eller testartefakter och kör tester igen.
 
@@ -540,7 +595,7 @@ Generera artefakt
 
 Self-healing är inte samma sak som att systemet alltid hittar rätt lösning. Det innebär snarare att systemet har en mekanism för att iterera baserat på feedback.
 
-## 2.38 Code Coverage
+## Code Coverage
 
 Code Coverage, eller kodtäckning, mäter hur stor del av koden som exekveras av testerna. Vanliga typer av täckning är:
 
@@ -552,7 +607,7 @@ Kodtäckning är ett användbart men begränsat mått. Hög kodtäckning betyder
 
 Kodtäckning kan användas som ett kompletterande mått, men bör inte vara det enda måttet på testkvalitet.
 
-## 2.39 Requirement Coverage
+## Requirement Coverage
 
 Requirement Coverage mäter hur stor andel krav som täcks av testfall. Detta är särskilt relevant i sammanhang där målet är kravbaserad testdesign.
 
@@ -566,7 +621,7 @@ Om 8 av 10 krav har minst ett kopplat testfall är kravtäckningen 80 %.
 
 Kravtäckning är centralt för Review Agent, som kan identifiera krav utan testfall eller krav med otillräcklig testdesign.
 
-## 2.40 Test Pass Rate
+## Test Pass Rate
 
 Test Pass Rate mäter andelen tester som passerar vid exekvering.
 
@@ -578,13 +633,13 @@ Antal passerade tester / Totalt antal tester
 
 Detta är ett enkelt men viktigt mått. I ett self-healing-flöde kan Test Pass Rate användas för att avgöra om systemet behöver iterera.
 
-## 2.41 Iterationscykler
+## Iterationscykler
 
 Iterationscykler mäter hur många gånger systemet behöver gå igenom en gransknings- eller reparationsloop innan resultatet godkänns.
 
 Detta är ett särskilt intressant mått eftersom det fångar hur effektivt ett agentiskt system är. Om ett system kräver många iterationer kan det tyda på bristande promptar, svag modell, dålig testdesign eller otydlig kravstruktur.
 
-## 2.42 Exekveringstid
+## Exekveringstid
 
 Exekveringstid mäter hur lång tid ett agentflöde eller testflöde tar att köra. Detta kan mätas per agentsteg eller för hela pipeline.
 
@@ -600,7 +655,7 @@ Exempel:
 
 Exekveringstid är relevant eftersom agentiska system kan bli långsamma, särskilt om flera modeller, verktyg och review-loopar används.
 
-## 2.43 Code Quality
+## Code Quality
 
 Code Quality, eller kodkvalitet, avser egenskaper som påverkar hur lätt kod är att förstå, underhålla, testa och vidareutveckla. Exempel på kodkvalitetsmått är:
 
@@ -613,13 +668,13 @@ Code Quality, eller kodkvalitet, avser egenskaper som påverkar hur lätt kod ä
 
 Kodkvalitet kan användas som mått om systemet även genererar kod eller testkod. För Python kan verktyg som ruff, pylint och radon användas. För bredare analys kan SonarQube vara relevant.
 
-## 2.44 SonarQube
+## SonarQube
 
 SonarQube är ett verktyg för statisk kodanalys. Det kan analysera kodkvalitet, säkerhetsproblem, duplicering, kodlukt och ibland testtäckning beroende på konfiguration.
 
 SonarQube kan användas som ett möjligt verktyg för att mäta kvaliteten på genererad kod eller genererade tester. För en första prototyp kan enklare verktyg som linting och coverage vara tillräckliga, men SonarQube är relevant som industriellt etablerat verktyg.
 
-## 2.45 Agent Framework
+## Agent Framework
 
 Ett agentramverk är ett bibliotek eller en plattform för att skapa, konfigurera och köra AI-agenter. Agentramverk erbjuder ofta stöd för roller, verktygsanrop, minne, orkestrering, kommunikation mellan agenter och integration med olika LLM:er.
 
@@ -634,7 +689,7 @@ Exempel på agentramverk eller agentplattformar är:
 
 Valet av agentramverk är en central del av många litteraturstudier och prototyper. Ett viktigt mål är att förstå vilka ramverk som passar bäst för QA-arbetsflöden där krav, testdesign, testgenerering och granskning behöver samordnas.
 
-## 2.46 Modellagnostisk arkitektur
+## Modellagnostisk arkitektur
 
 En modellagnostisk arkitektur innebär att systemet inte är hårt bundet till en specifik LLM. Istället kan olika modeller användas beroende på uppgift, kostnad, tillgänglighet och kvalitet.
 
@@ -649,7 +704,7 @@ review_model: claude
 
 Detta är viktigt i projektet eftersom olika agenter kan ha olika behov. Kravanalys kan kanske utföras av en lokal modell, medan testgenerering kan kräva en starkare kodmodell.
 
-## 2.47 Lokala och molnbaserade modeller
+## Lokala och molnbaserade modeller
 
 Lokala modeller körs på egen hårdvara eller i egen miljö, ofta via verktyg som Ollama. Molnbaserade modeller körs via API:er från exempelvis OpenAI, Anthropic, Google eller Hugging Face.
 
@@ -657,13 +712,13 @@ Lokala modeller kan ge bättre kontroll, lägre marginalkostnad och potentiellt 
 
 Det kan vara relevant att stödja båda alternativen. Det gör en prototyp mer flexibel och gör det möjligt att jämföra olika modellval.
 
-## 2.48 Ollama
+## Ollama
 
 Ollama är ett verktyg för att köra lokala språkmodeller. Det används ofta tillsammans med modeller som Llama, Qwen, Mistral, DeepSeek och Hermes.
 
 Ollama kan användas om agenter ska kunna köras med lokala modeller. Detta gör det möjligt att testa hur långt man kan komma utan kommersiella API:er.
 
-## 2.49 Hugging Face
+## Hugging Face
 
 Hugging Face är en plattform för AI-modeller, datasets och applikationer. Hugging Face Spaces kan användas för att publicera enkla AI-demonstratorer och webbaserade gränssnitt.
 
@@ -674,7 +729,7 @@ Hugging Face är relevant på två sätt:
 
 Eftersom projektet redan har erfarenhet från en tidigare RAG-prototyp på Hugging Face är det ett naturligt alternativ för den första demonstratorn.
 
-## 2.50 GitHub och GitHub Pages
+## GitHub och GitHub Pages
 
 GitHub används för versionshantering, källkod och dokumentation. GitHub Pages används för att publicera projektets kunskapsbas som en öppen webbsida.
 
@@ -685,7 +740,7 @@ GitHub kan fylla två roller:
 
 GitHub Pages gör att litteraturstudien och kunskapsbasen kan publiceras löpande och göras tillgänglig för handledare, kollegor och framtida läsare.
 
-## 2.51 Continuous Integration
+## Continuous Integration
 
 Continuous Integration, CI, innebär att kod och tester körs automatiskt när ändringar görs i ett repository. CI kan användas för att bygga, testa och deploya mjukvara.
 
@@ -699,13 +754,13 @@ CI kan användas för att:
 
 GitHub Actions är ett vanligt verktyg för CI i GitHub-baserade projekt.
 
-## 2.52 Demonstrator
+## Demonstrator
 
 En demonstrator är en prototyp som visar att en idé är tekniskt möjlig. Den behöver inte vara produktionsklar, men ska vara tillräckligt konkret för att kunna användas i utvärdering.
 
 En demonstrator kan vara ett webbaserat system där användaren skickar in krav och får ut testartefakter. Demonstratorn används då för att undersöka om en föreslagen agentarkitektur är praktiskt genomförbar.
 
-## 2.53 Artefakt
+## Artefakt
 
 En artefakt är ett konkret resultat som produceras i en utvecklings- eller QA-process. I ett sådant sammanhang kan artefakter vara:
 
@@ -720,7 +775,7 @@ En artefakt är ett konkret resultat som produceras i en utvecklings- eller QA-p
 
 Agentflödet kan beskrivas som en process där varje agent producerar eller granskar artefakter.
 
-## 2.54 Sammanfattning
+## Sammanfattning
 
 Detta kapitel har introducerat de centrala begrepp som projektet bygger på. Den viktigaste distinktionen är skillnaden mellan en LLM, en AI-agent och ett agentiskt multi-agent-system.
 
@@ -728,4 +783,3 @@ En LLM är en modell som genererar text eller kod. En AI-agent använder en LLM 
 
 En central idé i detta område är att använda agentisk AI för att stödja QA-arbetsflöden. Fokus ligger då på att transformera krav till testdesign och testartefakter med spårbarhet, granskning och möjlighet till iteration.
 ---
-

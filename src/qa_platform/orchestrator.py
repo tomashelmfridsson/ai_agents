@@ -789,13 +789,8 @@ class OrchestratorAgent:
         llm_feedback = self.test_designer.last_execution.get("feedback_messages_to_requirements") or []
         if llm_feedback:
             return llm_feedback[:2]
-        feedback = []
-        for requirement in requirements:
-            if requirement.assumptions:
-                feedback.append(
-                    f"{requirement.requirement_id} needs clearer acceptance criteria and explicit error handling before strong test design can continue."
-                )
-        return feedback[:2]
+        del requirements
+        return []
 
     def _build_requirements_contract_feedback(self, validation_findings: list[str]) -> list[str]:
         feedback = [

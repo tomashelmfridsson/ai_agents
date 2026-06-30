@@ -162,7 +162,6 @@ def render_markdown_document(title: str, eyebrow: str, markdown_text: str) -> st
     <main>
       <header class="masthead">
         <p class="eyebrow">{safe_eyebrow}</p>
-        <h1>{safe_title}</h1>
       </header>
       <article>
         {body}

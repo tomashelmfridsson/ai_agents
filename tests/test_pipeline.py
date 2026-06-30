@@ -22,7 +22,7 @@ from qa_platform.agents import RequirementsAnalystAgent
 from qa_platform.llm_runtime import LLMRuntimeError, call_structured_llm
 import qa_platform.orchestrator as orchestrator_module
 from qa_platform.models import AgentRuntimeConfig, ReviewReport
-from qa_platform.models import RunControlConfig
+from qa_platform.models import RunControlConfig, RunSession
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import save_run
 import app as app_module
@@ -431,7 +431,7 @@ class PipelineTests(unittest.TestCase):
             any("Incoming feedback messages:" in line for line in second_requirements_trace.input_summary)
         )
         self.assertTrue(
-            any("REQ-001 needs clearer acceptance criteria" in line for line in second_requirements_trace.input_summary)
+            any("needs" in line and "acceptance criteria" in line for line in second_requirements_trace.input_summary)
         )
         self.assertTrue(
             any("upstream feedback was applied" in line for line in second_requirements_trace.reasoning_trace)
@@ -774,6 +774,77 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(
             any("requirements.v1 contract" in finding for finding in result.review.findings)
         )
+
+    def test_requirements_llm_recovers_previous_valid_items_when_feedback_rerun_returns_zero(self) -> None:
+        runtime_config = AgentRuntimeConfig(
+            agent_key="requirements_analyst",
+            agent_name="Requirements Analyst Agent",
+            execution_mode="LLM-backed",
+            timeout_seconds=120,
+            provider_strategy="HF cheapest/free credits",
+            model_family="Qwen 3 32B",
+            model_id="Qwen/Qwen3-32B:cheapest",
+            directives="Extract strict requirement objects.",
+        )
+        run_session = RunSession(
+            title="Recovery demo",
+            source_requirements="The user must be able to sign in with email and password.",
+        )
+        run_session.working_memory.write_shared(
+            "requirements",
+            [
+                {
+                    "requirement_id": "REQ-001",
+                    "original_text": "The user must be able to sign in with email and password.",
+                    "normalized_text": "The system shall allow users to sign in using their email and password.",
+                    "priority": "high",
+                    "acceptance_criteria": [
+                        "The system displays a login form with email and password fields.",
+                        "The system successfully authenticates users with valid email and password combinations.",
+                    ],
+                    "assumptions": ["The system stores user credentials securely."],
+                }
+            ],
+            author="Requirements Analyst",
+        )
+        fake_response = (
+            {
+                "requirements": [],
+                "run_notes": ["Model failed to preserve requirements during feedback rerun."],
+            },
+            {
+                "model_id": runtime_config.model_id,
+                "provider_strategy": runtime_config.provider_strategy,
+            },
+        )
+
+        with patch("qa_platform.agents.call_structured_llm", return_value=fake_response):
+            agent = RequirementsAnalystAgent()
+            result = agent.analyze(
+                "The user must be able to sign in with email and password.",
+                feedback_messages=["REQ-001 needs clearer acceptance criteria."],
+                runtime_config=runtime_config,
+                run_session=run_session,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].requirement_id, "REQ-001")
+        self.assertTrue(
+            any("previous valid requirement set was preserved" in item for item in agent.last_execution["validation_findings"])
+        )
+
+    def test_design_stage_does_not_backtrack_to_requirements_without_explicit_feedback(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=2)
+        result = orchestrator.process(
+            title="No heuristic requirement loop",
+            requirements_text="The user must be able to sign in with email and password.",
+        )
+
+        orchestrator_routes = [
+            trace for trace in result.stage_traces
+            if trace.agent_name == "Orchestrator Agent" and "backtrack to requirements analyst" in trace.status
+        ]
+        self.assertEqual(orchestrator_routes, [])
 
     def test_save_run_persists_pipeline_result_in_sqlite(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
