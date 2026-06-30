@@ -19,6 +19,30 @@ class LLMRuntimeError(RuntimeError):
 HTTP_TIMEOUT_SECONDS = 55
 OLLAMA_DISCOVERY_TIMEOUT_SECONDS = 2
 HF_PROVIDER_MAX_ATTEMPTS = 1
+HF_MODEL_FAMILY_MAP = {
+    "Qwen 3 32B": "Qwen/Qwen3-32B",
+    "Qwen3-30B-A3B": "Qwen/Qwen3-30B-A3B",
+    "Llama 3.3 70B Instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "DeepSeek R1": "deepseek-ai/DeepSeek-R1",
+    "DeepSeek-V3.1": "deepseek-ai/DeepSeek-V3.1",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "gpt-oss-20b": "openai/gpt-oss-20b",
+}
+OLLAMA_MODEL_FAMILY_MAP = {
+    "Qwen 3 32B": "qwen3:8b",
+    "Qwen3-30B-A3B": "qwen3:8b",
+    "Llama 3.3 70B Instruct": "llama3:latest",
+    "DeepSeek R1": "deepseek-r1:8b",
+    "DeepSeek-V3.1": "deepseek-r1:8b",
+    "gpt-oss-120b": "gpt-oss:120b",
+    "gpt-oss-20b": "gpt-oss:20b",
+}
+RECOMMENDED_MODEL_FAMILY_BY_AGENT = {
+    "orchestrator": "Qwen 3 32B",
+    "requirements_analyst": "Qwen 3 32B",
+    "test_design": "Llama 3.3 70B Instruct",
+    "review": "DeepSeek R1",
+}
 
 
 @dataclass
@@ -47,24 +71,7 @@ def is_llm_enabled(runtime_config: AgentRuntimeConfig | None) -> bool:
 
 
 def resolve_live_model_id(runtime_config: AgentRuntimeConfig) -> str:
-    hf_family_map = {
-        "Qwen 3 32B": "Qwen/Qwen3-32B",
-        "Llama 3.3 70B Instruct": "meta-llama/Llama-3.3-70B-Instruct",
-        "DeepSeek R1": "deepseek-ai/DeepSeek-R1",
-        "gpt-oss-120b": "openai/gpt-oss-120b",
-    }
-    ollama_family_map = {
-        "Qwen 3 32B": "qwen3:8b",
-        "Llama 3.3 70B Instruct": "llama3:latest",
-        "DeepSeek R1": "deepseek-r1:8b",
-        "gpt-oss-120b": "gpt-oss:120b",
-    }
-    recommended_family = {
-        "orchestrator": "Qwen 3 32B",
-        "requirements_analyst": "Qwen 3 32B",
-        "test_design": "Llama 3.3 70B Instruct",
-        "review": "DeepSeek R1",
-    }.get(runtime_config.agent_key, "Qwen 3 32B")
+    recommended_family = RECOMMENDED_MODEL_FAMILY_BY_AGENT.get(runtime_config.agent_key, "Qwen 3 32B")
     override = (runtime_config.model_override or "").strip()
     if override:
         return override
@@ -72,14 +79,14 @@ def resolve_live_model_id(runtime_config: AgentRuntimeConfig) -> str:
     strategy = runtime_config.provider_strategy
 
     if strategy == "HF cheapest/free credits":
-        return f"{hf_family_map.get(family, hf_family_map[recommended_family])}:cheapest"
+        return f"{HF_MODEL_FAMILY_MAP.get(family, HF_MODEL_FAMILY_MAP[recommended_family])}:cheapest"
     if strategy == "HF fastest":
-        return f"{hf_family_map.get(family, hf_family_map[recommended_family])}:fastest"
+        return f"{HF_MODEL_FAMILY_MAP.get(family, HF_MODEL_FAMILY_MAP[recommended_family])}:fastest"
     if strategy == "Ollama local":
-        return ollama_family_map.get(family, family)
+        return OLLAMA_MODEL_FAMILY_MAP.get(family, family)
     if strategy == "Custom OpenAI-compatible":
-        return hf_family_map.get(family, hf_family_map[recommended_family])
-    return runtime_config.model_id or hf_family_map[recommended_family]
+        return HF_MODEL_FAMILY_MAP.get(family, HF_MODEL_FAMILY_MAP[recommended_family])
+    return runtime_config.model_id or HF_MODEL_FAMILY_MAP[recommended_family]
 
 
 def call_structured_llm(

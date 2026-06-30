@@ -30,6 +30,7 @@ from qa_platform.agent_runtime import (
     build_agent_runtime_configs,
 )
 from qa_platform.llm_runtime import LLMRuntimeError
+from qa_platform.llm_runtime import OLLAMA_MODEL_FAMILY_MAP
 from qa_platform.orchestrator import (
     AGENT_TIMEOUT_SECONDS,
     AgentTimeoutError,
@@ -906,13 +907,7 @@ def get_model_choices(provider_strategy: str) -> list[str]:
 def get_initial_model_value(provider_strategy: str, model_family: str) -> str:
     choices = get_model_choices(provider_strategy)
     if provider_strategy == "Ollama local":
-        ollama_map = {
-            "Qwen 3 32B": "qwen3:8b",
-            "Llama 3.3 70B Instruct": "llama3:latest",
-            "DeepSeek R1": "deepseek-r1:8b",
-            "gpt-oss-120b": "gpt-oss:120b",
-        }
-        resolved = ollama_map.get(model_family, model_family)
+        resolved = OLLAMA_MODEL_FAMILY_MAP.get(model_family, model_family)
         if resolved in choices:
             return resolved
     return model_family if model_family in choices else choices[0]

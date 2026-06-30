@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .llm_runtime import resolve_live_model_id
+from .llm_runtime import HF_MODEL_FAMILY_MAP, resolve_live_model_id
 from .models import AgentRuntimeConfig
 from .registry import build_default_agent_registry
 
@@ -15,9 +15,12 @@ PROVIDER_STRATEGY_CHOICES = [
 MODEL_FAMILY_CHOICES = [
     "Auto / recommended",
     "Qwen 3 32B",
+    "Qwen3-30B-A3B",
     "Llama 3.3 70B Instruct",
     "DeepSeek R1",
+    "DeepSeek-V3.1",
     "gpt-oss-120b",
+    "gpt-oss-20b",
 ]
 DEFAULT_AGENT_REGISTRY = build_default_agent_registry()
 AGENT_PROVIDER_DEFAULTS = {
@@ -59,14 +62,8 @@ def compose_model_id(provider_strategy: str, model_family: str, model_override: 
             if provider_strategy == "HF fastest"
             else "HF router / auto cheapest provider"
         )
-    family_map = {
-        "Qwen 3 32B": "Qwen/Qwen3-32B",
-        "Llama 3.3 70B Instruct": "meta-llama/Llama-3.3-70B-Instruct",
-        "DeepSeek R1": "deepseek-ai/DeepSeek-R1",
-        "gpt-oss-120b": "openai/gpt-oss-120b",
-    }
     provider_suffix = ":fastest" if provider_strategy == "HF fastest" else ":cheapest"
-    return f"{family_map.get(model_family, model_family)}{provider_suffix}"
+    return f"{HF_MODEL_FAMILY_MAP.get(model_family, model_family)}{provider_suffix}"
 
 
 def build_agent_runtime_configs(*values: str) -> list[AgentRuntimeConfig]:

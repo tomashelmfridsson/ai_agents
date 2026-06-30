@@ -197,6 +197,35 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(configs[2].model_id, "qwen3:8b")
         self.assertEqual(configs[3].model_id, "deepseek-r1:8b")
 
+    def test_model_family_choices_include_new_hf_candidates(self) -> None:
+        self.assertIn("Qwen3-30B-A3B", app_module.MODEL_FAMILY_CHOICES)
+        self.assertIn("DeepSeek-V3.1", app_module.MODEL_FAMILY_CHOICES)
+        self.assertIn("gpt-oss-20b", app_module.MODEL_FAMILY_CHOICES)
+
+    def test_build_agent_runtime_configs_supports_new_hf_candidates(self) -> None:
+        configs = build_agent_runtime_configs(
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "gpt-oss-20b",
+            "Route clearly.",
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "Qwen3-30B-A3B",
+            "Extract strict requirement objects.",
+            "LLM-backed",
+            "HF fastest",
+            "DeepSeek-V3.1",
+            "Design stronger oracles.",
+            "LLM-backed",
+            "HF cheapest/free credits",
+            "gpt-oss-120b",
+            "Review thoroughly.",
+        )
+
+        self.assertEqual(configs[0].model_id, "openai/gpt-oss-20b:cheapest")
+        self.assertEqual(configs[1].model_id, "Qwen/Qwen3-30B-A3B:cheapest")
+        self.assertEqual(configs[2].model_id, "deepseek-ai/DeepSeek-V3.1:fastest")
+
     def test_agent_runtime_configs_accept_per_agent_timeout_values(self) -> None:
         configs = build_agent_runtime_configs(
             "LLM-backed",
