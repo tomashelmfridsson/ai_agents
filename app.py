@@ -400,7 +400,13 @@ def apply_global_agent_settings(
             [
                 gr.update(value=execution_mode),
                 gr.update(value=provider_strategy, visible=is_llm),
-                gr.update(choices=model_choices, value=model_value, label="Model", visible=is_llm),
+                gr.update(
+                    choices=model_choices,
+                    value=model_value,
+                    label="Model",
+                    visible=is_llm,
+                    allow_custom_value=True,
+                ),
                 gr.update(value=model_override, visible=is_llm),
                 gr.update(value=max(30, int(timeout_seconds)), visible=is_llm),
                 gr.update(value=help_text),
@@ -810,7 +816,7 @@ def update_model_dropdown(provider_strategy: str, current_value: str, model_over
     choices = get_model_choices(provider_strategy)
     value = current_value if current_value in choices else get_initial_model_value(provider_strategy, current_value)
     return (
-        gr.update(choices=choices, value=value, label="Model"),
+        gr.update(choices=choices, value=value, label="Model", allow_custom_value=True),
         format_llm_config_summary(provider_strategy, value, model_override),
     )
 
@@ -1597,6 +1603,7 @@ def build_demo() -> gr.Blocks:
                         label="Model for all agents",
                         choices=get_model_choices("Ollama local"),
                         value=get_initial_model_value("Ollama local", "Qwen 3 32B"),
+                        allow_custom_value=True,
                     )
                     global_llm_summary = gr.Markdown(
                         value=format_llm_config_summary(
@@ -1682,6 +1689,7 @@ def build_demo() -> gr.Blocks:
                                     choices=get_model_choices(initial_provider),
                                     value=initial_model,
                                     visible=True,
+                                    allow_custom_value=True,
                                 )
                                 model_override_input = gr.Textbox(
                                     label="Model override (optional)",

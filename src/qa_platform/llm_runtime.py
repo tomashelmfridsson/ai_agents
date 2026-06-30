@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import socket
-import time
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -19,8 +18,7 @@ class LLMRuntimeError(RuntimeError):
 
 HTTP_TIMEOUT_SECONDS = 55
 OLLAMA_DISCOVERY_TIMEOUT_SECONDS = 2
-HF_PROVIDER_MAX_ATTEMPTS = 3
-HF_PROVIDER_RETRY_BACKOFF_SECONDS = 1.0
+HF_PROVIDER_MAX_ATTEMPTS = 1
 
 
 @dataclass
@@ -232,9 +230,6 @@ def _call_hf_structured_llm(
                 errors.append(
                     f"{model_id} inference-client attempt {attempt}/{HF_PROVIDER_MAX_ATTEMPTS}: {exc}"
                 )
-                if attempt < HF_PROVIDER_MAX_ATTEMPTS and _should_retry_hf_provider_error(exc):
-                    time.sleep(HF_PROVIDER_RETRY_BACKOFF_SECONDS * attempt)
-                    continue
                 break
 
     endpoint, api_key = _resolve_endpoint_and_key(runtime_config)
@@ -282,9 +277,6 @@ def _call_hf_structured_llm(
                 errors.append(
                     f"{model_id} router structured-output attempt {attempt}/{HF_PROVIDER_MAX_ATTEMPTS}: {first_error}"
                 )
-                if attempt < HF_PROVIDER_MAX_ATTEMPTS and _should_retry_hf_provider_error(first_error):
-                    time.sleep(HF_PROVIDER_RETRY_BACKOFF_SECONDS * attempt)
-                    continue
                 try:
                     fallback_payload = _post_chat_completion(
                         endpoint=endpoint,
@@ -531,28 +523,3 @@ def _summarize_error_detail(detail: str) -> str:
     if len(compact) > 320:
         return compact[:317] + "..."
     return compact
-
-
-def _should_retry_hf_provider_error(exc: Exception) -> bool:
-    message = str(exc).lower()
-    transient_signals = (
-        "timed out",
-        "timeout",
-        "temporarily unavailable",
-        "rate limit",
-        "too many requests",
-        "server error",
-        "bad gateway",
-        "gateway timeout",
-        "service unavailable",
-        "connection reset",
-        "connection aborted",
-        "internal error",
-        "overloaded",
-        "http 429",
-        "http 500",
-        "http 502",
-        "http 503",
-        "http 504",
-    )
-    return any(signal in message for signal in transient_signals)

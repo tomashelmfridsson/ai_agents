@@ -384,6 +384,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(updates[0]["value"], "LLM-backed")
         self.assertEqual(updates[1]["value"], "Ollama local")
         self.assertEqual(updates[2]["value"], "deepseek-r1:8b")
+        self.assertEqual(updates[2]["allow_custom_value"], True)
         self.assertEqual(updates[4]["value"], 150)
 
     def test_build_error_report_shows_completed_agent_results(self) -> None:
@@ -781,7 +782,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result, [])
         self.assertTrue(any("requirements.v1 contract" in item for item in agent.last_execution["validation_findings"]))
 
-    def test_hf_inference_client_retries_three_times_on_transient_provider_failure(self) -> None:
+    def test_hf_inference_client_falls_back_without_stacked_provider_retries(self) -> None:
         runtime_config = AgentRuntimeConfig(
             agent_key="requirements_analyst",
             agent_name="Requirements Analyst Agent",
@@ -805,21 +806,19 @@ class PipelineTests(unittest.TestCase):
                         "choices": [{"message": {"content": "{\"ok\": true}"}}],
                         "usage": {},
                     }
-                    with patch.object(llm_runtime_module.time, "sleep") as mock_sleep:
-                        payload, metadata = call_structured_llm(
-                            runtime_config=runtime_config,
-                            system_prompt="Return JSON.",
-                            user_prompt="Test prompt",
-                            schema_name="test_schema",
-                            schema={
-                                "type": "object",
-                                "properties": {"ok": {"type": "boolean"}},
-                                "required": ["ok"],
-                            },
-                        )
+                    payload, metadata = call_structured_llm(
+                        runtime_config=runtime_config,
+                        system_prompt="Return JSON.",
+                        user_prompt="Test prompt",
+                        schema_name="test_schema",
+                        schema={
+                            "type": "object",
+                            "properties": {"ok": {"type": "boolean"}},
+                            "required": ["ok"],
+                        },
+                    )
 
-        self.assertEqual(mock_hf_call.call_count, 3)
-        self.assertEqual(mock_sleep.call_count, 2)
+        self.assertEqual(mock_hf_call.call_count, 1)
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(metadata.provider_strategy, "HF cheapest/free credits")
 
