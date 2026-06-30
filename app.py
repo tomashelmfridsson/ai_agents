@@ -1851,6 +1851,7 @@ def build_workflow_report(payload: dict) -> str:
         payload.get("run_controls", {}),
         payload.get("agent_configs", []),
     )
+    test_case_overview = build_test_case_overview(payload)
     trace_overview = build_trace_overview(payload)
     debug_panel = build_debug_panel(payload)
 
@@ -1863,6 +1864,7 @@ def build_workflow_report(payload: dict) -> str:
         "<div class='report-shell'>"
         f"{summary_html}"
         f"{config_html}"
+        f"{test_case_overview}"
         f"{trace_overview}"
         f"{debug_panel}"
         "<div class='stage-grid'>"
@@ -1933,6 +1935,68 @@ def build_trace_overview(payload: dict) -> str:
         + "".join(rows)
         + "</tbody></table></div>"
         "</section>"
+    )
+
+
+def build_test_case_overview(payload: dict) -> str:
+    test_designs = payload.get("test_designs", [])
+    if not test_designs:
+        return (
+            "<section class='diagram-card'>"
+            "<h3>Planned test cases</h3>"
+            "<p class='agent-config-text'>No planned test cases were produced in this run.</p>"
+            "</section>"
+        )
+
+    cards = []
+    for test_case in test_designs:
+        steps = test_case.get("steps") or []
+        expected_results = test_case.get("expected_results") or []
+        risks = test_case.get("risks") or []
+        step_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in steps) or "<li>No steps recorded.</li>"
+        expected_items = "".join(
+            f"<li>{html.escape(str(item))}</li>" for item in expected_results
+        ) or "<li>No expected results recorded.</li>"
+        risk_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in risks)
+        risk_block = (
+            "<div class='io-section'>"
+            "<div class='log-title'>Risks</div>"
+            f"<ul class='log-list'>{risk_items}</ul>"
+            "</div>"
+            if risk_items
+            else ""
+        )
+        cards.append(
+            "<section class='stage-card'>"
+            f"<div class='stage-index'>{html.escape(str(test_case.get('test_case_id', 'Unknown test case')))}</div>"
+            f"<div class='stage-role'>{html.escape(str(test_case.get('title', 'Untitled test case')))}</div>"
+            f"<p class='agent-config-text'><strong>Requirement:</strong> {html.escape(str(test_case.get('requirement_id', 'Not linked')))}</p>"
+            f"<p class='agent-config-text'><strong>Type:</strong> {html.escape(str(test_case.get('test_type', 'Not set')))}</p>"
+            "<div class='io-stack'>"
+            "<div class='io-section'>"
+            "<div class='log-title'>Steps</div>"
+            f"<ul class='log-list'>{step_items}</ul>"
+            "</div>"
+            "<div class='io-section'>"
+            "<div class='log-title'>Expected results</div>"
+            f"<ul class='log-list'>{expected_items}</ul>"
+            "</div>"
+            "<div class='io-section'>"
+            "<div class='log-title'>Oracle</div>"
+            f"<p class='io-summary'>{html.escape(str(test_case.get('oracle', 'No oracle recorded.')))}</p>"
+            "</div>"
+            f"{risk_block}"
+            "</div>"
+            "</section>"
+        )
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Planned test cases</h3>"
+        "<p class='agent-config-text'>This section shows the actual test cases produced by the Test Design Agent, including steps, expected results, and oracle.</p>"
+        "</section>"
+        "<div class='stage-grid'>"
+        + "".join(cards)
+        + "</div>"
     )
 
 

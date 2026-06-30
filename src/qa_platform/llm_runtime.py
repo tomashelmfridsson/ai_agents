@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -18,6 +19,8 @@ class LLMRuntimeError(RuntimeError):
 
 HTTP_TIMEOUT_SECONDS = 55
 OLLAMA_DISCOVERY_TIMEOUT_SECONDS = 2
+HF_PROVIDER_MAX_ATTEMPTS = 3
+HF_PROVIDER_RETRY_BACKOFF_SECONDS = 1.0
 
 
 @dataclass
@@ -187,45 +190,52 @@ def _call_hf_structured_llm(
 
     errors: list[str] = []
     for model_id in _candidate_model_ids(runtime_config):
-        try:
-            content, usage = _post_hf_inference_chat_completion(
-                api_key=token,
-                model_id=model_id,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            system_prompt.strip()
-                            + "\nReturn only valid JSON matching the requested schema. "
-                            + "Do not add markdown fences or commentary."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            user_prompt.strip()
-                            + "\nJSON schema to satisfy exactly:\n"
-                            + json.dumps(
-                                {
-                                    "name": schema_name,
-                                    "schema": schema,
-                                },
-                                ensure_ascii=False,
-                            )
-                        ),
-                    },
-                ],
-                temperature=temperature,
-            )
-            return _extract_json_object(content), LLMCallMetadata(
-                endpoint="huggingface_hub.InferenceClient.chat_completion",
-                model_id=model_id,
-                provider_strategy=runtime_config.provider_strategy,
-                response_format_used=False,
-                usage=usage,
-            )
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{model_id} inference-client attempt: {exc}")
+        for attempt in range(1, HF_PROVIDER_MAX_ATTEMPTS + 1):
+            try:
+                content, usage = _post_hf_inference_chat_completion(
+                    api_key=token,
+                    model_id=model_id,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                system_prompt.strip()
+                                + "\nReturn only valid JSON matching the requested schema. "
+                                + "Do not add markdown fences or commentary."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                user_prompt.strip()
+                                + "\nJSON schema to satisfy exactly:\n"
+                                + json.dumps(
+                                    {
+                                        "name": schema_name,
+                                        "schema": schema,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            ),
+                        },
+                    ],
+                    temperature=temperature,
+                )
+                return _extract_json_object(content), LLMCallMetadata(
+                    endpoint="huggingface_hub.InferenceClient.chat_completion",
+                    model_id=model_id,
+                    provider_strategy=runtime_config.provider_strategy,
+                    response_format_used=False,
+                    usage=usage,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(
+                    f"{model_id} inference-client attempt {attempt}/{HF_PROVIDER_MAX_ATTEMPTS}: {exc}"
+                )
+                if attempt < HF_PROVIDER_MAX_ATTEMPTS and _should_retry_hf_provider_error(exc):
+                    time.sleep(HF_PROVIDER_RETRY_BACKOFF_SECONDS * attempt)
+                    continue
+                break
 
     endpoint, api_key = _resolve_endpoint_and_key(runtime_config)
     response_format = {
@@ -241,25 +251,7 @@ def _call_hf_structured_llm(
         {"role": "user", "content": user_prompt.strip()},
     ]
     for model_id in _candidate_model_ids(runtime_config):
-        try:
-            payload = _post_chat_completion(
-                endpoint=endpoint,
-                api_key=api_key,
-                model_id=model_id,
-                messages=messages,
-                temperature=temperature,
-                response_format=response_format,
-            )
-            content = _extract_message_content(payload)
-            return json.loads(content), LLMCallMetadata(
-                endpoint=endpoint,
-                model_id=model_id,
-                provider_strategy=runtime_config.provider_strategy,
-                response_format_used=True,
-                usage=payload.get("usage") or {},
-            )
-        except (LLMRuntimeError, json.JSONDecodeError) as first_error:
-            errors.append(f"{model_id} router structured-output attempt: {first_error}")
+        for attempt in range(1, HF_PROVIDER_MAX_ATTEMPTS + 1):
             fallback_system_prompt = (
                 system_prompt.strip()
                 + "\nReturn only valid JSON matching the requested schema. Do not add markdown fences or commentary."
@@ -270,27 +262,52 @@ def _call_hf_structured_llm(
                 + json.dumps(schema, ensure_ascii=False)
             )
             try:
-                fallback_payload = _post_chat_completion(
+                payload = _post_chat_completion(
                     endpoint=endpoint,
                     api_key=api_key,
                     model_id=model_id,
-                    messages=[
-                        {"role": "system", "content": fallback_system_prompt},
-                        {"role": "user", "content": fallback_user_prompt},
-                    ],
+                    messages=messages,
                     temperature=temperature,
-                    response_format=None,
+                    response_format=response_format,
                 )
-                content = _extract_message_content(fallback_payload)
-                return _extract_json_object(content), LLMCallMetadata(
+                content = _extract_message_content(payload)
+                return json.loads(content), LLMCallMetadata(
                     endpoint=endpoint,
                     model_id=model_id,
                     provider_strategy=runtime_config.provider_strategy,
-                    response_format_used=False,
-                    usage=fallback_payload.get("usage") or {},
+                    response_format_used=True,
+                    usage=payload.get("usage") or {},
                 )
-            except Exception as second_error:  # noqa: BLE001
-                errors.append(f"{model_id} router fallback attempt: {second_error}")
+            except (LLMRuntimeError, json.JSONDecodeError) as first_error:
+                errors.append(
+                    f"{model_id} router structured-output attempt {attempt}/{HF_PROVIDER_MAX_ATTEMPTS}: {first_error}"
+                )
+                if attempt < HF_PROVIDER_MAX_ATTEMPTS and _should_retry_hf_provider_error(first_error):
+                    time.sleep(HF_PROVIDER_RETRY_BACKOFF_SECONDS * attempt)
+                    continue
+                try:
+                    fallback_payload = _post_chat_completion(
+                        endpoint=endpoint,
+                        api_key=api_key,
+                        model_id=model_id,
+                        messages=[
+                            {"role": "system", "content": fallback_system_prompt},
+                            {"role": "user", "content": fallback_user_prompt},
+                        ],
+                        temperature=temperature,
+                        response_format=None,
+                    )
+                    content = _extract_message_content(fallback_payload)
+                    return _extract_json_object(content), LLMCallMetadata(
+                        endpoint=endpoint,
+                        model_id=model_id,
+                        provider_strategy=runtime_config.provider_strategy,
+                        response_format_used=False,
+                        usage=fallback_payload.get("usage") or {},
+                    )
+                except Exception as second_error:  # noqa: BLE001
+                    errors.append(f"{model_id} router fallback attempt: {second_error}")
+                break
 
     raise LLMRuntimeError(
         f"Live LLM call failed for {runtime_config.agent_name}. Attempts: {' | '.join(errors)}"
@@ -514,3 +531,28 @@ def _summarize_error_detail(detail: str) -> str:
     if len(compact) > 320:
         return compact[:317] + "..."
     return compact
+
+
+def _should_retry_hf_provider_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    transient_signals = (
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "rate limit",
+        "too many requests",
+        "server error",
+        "bad gateway",
+        "gateway timeout",
+        "service unavailable",
+        "connection reset",
+        "connection aborted",
+        "internal error",
+        "overloaded",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    return any(signal in message for signal in transient_signals)

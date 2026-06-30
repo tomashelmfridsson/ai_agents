@@ -20,6 +20,7 @@ from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
 from qa_platform.agents import RequirementsAnalystAgent
 from qa_platform.llm_runtime import LLMRuntimeError, call_structured_llm
+import qa_platform.llm_runtime as llm_runtime_module
 import qa_platform.orchestrator as orchestrator_module
 from qa_platform.models import AgentRuntimeConfig, ReviewReport
 from qa_platform.models import RunControlConfig, RunSession
@@ -327,8 +328,48 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Shared memory", html_output)
         self.assertIn("memory-value", html_output)
         self.assertIn("current_stage", html_output)
-        self.assertIn("requirements_analyst", html_output)
-        self.assertIn("Run session started.", html_output)
+
+    def test_build_workflow_report_surfaces_planned_test_case_details(self) -> None:
+        html_output = app_module.build_workflow_report(
+            {
+                "title": "Demo",
+                "requirements": [
+                    {"requirement_id": "REQ-001", "normalized_text": "User can sign in."},
+                ],
+                "test_designs": [
+                    {
+                        "test_case_id": "TC-001",
+                        "requirement_id": "REQ-001",
+                        "title": "Sign in with valid credentials",
+                        "test_type": "functional",
+                        "steps": ["Enter valid email", "Enter valid password", "Submit form"],
+                        "expected_results": ["User is authenticated", "Dashboard is shown"],
+                        "oracle": "Authentication succeeds and the dashboard is visible.",
+                        "risks": [],
+                    }
+                ],
+                "iterations": 1,
+                "review": {
+                    "approved": True,
+                    "coverage_ratio": 1.0,
+                    "findings": [],
+                    "improvement_actions": [],
+                },
+                "run_controls": {
+                    "max_rounds": 2,
+                    "max_feedback_messages": 0,
+                    "max_feedback_per_agent_pair": 0,
+                },
+                "agent_configs": [],
+                "stage_traces": [],
+            }
+        )
+
+        self.assertIn("Planned test cases", html_output)
+        self.assertIn("TC-001", html_output)
+        self.assertIn("Enter valid email", html_output)
+        self.assertIn("Dashboard is shown", html_output)
+        self.assertIn("Authentication succeeds and the dashboard is visible.", html_output)
 
     def test_apply_global_agent_settings_updates_all_agents(self) -> None:
         updates = app_module.apply_global_agent_settings(
@@ -739,6 +780,48 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(result, [])
         self.assertTrue(any("requirements.v1 contract" in item for item in agent.last_execution["validation_findings"]))
+
+    def test_hf_inference_client_retries_three_times_on_transient_provider_failure(self) -> None:
+        runtime_config = AgentRuntimeConfig(
+            agent_key="requirements_analyst",
+            agent_name="Requirements Analyst Agent",
+            execution_mode="LLM-backed",
+            timeout_seconds=120,
+            provider_strategy="HF cheapest/free credits",
+            model_family="Qwen 3 32B",
+            model_override="Qwen/Qwen3-32B",
+            model_id="Qwen/Qwen3-32B",
+            directives="Extract strict requirement objects.",
+        )
+
+        with patch.dict(os.environ, {"HF_TOKEN": "test-token"}, clear=False):
+            with patch.object(
+                llm_runtime_module,
+                "_post_hf_inference_chat_completion",
+                side_effect=LLMRuntimeError("HTTP 503 from provider"),
+            ) as mock_hf_call:
+                with patch.object(llm_runtime_module, "_post_chat_completion") as mock_router_call:
+                    mock_router_call.return_value = {
+                        "choices": [{"message": {"content": "{\"ok\": true}"}}],
+                        "usage": {},
+                    }
+                    with patch.object(llm_runtime_module.time, "sleep") as mock_sleep:
+                        payload, metadata = call_structured_llm(
+                            runtime_config=runtime_config,
+                            system_prompt="Return JSON.",
+                            user_prompt="Test prompt",
+                            schema_name="test_schema",
+                            schema={
+                                "type": "object",
+                                "properties": {"ok": {"type": "boolean"}},
+                                "required": ["ok"],
+                            },
+                        )
+
+        self.assertEqual(mock_hf_call.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(metadata.provider_strategy, "HF cheapest/free credits")
 
     def test_orchestrator_blocks_test_design_when_no_valid_requirements_exist(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)

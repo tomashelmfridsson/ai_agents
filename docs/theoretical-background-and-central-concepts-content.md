@@ -1,3 +1,5 @@
+# Theoretical background and central concepts
+
 ## Innehåll
 
 - [Artificiell intelligens](#artificiell-intelligens)

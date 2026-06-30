@@ -1,4 +1,4 @@
-# AI-agenter för Software Quality Assurance
+# Litteratur studie om AI-agenter för Software Quality Assurance
 
 > **Status:** Under utveckling (Version 0.1)  
 > **Språk:** Svenska  
@@ -19,17 +19,11 @@ Syftet är att stegvis bygga upp en strukturerad förståelse för området geno
 - Implementation av en prototyp
 - Utvärdering och experiment
 
-Dokumentet har tre huvudsakliga syften:
-
-1. Att fungera som kunskapsbas under projektets gång.
-2. Att utgöra underlag för sommarprojektet.
-3. Att på sikt kunna ligga till grund för ett eller flera forskningsarbeten.
-
 ---
 
 ## Användning av AI
 
-Detta dokument utvecklas i samarbete mellan författaren och generativ AI (OpenAI ChatGPT).
+Detta dokument utvecklas i samarbete mellan författaren och generativ AI.
 
 AI används som stöd för:
 
@@ -137,7 +131,7 @@ För tillståndshantering används en **RunSession** med ett gemensamt **Working
 
 Denna lösning innebär att agenterna inte behöver starta helt från noll mellan stegen inom samma körning. Delad arbetskontext kan återanvändas av efterföljande agenter, samtidigt som privata minnesytor kan hållas separata när det behövs.
 
-Ett annat bärande arkitekturelement är **per-agent runtime configuration**. Varje agent har egen konfiguration för exekveringsläge, providerstrategi, modellfamilj, modelloverride, direktiv och timeout. Därmed kan exempelvis Requirements Analyst köras med en annan lokal Ollama-modell och ett längre timeoutvärde än Review Agent. Samtidigt finns ett globalt lager i gränssnittet där samma LLM-inställningar kan appliceras på samtliga agenter, vilket förenklar experiment och jämförelser.
+Ett annat bärande arkitekturelement är **per-agent runtime configuration**. Varje agent har egen konfiguration för exekveringsläge, providerstrategi, modellfamilj, modelloverride, direktiv och timeout. Därmed kan exempelvis Requirements Analyst köras med en annan lokal Ollama-modell och ett längre timeoutvärde än Review Agent.
 
 Arkitekturen innehåller också ett **observability-lager**. Under körning emitteras runtime events för stage start, stage completion och routingbeslut. Dessa används både för GUI-uppdateringar och för skrivning till en live-loggfil. Resultatet blir att systemet inte endast producerar ett slutresultat, utan även en körbar spårkedja över vilka agenter som kördes, med vilken modell, hur lång tid det tog och varför arbetsflödet skickades vidare eller stoppades.
 
@@ -186,7 +180,7 @@ Under körning uppdateras flera resultatpaneler i realtid:
 - **Runtime activity**, som visar stegvisa runtime events med tidsdata och agentnamn.
 - **Working memory**, som visualiserar shared memory, agent private memory och memory timeline.
 
-En separat **live log file** skapas i början av körningen och fylls på successivt med konfiguration och runtime events. Loggfilen fungerar som ett externt spår som kan följas utanför GUI:t. Parallellt sparas fullständiga körningar i databasen tillsammans med strukturerade stage traces, review-resultat och metadata om runtimekonfigurationen. Detta gör att prototypen inte endast är en körmotor utan också en spårbar experimentplattform.
+En separat **live log file** skapas i början av körningen och fylls på successivt med konfiguration och runtime events. Loggfilen fungerar som ett externt spår som kan följas utanför GUI:t. Parallellt sparas fullständiga körningar i databasen tillsammans med strukturerade stage traces, review-resultat och metadata om runtimekonfigurationen. Detta gör att prototypen inte endast är en körmotor utan också en spårbar experimentplattform och som senare kan exporteas till Excel för utvärdering.
 
 Dokumentationen är integrerad i samma applikation. Litteraturstudie, project brief, AI developing guidelines och QA agent developing requirements exponeras både i gränssnittet och via publicering på GitHub Pages. Detta är ett viktigt implementeringsval eftersom applikationen därmed fungerar både som forskningsprototyp och som dokumenterad artefakt med en publik läsbar yta.
 
