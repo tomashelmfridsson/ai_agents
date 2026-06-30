@@ -21,6 +21,10 @@ class AgentTimeoutError(RuntimeError):
         super().__init__(f"{agent_name} exceeded the {timeout_seconds}-second timeout.")
 
 
+class WorkflowCancelledError(RuntimeError):
+    pass
+
+
 @dataclass
 class OrchestrationState:
     route_round: int = 1
@@ -60,6 +64,7 @@ class OrchestratorAgent:
         agent_configs: list[AgentRuntimeConfig] | None = None,
         run_controls: RunControlConfig | None = None,
         event_callback=None,
+        stop_requested=None,
     ) -> PipelineResult:
         runtime_configs = agent_configs or []
         runtime_lookup = {config.agent_key: config for config in runtime_configs}
@@ -80,6 +85,7 @@ class OrchestratorAgent:
         }
 
         while state.review is None or state.current_stage != "stop":
+            self._raise_if_cancelled(stop_requested)
             handler = stage_handlers[state.current_stage]
             next_stage = handler(
                 state=state,
@@ -89,6 +95,7 @@ class OrchestratorAgent:
                 run_session=run_session,
                 event_callback=event_callback,
             )
+            self._raise_if_cancelled(stop_requested)
             if next_stage == "stop":
                 state.current_stage = "stop"
                 break
@@ -1079,6 +1086,10 @@ class OrchestratorAgent:
 
     def _elapsed_ms(self, started_at: float) -> int:
         return max(0, int(round((time.perf_counter() - started_at) * 1000)))
+
+    def _raise_if_cancelled(self, stop_requested) -> None:
+        if stop_requested and stop_requested():
+            raise WorkflowCancelledError("Workflow was stopped by the user.")
 
     def _run_with_timeout(self, agent_name: str, runtime_config: AgentRuntimeConfig | None, func, args: tuple):
         timeout_seconds = max(1, int(runtime_config.timeout_seconds if runtime_config else AGENT_TIMEOUT_SECONDS))

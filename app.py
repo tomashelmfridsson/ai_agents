@@ -30,7 +30,12 @@ from qa_platform.agent_runtime import (
     build_agent_runtime_configs,
 )
 from qa_platform.llm_runtime import LLMRuntimeError
-from qa_platform.orchestrator import AGENT_TIMEOUT_SECONDS, AgentTimeoutError, OrchestratorAgent
+from qa_platform.orchestrator import (
+    AGENT_TIMEOUT_SECONDS,
+    AgentTimeoutError,
+    OrchestratorAgent,
+    WorkflowCancelledError,
+)
 from qa_platform.models import AgentRuntimeConfig, RunControlConfig
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
@@ -57,6 +62,8 @@ APP_THEME = gr.themes.Soft(
     secondary_hue="orange",
     neutral_hue="stone",
 )
+_ACTIVE_RUN_LOCK = threading.Lock()
+_ACTIVE_RUN_STOP_EVENT: threading.Event | None = None
 
 
 def _blocks_support_launch_theming() -> bool:
@@ -98,6 +105,28 @@ def build_idle_memory_panel() -> str:
         "<p class='agent-config-text'>No shared memory has been recorded yet. After a run starts, this panel will show shared keys, per-agent notes, and the memory timeline.</p>"
         "</section>"
     )
+
+
+def _register_active_run(stop_event: threading.Event) -> None:
+    global _ACTIVE_RUN_STOP_EVENT
+    with _ACTIVE_RUN_LOCK:
+        _ACTIVE_RUN_STOP_EVENT = stop_event
+
+
+def _clear_active_run(stop_event: threading.Event) -> None:
+    global _ACTIVE_RUN_STOP_EVENT
+    with _ACTIVE_RUN_LOCK:
+        if _ACTIVE_RUN_STOP_EVENT is stop_event:
+            _ACTIVE_RUN_STOP_EVENT = None
+
+
+def request_stop_current_run() -> str:
+    with _ACTIVE_RUN_LOCK:
+        stop_event = _ACTIVE_RUN_STOP_EVENT
+    if stop_event is None:
+        return "No workflow is currently running."
+    stop_event.set()
+    return "Stop requested. The current agent pass will finish before the workflow stops."
 
 
 def _build_live_log_path(title: str) -> Path:
@@ -414,6 +443,14 @@ def apply_global_agent_settings(
                 gr.update(visible=is_llm),
             ]
         )
+    updates.append(
+        gr.update(
+            value=(
+                f"Applied common settings to {len(AGENT_CONFIG_SPECS)} agents. "
+                f"Provider: {provider_strategy}. Model: {model_value}."
+            )
+        )
+    )
     return updates
 
 
@@ -427,12 +464,19 @@ def process_requirements(
     openai_base_url: str,
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
-) -> Iterator[tuple[str, str, str | None, str, str]]:
+) -> Iterator[tuple[str, str, str | None, str, str, str]]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         message = "Requirements saknas. Fyll i minst ett krav innan du kör workflow."
-        yield build_error_status(message), build_error_report(message), None, build_idle_runtime_timeline(), build_idle_memory_panel()
+        yield (
+            build_error_status(message),
+            build_error_report(message),
+            None,
+            build_idle_runtime_timeline(),
+            build_idle_memory_panel(),
+            "Run blocked. Add requirements before starting the workflow.",
+        )
         return
     round_limit = max(1, int(max_rounds))
     run_controls = RunControlConfig(
@@ -461,6 +505,8 @@ def process_requirements(
         "result": None,
         "error": None,
     }
+    stop_event = threading.Event()
+    _register_active_run(stop_event)
 
     yield (
         build_running_status(runtime_events),
@@ -468,6 +514,7 @@ def process_requirements(
         gr.update(value=str(live_log_path)),
         build_idle_runtime_timeline(),
         build_idle_memory_panel(),
+        "Workflow starting. Press Stop workflow to stop after the current agent pass.",
     )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
@@ -481,16 +528,19 @@ def process_requirements(
                 agent_configs=agent_configs,
                 run_controls=run_controls,
                 event_callback=handle_runtime_event,
+                stop_requested=stop_event.is_set,
             )
         except Exception as exc:  # noqa: BLE001
             worker_state["error"] = exc
         finally:
             worker_state["done"] = True
             event_queue.put(("done", None))
+            _clear_active_run(stop_event)
 
     progress(None, desc="Starting workflow.")
     worker = threading.Thread(target=run_workflow, daemon=True)
     worker.start()
+    stop_notice_emitted = False
 
     while True:
         emitted = False
@@ -521,14 +571,44 @@ def process_requirements(
                     gr.update(value=str(live_log_path)),
                     build_runtime_timeline(runtime_events, str(live_log_path)),
                     build_memory_panel(latest_memory_snapshot),
+                    "Workflow is running.",
                 )
                 emitted = True
         if worker_state["done"] and event_queue.empty():
             break
+        if stop_event.is_set() and not stop_notice_emitted:
+            stop_notice_emitted = True
+            yield (
+                build_running_status(runtime_events),
+                build_running_report_with_log(runtime_events, str(live_log_path)),
+                gr.update(value=str(live_log_path)),
+                build_runtime_timeline(runtime_events, str(live_log_path)),
+                build_memory_panel(latest_memory_snapshot),
+                "Stop requested. Waiting for the current agent pass to finish.",
+            )
         if not emitted:
             time.sleep(0.1)
 
     error = worker_state["error"]
+    if isinstance(error, WorkflowCancelledError):
+        message = "Workflow was stopped by the user."
+        _append_live_log(
+            live_log_path,
+            [
+                f"[{datetime.now().isoformat(timespec='seconds')}] RUN STOPPED",
+                message,
+                "",
+            ],
+        )
+        yield (
+            build_error_status(message),
+            build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            gr.update(value=str(live_log_path)),
+            build_runtime_timeline(runtime_events, str(live_log_path)),
+            build_memory_panel(latest_memory_snapshot),
+            "Workflow stopped.",
+        )
+        return
     if isinstance(error, LLMRuntimeError):
         message = format_user_error(str(error))
         yield (
@@ -537,6 +617,7 @@ def process_requirements(
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
+            "Workflow stopped because of an LLM/backend error.",
         )
         return
     if isinstance(error, AgentTimeoutError):
@@ -555,6 +636,7 @@ def process_requirements(
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
+            "Workflow stopped because an agent hit its timeout.",
         )
         return
     if error is not None:
@@ -610,6 +692,7 @@ def process_requirements(
         gr.update(value=saved_run.log_path),
         build_runtime_timeline(runtime_events, str(live_log_path)),
         build_memory_panel((payload.get("run_session") or {}).get("working_memory")),
+        f"Workflow finished. Run #{payload['run_id']} was saved.",
     )
 
 
@@ -1765,17 +1848,6 @@ def build_demo() -> gr.Blocks:
                                         directives_input,
                                     ]
                                 )
-                apply_global_settings_button.click(
-                    fn=apply_global_agent_settings,
-                    inputs=[
-                        global_execution_mode_input,
-                        global_provider_strategy_input,
-                        global_model_input,
-                        global_model_override_input,
-                        global_timeout_input,
-                    ],
-                    outputs=agent_bulk_outputs,
-                )
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Scenario")
                 scenario_picker = gr.Dropdown(
@@ -1790,6 +1862,10 @@ def build_demo() -> gr.Blocks:
                     lines=12,
                 )
                 run_button = gr.Button("Run workflow", variant="primary")
+                interaction_feedback_output = gr.Markdown(
+                    value="Ready.",
+                    elem_classes=["execution-mode-help"],
+                )
 
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Result")
@@ -1818,6 +1894,8 @@ def build_demo() -> gr.Blocks:
                     value=None,
                     interactive=False,
                 )
+            with gr.Group(elem_classes=["panel-card"]):
+                stop_button = gr.Button("Stop workflow")
 
         run_button.click(
             fn=process_requirements,
@@ -1831,7 +1909,23 @@ def build_demo() -> gr.Blocks:
                 openai_base_url_input,
                 *agent_config_inputs,
             ],
-            outputs=[status_output, result_output, log_file_output, runtime_output, memory_output],
+            outputs=[status_output, result_output, log_file_output, runtime_output, memory_output, interaction_feedback_output],
+        )
+        stop_button.click(
+            fn=request_stop_current_run,
+            inputs=[],
+            outputs=[interaction_feedback_output],
+        )
+        apply_global_settings_button.click(
+            fn=apply_global_agent_settings,
+            inputs=[
+                global_execution_mode_input,
+                global_provider_strategy_input,
+                global_model_input,
+                global_model_override_input,
+                global_timeout_input,
+            ],
+            outputs=[*agent_bulk_outputs, interaction_feedback_output],
         )
         scenario_picker.change(
             fn=load_sample_scenario,

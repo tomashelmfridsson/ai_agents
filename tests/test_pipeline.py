@@ -380,12 +380,13 @@ class PipelineTests(unittest.TestCase):
             150,
         )
 
-        self.assertEqual(len(updates), len(app_module.AGENT_CONFIG_SPECS) * 8)
+        self.assertEqual(len(updates), len(app_module.AGENT_CONFIG_SPECS) * 8 + 1)
         self.assertEqual(updates[0]["value"], "LLM-backed")
         self.assertEqual(updates[1]["value"], "Ollama local")
         self.assertEqual(updates[2]["value"], "deepseek-r1:8b")
         self.assertEqual(updates[2]["allow_custom_value"], True)
         self.assertEqual(updates[4]["value"], 150)
+        self.assertIn("Applied common settings", updates[-1]["value"])
 
     def test_build_error_report_shows_completed_agent_results(self) -> None:
         agent_configs = [
@@ -621,7 +622,7 @@ class PipelineTests(unittest.TestCase):
                 "",
             )
         )
-        status_html, report_html, log_file, runtime_html, memory_html = updates[-1]
+        status_html, report_html, log_file, runtime_html, memory_html, feedback_text = updates[-1]
 
         self.assertEqual(len(updates), 1)
         self.assertIn("Run stopped because of an error", status_html)
@@ -630,6 +631,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(log_file)
         self.assertIn("Runtime activity", runtime_html)
         self.assertIn("Working memory", memory_html)
+        self.assertIn("Run blocked", feedback_text)
 
     def test_process_requirements_streams_runtime_updates_before_final_result(self) -> None:
         class FakeResult:
@@ -665,8 +667,17 @@ class PipelineTests(unittest.TestCase):
                     },
                 }
 
-        def fake_process(self, title, requirements_text, agent_configs=None, run_controls=None, event_callback=None):
+        def fake_process(
+            self,
+            title,
+            requirements_text,
+            agent_configs=None,
+            run_controls=None,
+            event_callback=None,
+            stop_requested=None,
+        ):
             assert event_callback is not None
+            del stop_requested
             event_callback(
                 {
                     "event_type": "stage_started",
@@ -719,8 +730,8 @@ class PipelineTests(unittest.TestCase):
                     )
 
         self.assertGreaterEqual(len(updates), 3)
-        running_status, running_report, running_file, running_runtime, running_memory = updates[1]
-        final_status, _final_report, final_file, _final_runtime, final_memory = updates[-1]
+        running_status, running_report, running_file, running_runtime, running_memory, running_feedback = updates[1]
+        final_status, _final_report, final_file, _final_runtime, final_memory, final_feedback = updates[-1]
 
         self.assertIn("Workflow is running", running_status)
         self.assertIn("Runtime events recorded: 1", running_report)
@@ -728,9 +739,11 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Requirements Analyst", running_runtime)
         self.assertIn("Working memory", running_memory)
         self.assertIn("current_stage", running_memory)
+        self.assertIn("Workflow is running", running_feedback)
         self.assertIn("Saved as run #7", final_status)
         self.assertEqual(final_file["value"], "/tmp/run.log")
         self.assertIn("Working memory", final_memory)
+        self.assertIn("Workflow finished", final_feedback)
 
     def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
         configs = build_agent_runtime_configs(
