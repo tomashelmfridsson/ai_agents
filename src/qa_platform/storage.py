@@ -98,7 +98,7 @@ def build_run_log_text(
         f"Scenario: {payload.get('title', 'Untitled demo')}",
         f"Approved: {review.get('approved')}",
         f"Coverage ratio: {review.get('coverage_ratio')}",
-        f"Backtracking cycles: {payload.get('iterations')}",
+        f"Backtracking rounds: {payload.get('iterations')}",
         f"Maximum rounds: {run_controls.get('max_rounds', payload.get('iterations', 0))}",
         f"Maximum feedback messages: {run_controls.get('max_feedback_messages', 0)}",
         f"Maximum feedback messages per agent pair: {run_controls.get('max_feedback_per_agent_pair', 0)}",
@@ -126,8 +126,8 @@ def build_run_log_text(
     for cycle, traces in _group_stage_traces(payload.get("stage_traces", [])).items():
         lines.extend(
             [
-                f"Backtracking cycle {cycle}",
-                "Below is the full sequence of agent passes for this backtracking cycle, with explicit input, output, and routing context.",
+                f"Backtracking round {cycle}",
+                "Below is the full sequence of agent passes for this backtracking round, with explicit input, output, and routing context.",
                 "",
             ]
         )

@@ -42,6 +42,8 @@ from qa_platform.sample_scenarios import (
 from qa_platform.storage import get_log_dir, save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
+AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
+QA_AGENT_DEVELOPING_REQUIREMENTS_URL = "https://tomashelmfridsson.github.io/ai_agents/qa-agent-developing-requirements/"
 DEFAULT_OLLAMA_MODEL_CHOICES = [
     "qwen3:8b",
     "deepseek-r1:8b",
@@ -85,6 +87,15 @@ def build_idle_runtime_timeline() -> str:
         "<section class='diagram-card'>"
         "<h3>Runtime activity</h3>"
         "<p class='agent-config-text'>No runtime activity yet. After a run starts, this panel will show agent events, model names, and a live tail of the current run log.</p>"
+        "</section>"
+    )
+
+
+def build_idle_memory_panel() -> str:
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Working memory</h3>"
+        "<p class='agent-config-text'>No shared memory has been recorded yet. After a run starts, this panel will show shared keys, per-agent notes, and the memory timeline.</p>"
         "</section>"
     )
 
@@ -274,6 +285,88 @@ def build_running_report_with_log(runtime_events: list[dict[str, object]], log_p
     )
 
 
+def _format_memory_value(value: object) -> str:
+    text = html.escape(repr(value))
+    if len(text) > 320:
+        text = text[:317] + "..."
+    return text
+
+
+def build_memory_panel(memory_snapshot: dict[str, object] | None) -> str:
+    if not memory_snapshot:
+        return build_idle_memory_panel()
+
+    shared = memory_snapshot.get("shared", {}) if isinstance(memory_snapshot, dict) else {}
+    agent_private = memory_snapshot.get("agent_private", {}) if isinstance(memory_snapshot, dict) else {}
+    timeline = memory_snapshot.get("timeline", []) if isinstance(memory_snapshot, dict) else []
+
+    if not isinstance(shared, dict):
+        shared = {}
+    if not isinstance(agent_private, dict):
+        agent_private = {}
+    if not isinstance(timeline, list):
+        timeline = []
+
+    shared_rows = []
+    for key, value in shared.items():
+        shared_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(key))}</td>"
+            f"<td><code class='memory-value'>{_format_memory_value(value)}</code></td>"
+            "</tr>"
+        )
+    shared_table = (
+        "<div class='table-scroll'><table><thead><tr><th>Shared key</th><th>Value</th></tr></thead><tbody>"
+        + "".join(shared_rows)
+        + "</tbody></table></div>"
+        if shared_rows
+        else "<p class='agent-config-text'>No shared memory keys have been written yet.</p>"
+    )
+
+    private_rows = []
+    for agent_key, values in agent_private.items():
+        if isinstance(values, dict):
+            for key, value in values.items():
+                private_rows.append(
+                    "<tr>"
+                    f"<td>{html.escape(str(agent_key))}</td>"
+                    f"<td>{html.escape(str(key))}</td>"
+                    f"<td><code class='memory-value'>{_format_memory_value(value)}</code></td>"
+                    "</tr>"
+                )
+    private_table = (
+        "<div class='table-scroll'><table><thead><tr><th>Agent</th><th>Private key</th><th>Value</th></tr></thead><tbody>"
+        + "".join(private_rows)
+        + "</tbody></table></div>"
+        if private_rows
+        else "<p class='agent-config-text'>No agent-private memory entries have been written yet.</p>"
+    )
+
+    timeline_html = (
+        "<div class='live-log-preview'><pre>"
+        + html.escape("\n".join(str(item) for item in timeline[-16:]))
+        + "</pre></div>"
+        if timeline
+        else "<p class='agent-config-text'>No memory timeline entries recorded yet.</p>"
+    )
+
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Working memory</h3>"
+        "<p class='agent-config-text'>This panel shows the run-scoped shared memory, per-agent private notes, and the memory timeline collected so far.</p>"
+        "<details open><summary>Shared memory</summary>"
+        f"{shared_table}"
+        "</details>"
+        "<details><summary>Agent private memory</summary>"
+        f"{private_table}"
+        "</details>"
+        "<details><summary>Memory timeline</summary>"
+        f"{timeline_html}"
+        "</details>"
+        "</section>"
+    )
+
+
 def build_live_log_preview(log_path: str | None, line_count: int = 12) -> str:
     if not log_path:
         return "<p class='agent-config-text'>Live log file is not available yet.</p>"
@@ -289,6 +382,35 @@ def build_live_log_preview(log_path: str | None, line_count: int = 12) -> str:
     )
 
 
+def apply_global_agent_settings(
+    execution_mode: str,
+    provider_strategy: str,
+    model_family: str,
+    model_override: str,
+    timeout_seconds: float,
+) -> list[dict]:
+    is_llm = execution_mode == "LLM-backed"
+    model_value = get_initial_model_value(provider_strategy, model_family)
+    model_choices = get_model_choices(provider_strategy)
+    summary = format_llm_config_summary(provider_strategy, model_value, model_override)
+    help_text = format_execution_mode_help(execution_mode)
+    updates: list[dict] = []
+    for _ in AGENT_CONFIG_SPECS:
+        updates.extend(
+            [
+                gr.update(value=execution_mode),
+                gr.update(value=provider_strategy, visible=is_llm),
+                gr.update(choices=model_choices, value=model_value, label="Model", visible=is_llm),
+                gr.update(value=model_override, visible=is_llm),
+                gr.update(value=max(30, int(timeout_seconds)), visible=is_llm),
+                gr.update(value=help_text),
+                gr.update(value=summary, visible=is_llm),
+                gr.update(visible=is_llm),
+            ]
+        )
+    return updates
+
+
 def process_requirements(
     title: str,
     requirements: str,
@@ -299,12 +421,12 @@ def process_requirements(
     openai_base_url: str,
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
-) -> Iterator[tuple[str, str, str | None, str]]:
+) -> Iterator[tuple[str, str, str | None, str, str]]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         message = "Requirements saknas. Fyll i minst ett krav innan du kör workflow."
-        yield build_error_status(message), build_error_report(message), None, build_idle_runtime_timeline()
+        yield build_error_status(message), build_error_report(message), None, build_idle_runtime_timeline(), build_idle_memory_panel()
         return
     round_limit = max(1, int(max_rounds))
     run_controls = RunControlConfig(
@@ -326,6 +448,7 @@ def process_requirements(
     )
     runtime_events: list[dict[str, object]] = []
     completed_stage_traces: list[dict[str, object]] = []
+    latest_memory_snapshot: dict[str, object] | None = None
     event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
     worker_state: dict[str, object] = {
         "done": False,
@@ -338,6 +461,7 @@ def process_requirements(
         build_running_report_with_log(runtime_events, str(live_log_path)),
         gr.update(value=str(live_log_path)),
         build_idle_runtime_timeline(),
+        build_idle_memory_panel(),
     )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
@@ -380,6 +504,9 @@ def process_requirements(
                 trace = event.get("trace")
                 if isinstance(trace, dict):
                     completed_stage_traces.append(trace)
+                memory_snapshot = event.get("memory_snapshot")
+                if isinstance(memory_snapshot, dict):
+                    latest_memory_snapshot = memory_snapshot
                 _append_runtime_event_to_live_log(live_log_path, event, agent_configs)
                 progress(None, desc=str(event.get("message", "Processing workflow...")))
                 yield (
@@ -387,6 +514,7 @@ def process_requirements(
                     build_running_report_with_log(runtime_events, str(live_log_path)),
                     gr.update(value=str(live_log_path)),
                     build_runtime_timeline(runtime_events, str(live_log_path)),
+                    build_memory_panel(latest_memory_snapshot),
                 )
                 emitted = True
         if worker_state["done"] and event_queue.empty():
@@ -402,6 +530,7 @@ def process_requirements(
             build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
+            build_memory_panel(latest_memory_snapshot),
         )
         return
     if isinstance(error, AgentTimeoutError):
@@ -419,6 +548,7 @@ def process_requirements(
             build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
+            build_memory_panel(latest_memory_snapshot),
         )
         return
     if error is not None:
@@ -451,7 +581,7 @@ def process_requirements(
         else ""
     )
     status_items = [
-        f"<li>Completed with {payload['iterations']} backtracking cycle(s) within a limit of {round_limit}.</li>",
+        f"<li>Completed with {payload['iterations']} backtracking round(s) within a limit of {round_limit}.</li>",
         f"<li>Coverage ratio: {payload['review']['coverage_ratio']}.</li>",
         f"<li>Approved: {'yes' if payload['review']['approved'] else 'no'}.</li>",
         f"<li>Findings: {findings_count}. Improvement actions: {improvement_count}.</li>",
@@ -468,7 +598,13 @@ def process_requirements(
         + "</ul>"
         "</section>"
     )
-    yield status, build_workflow_report(payload), gr.update(value=saved_run.log_path), build_runtime_timeline(runtime_events, str(live_log_path))
+    yield (
+        status,
+        build_workflow_report(payload),
+        gr.update(value=saved_run.log_path),
+        build_runtime_timeline(runtime_events, str(live_log_path)),
+        build_memory_panel((payload.get("run_session") or {}).get("working_memory")),
+    )
 
 
 def mark_custom_scenario(*_args: str) -> str:
@@ -521,6 +657,7 @@ def format_user_error(raw_message: str) -> str:
 
 
 def build_runtime_timeline(runtime_events: list[dict[str, object]], log_path: str | None = None) -> str:
+    del log_path
     if not runtime_events:
         return build_idle_runtime_timeline()
 
@@ -547,9 +684,6 @@ def build_runtime_timeline(runtime_events: list[dict[str, object]], log_path: st
         "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Model</th><th>Event</th><th>Time</th><th>Message</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
-        + "<h3>Live log tail</h3>"
-        + build_live_log_preview(log_path)
-        + 
         "</section>"
     )
 
@@ -710,8 +844,8 @@ def build_pipeline_visualization_section() -> str:
 CUSTOM_CSS = """
     :root {
       --app-ink: #1d140d;
-      --app-muted: #3d3027;
-      --app-soft: #5f4d40;
+      --app-muted: #1d140d;
+      --app-soft: #1d140d;
       --app-paper: rgba(255, 250, 244, 0.98);
       --app-paper-2: rgba(247, 238, 226, 0.98);
       --app-paper-3: rgba(252, 246, 238, 1);
@@ -1171,6 +1305,11 @@ CUSTOM_CSS = """
       letter-spacing: 0.12em;
       color: var(--app-accent) !important;
     }
+    .diagram-card details summary {
+      color: var(--app-ink) !important;
+      font-weight: 700;
+      cursor: pointer;
+    }
     .agent-config-text {
       color: var(--app-muted) !important;
       line-height: 1.7;
@@ -1220,6 +1359,25 @@ CUSTOM_CSS = """
     .diagram-card th {
       background: rgba(203, 145, 50, 0.18);
       font-weight: 700;
+    }
+    .memory-value {
+      color: #000 !important;
+    }
+    .live-log-preview,
+    .live-log-preview pre,
+    .live-log-preview code {
+      color: #000 !important;
+    }
+    .live-log-preview pre {
+      background: rgba(255, 255, 255, 0.96);
+      border: 2px solid rgba(29, 20, 13, 0.32);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+      font-size: 0.84rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
     .table-scroll {
       width: 100%;
@@ -1326,25 +1484,35 @@ def build_demo() -> gr.Blocks:
                         <div style="max-width:58ch;">
                           <p class="hero-kicker">Research prototype</p>
                           <h1 class="hero-title">
-                            QA agent research workbench for LLM and orchestration comparisons
+                            QA Agent workbench for requirements analysis, test design, and orchestration comparison
                           </h1>
                         </div>
                         <div class="doc-actions" id="literature-button-slot"></div>
                       </div>
                       <p class="hero-copy">
-                        The broader project evaluates multiple LLMs, local versus cloud inference, and alternative agentic orchestration patterns for QA. The current demo is the deterministic baseline: a synchronous rule-based workflow used as a controlled reference point.
+                        This project evaluates how a QA-oriented multi-agent system can transform raw requirements into structured QA outputs such as requirement analysis, test design, review findings, runtime traces, and working memory. It also compares local and cloud LLM execution, orchestration strategies, and controlled backtracking in a traceable QA workflow.
                       </p>
                     </section>
                     """
                 )
                 gr.Button(
-                    "Open literature review",
+                    "Literature study",
                     link=LITERATURE_URL,
                     elem_classes=["doc-pill-button"],
                 )
                 gr.Button(
-                    "Open project brief",
+                    "Project brief",
                     link=PROJECT_BRIEF_URL,
+                    elem_classes=["doc-pill-button"],
+                )
+                gr.Button(
+                    "AI developing guidelines",
+                    link=AI_DEVELOPING_GUIDELINES_URL,
+                    elem_classes=["doc-pill-button"],
+                )
+                gr.Button(
+                    "QA agent requirements",
+                    link=QA_AGENT_DEVELOPING_REQUIREMENTS_URL,
                     elem_classes=["doc-pill-button"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
@@ -1355,7 +1523,7 @@ def build_demo() -> gr.Blocks:
                     max_iterations_input = gr.Slider(
                         label="Maximum rounds",
                         minimum=1,
-                        maximum=5,
+                        maximum=10,
                         step=1,
                         value=2,
                     )
@@ -1376,9 +1544,15 @@ def build_demo() -> gr.Blocks:
                     gr.HTML(
                         """
                         <div class="baseline-note">
-                          <strong>Agent feedback budget</strong> controls how many correction rounds the agents may use.
-                          If one agent finds problems, it can send the work back, but these limits stop unnecessary back-and-forth.
-                          Right now the app stores these settings and uses them as execution limits.
+                          <strong>Run controls</strong> define how far the workflow is allowed to iterate before it stops.
+                          <br><br>
+                          <strong>Maximum rounds</strong> is the total number of workflow rounds the orchestrator may run, including reruns after feedback.
+                          <br>
+                          <strong>Maximum feedback messages</strong> is the total number of correction messages agents may send during one run.
+                          <br>
+                          <strong>Maximum feedback messages per agent pair</strong> limits repeated back-and-forth between the same two agents.
+                          <br><br>
+                          Use lower values for fast, controlled runs. Use higher values when you want the agents to spend more time repairing weak intermediate results.
                         </div>
                         """
                     )
@@ -1401,8 +1575,68 @@ def build_demo() -> gr.Blocks:
                         </div>
                         """
                     )
+                with gr.Accordion("Global agent LLM settings", open=False, elem_classes=["controls-accordion"]):
+                    gr.HTML(
+                        """
+                        <div class="baseline-note">
+                          Apply one common LLM configuration across all agents, then fine-tune only the agents that need exceptions.
+                        </div>
+                        """
+                    )
+                    global_execution_mode_input = gr.Dropdown(
+                        label="Execution mode for all agents",
+                        choices=EXECUTION_MODE_CHOICES,
+                        value=EXECUTION_MODE_CHOICES[0],
+                    )
+                    global_provider_strategy_input = gr.Dropdown(
+                        label="Provider strategy for all agents",
+                        choices=PROVIDER_STRATEGY_CHOICES,
+                        value="Ollama local",
+                    )
+                    global_model_input = gr.Dropdown(
+                        label="Model for all agents",
+                        choices=get_model_choices("Ollama local"),
+                        value=get_initial_model_value("Ollama local", "Qwen 3 32B"),
+                    )
+                    global_llm_summary = gr.Markdown(
+                        value=format_llm_config_summary(
+                            "Ollama local",
+                            get_initial_model_value("Ollama local", "Qwen 3 32B"),
+                            "",
+                        ),
+                        elem_classes=["llm-summary"],
+                    )
+                    global_model_override_input = gr.Textbox(
+                        label="Model override for all agents (optional)",
+                        value="",
+                        placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b",
+                    )
+                    global_timeout_input = gr.Slider(
+                        label="Timeout for all agents (seconds)",
+                        minimum=30,
+                        maximum=300,
+                        step=15,
+                        value=120,
+                    )
+                    apply_global_settings_button = gr.Button("Apply to all agents")
+                    global_provider_strategy_input.change(
+                        fn=update_model_dropdown,
+                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                        outputs=[global_model_input, global_llm_summary],
+                    )
+                    global_model_input.change(
+                        fn=format_llm_config_summary,
+                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                        outputs=[global_llm_summary],
+                    )
+                    global_model_override_input.change(
+                        fn=format_llm_config_summary,
+                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                        outputs=[global_llm_summary],
+                    )
                 gr.HTML("<div class='config-subhead'>Per-agent model setup</div>")
                 agent_config_inputs = []
+                agent_bulk_outputs = []
                 with gr.Group(elem_classes=["agent-config-grid"]):
                     for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
                         with gr.Accordion(
@@ -1511,6 +1745,29 @@ def build_demo() -> gr.Blocks:
                                         directives_input,
                                     ]
                                 )
+                                agent_bulk_outputs.extend(
+                                    [
+                                        execution_mode_input,
+                                        provider_strategy_input,
+                                        model_family_input,
+                                        model_override_input,
+                                        timeout_input,
+                                        execution_mode_help,
+                                        llm_summary,
+                                        directives_input,
+                                    ]
+                                )
+                apply_global_settings_button.click(
+                    fn=apply_global_agent_settings,
+                    inputs=[
+                        global_execution_mode_input,
+                        global_provider_strategy_input,
+                        global_model_input,
+                        global_model_override_input,
+                        global_timeout_input,
+                    ],
+                    outputs=agent_bulk_outputs,
+                )
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Scenario")
                 scenario_picker = gr.Dropdown(
@@ -1543,6 +1800,11 @@ def build_demo() -> gr.Blocks:
                     show_label=False,
                     container=False,
                 )
+                memory_output = gr.HTML(
+                    value=build_idle_memory_panel(),
+                    show_label=False,
+                    container=False,
+                )
                 log_file_output = gr.File(
                     label="Download run log",
                     value=None,
@@ -1561,7 +1823,7 @@ def build_demo() -> gr.Blocks:
                 openai_base_url_input,
                 *agent_config_inputs,
             ],
-            outputs=[status_output, result_output, log_file_output, runtime_output],
+            outputs=[status_output, result_output, log_file_output, runtime_output, memory_output],
         )
         scenario_picker.change(
             fn=load_sample_scenario,
@@ -1620,7 +1882,7 @@ def build_summary_overview(payload: dict) -> str:
     log_path = payload.get("log_path")
     lead = (
         f"Scenario \"{payload['title']}\" produced {len(payload['requirements'])} requirement item(s), "
-        f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} backtracking cycle(s) with "
+        f"{len(payload['test_designs'])} planned test case(s). The run ended after {payload['iterations']} backtracking round(s) with "
         f"coverage ratio {review['coverage_ratio']} and approved={approved}."
     )
     bullets = [
@@ -1749,8 +2011,8 @@ def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) ->
     for iteration, traces in group_stage_traces_by_iteration(stage_traces).items():
         sections.append(
             "<section class='diagram-card'>"
-            f"<h3>Backtracking cycle {iteration}</h3>"
-            "<p class='agent-config-text'>Below is the full sequence of agent passes for this backtracking cycle, with explicit input, output, and routing context.</p>"
+            f"<h3>Backtracking round {iteration}</h3>"
+            "<p class='agent-config-text'>Below is the full sequence of agent passes for this backtracking round, with explicit input, output, and routing context.</p>"
             "</section>"
         )
         for trace in traces:

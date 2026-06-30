@@ -3,15 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
+import copy
 import time
 
-from .agents import (
-    RequirementsAnalystAgent,
-    ReviewAgent,
-    TestDesignAgent,
-)
-from .models import AgentRuntimeConfig, PipelineResult, RunControlConfig, StageTrace
+from .models import AgentRuntimeConfig, PipelineResult, RunControlConfig, RunSession, StageTrace
 from .models import ReviewReport
+from .registry import AgentRegistry, build_default_agent_registry
+from .workflow import WorkflowGraph, build_default_workflow_graph
 
 AGENT_TIMEOUT_SECONDS = 60
 
@@ -24,11 +22,36 @@ class AgentTimeoutError(RuntimeError):
 
 
 @dataclass
+class OrchestrationState:
+    route_round: int = 1
+    current_stage: str = "orchestrator"
+    requirements: list = field(default_factory=list)
+    designs: list = field(default_factory=list)
+    review: ReviewReport | None = None
+    stage_traces: list[StageTrace] = field(default_factory=list)
+    requirements_feedback: list[str] = field(default_factory=list)
+    design_feedback: list[str] = field(default_factory=list)
+    pair_feedback_counts: dict[tuple[str, str], int] = field(default_factory=lambda: defaultdict(int))
+    total_feedback_messages: int = 0
+
+
+@dataclass
 class OrchestratorAgent:
-    requirements_analyst: RequirementsAnalystAgent = field(default_factory=RequirementsAnalystAgent)
-    test_designer: TestDesignAgent = field(default_factory=TestDesignAgent)
-    reviewer: ReviewAgent = field(default_factory=ReviewAgent)
+    registry: AgentRegistry = field(default_factory=build_default_agent_registry)
+    workflow_graph: WorkflowGraph = field(default_factory=build_default_workflow_graph)
     max_iterations: int = 2
+
+    @property
+    def requirements_analyst(self):
+        return self.registry.get_agent("requirements_analyst")
+
+    @property
+    def test_designer(self):
+        return self.registry.get_agent("test_design")
+
+    @property
+    def reviewer(self):
+        return self.registry.get_agent("review")
 
     def process(
         self,
@@ -38,10 +61,6 @@ class OrchestratorAgent:
         run_controls: RunControlConfig | None = None,
         event_callback=None,
     ) -> PipelineResult:
-        requirements = []
-        designs = []
-        review = None
-        stage_traces = []
         runtime_configs = agent_configs or []
         runtime_lookup = {config.agent_key: config for config in runtime_configs}
         control_config = run_controls or RunControlConfig(
@@ -49,340 +68,438 @@ class OrchestratorAgent:
             max_feedback_messages=0,
             max_feedback_per_agent_pair=0,
         )
-        pair_feedback_counts: dict[tuple[str, str], int] = defaultdict(int)
-        total_feedback_messages = 0
-        route_round = 1
-        requirements_feedback: list[str] = []
-        design_feedback: list[str] = []
-        current_stage = "orchestrator"
+        run_session = RunSession(title=title, source_requirements=requirements_text)
+        run_session.working_memory.write_shared("source_requirements", requirements_text, author="system")
+        run_session.working_memory.add_note("Run session started.")
+        state = OrchestrationState(current_stage=self.workflow_graph.start_stage)
+        stage_handlers = {
+            "orchestrator": self._handle_orchestrator_stage,
+            "requirements": self._handle_requirements_stage,
+            "design": self._handle_design_stage,
+            "review": self._handle_review_stage,
+        }
 
-        while True:
-            if current_stage == "orchestrator":
-                orchestrator_runtime = runtime_lookup.get("orchestrator")
-                initial_trace = self._build_initial_orchestrator_trace(
-                    route_round=route_round,
-                    runtime_config=orchestrator_runtime,
-                    run_controls=control_config,
-                )
-                stage_traces.append(initial_trace)
-                self._emit_event(
-                    event_callback,
-                    event_type="routing",
-                    agent_name="Orchestrator Agent",
-                    iteration=route_round,
-                    stage_index=0,
-                    message="Orchestrator selected Requirements Analyst as the first agent.",
-                    trace=initial_trace.__dict__,
-                )
-                current_stage = "requirements"
-                continue
-
-            if current_stage == "requirements":
-                requirements_runtime = runtime_lookup.get("requirements_analyst")
-                self._emit_event(
-                    event_callback,
-                    event_type="stage_started",
-                    agent_name="Requirements Analyst",
-                    iteration=route_round,
-                    stage_index=1,
-                    message="Running Requirements Analyst.",
-                )
-                started_at = time.perf_counter()
-                requirements = self._run_with_timeout(
-                    agent_name="Requirements Analyst",
-                    runtime_config=requirements_runtime,
-                    func=self.requirements_analyst.analyze,
-                    args=(
-                        requirements_text,
-                        requirements_feedback,
-                        requirements_runtime,
-                    ),
-                )
-                duration_ms = self._elapsed_ms(started_at)
-                requirements_trace = self._build_requirements_trace(
-                    route_round,
-                    requirements_text,
-                    requirements,
-                    requirements_feedback,
-                    requirements_runtime,
-                    duration_ms,
-                )
-                stage_traces.append(requirements_trace)
-                self._emit_event(
-                    event_callback,
-                    event_type="stage_completed",
-                    agent_name="Requirements Analyst",
-                    iteration=route_round,
-                    stage_index=1,
-                    duration_ms=duration_ms,
-                    message=f"Requirements Analyst completed in {duration_ms} ms.",
-                    trace=requirements_trace.__dict__,
-                )
-                requirements_validation_findings = list(
-                    self.requirements_analyst.last_execution.get("validation_findings") or []
-                )
-                if not requirements:
-                    contract_feedback = self._build_requirements_contract_feedback(
-                        requirements_validation_findings
-                    )
-                    if (
-                        route_round < control_config.max_rounds
-                        and self._can_send_feedback(
-                            from_agent="Orchestrator Agent",
-                            to_agent="Requirements Analyst",
-                            message_count=1,
-                            run_controls=control_config,
-                            total_feedback_messages=total_feedback_messages,
-                            pair_feedback_counts=pair_feedback_counts,
-                        )
-                    ):
-                        total_feedback_messages += 1
-                        pair_feedback_counts[("Orchestrator Agent", "Requirements Analyst")] += 1
-                        stage_traces.append(
-                            self._build_targeted_orchestrator_trace(
-                                route_round=route_round,
-                                from_agent="Orchestrator Agent",
-                                to_agent="Requirements Analyst",
-                                feedback_messages=contract_feedback,
-                                runtime_config=runtime_lookup.get("orchestrator"),
-                                run_controls=control_config,
-                                total_feedback_messages=total_feedback_messages,
-                                duration_ms=0,
-                            )
-                        )
-                        requirements_feedback = contract_feedback
-                        route_round += 1
-                        current_stage = "requirements"
-                        continue
-
-                    stage_traces.append(
-                        self._build_contract_failure_stop_trace(
-                            route_round=route_round,
-                            runtime_config=runtime_lookup.get("orchestrator"),
-                            run_controls=control_config,
-                            total_feedback_messages=total_feedback_messages,
-                            failure_messages=contract_feedback,
-                        )
-                    )
-                    review = self._build_contract_failure_review(contract_feedback)
-                    break
-                requirements_feedback = []
-                current_stage = "design"
-                continue
-
-            if current_stage == "design":
-                design_runtime = runtime_lookup.get("test_design")
-                self._emit_event(
-                    event_callback,
-                    event_type="stage_started",
-                    agent_name="Test Design Agent",
-                    iteration=route_round,
-                    stage_index=2,
-                    message="Running Test Design Agent.",
-                )
-                started_at = time.perf_counter()
-                designs = self._run_with_timeout(
-                    agent_name="Test Design Agent",
-                    runtime_config=design_runtime,
-                    func=self.test_designer.design,
-                    args=(requirements, design_feedback, design_runtime),
-                )
-                duration_ms = self._elapsed_ms(started_at)
-                design_trace = self._build_design_trace(
-                    route_round,
-                    requirements,
-                    designs,
-                    design_feedback,
-                    design_runtime,
-                    duration_ms,
-                )
-                stage_traces.append(design_trace)
-                self._emit_event(
-                    event_callback,
-                    event_type="stage_completed",
-                    agent_name="Test Design Agent",
-                    iteration=route_round,
-                    stage_index=2,
-                    duration_ms=duration_ms,
-                    message=f"Test Design Agent completed in {duration_ms} ms.",
-                    trace=design_trace.__dict__,
-                )
-                design_feedback = []
-                design_backtrack_feedback = self._build_design_backtrack_feedback(requirements)
-                if (
-                    design_backtrack_feedback
-                    and route_round < control_config.max_rounds
-                    and self._can_send_feedback(
-                    from_agent="Test Design Agent",
-                    to_agent="Requirements Analyst",
-                    message_count=1,
-                    run_controls=control_config,
-                    total_feedback_messages=total_feedback_messages,
-                    pair_feedback_counts=pair_feedback_counts,
-                    )
-                ):
-                    total_feedback_messages += 1
-                    pair_feedback_counts[("Test Design Agent", "Requirements Analyst")] += 1
-                    self._emit_event(
-                        event_callback,
-                        event_type="routing",
-                        agent_name="Orchestrator Agent",
-                        iteration=route_round,
-                        stage_index=4,
-                        message="Orchestrator routed targeted feedback from Test Design Agent to Requirements Analyst.",
-                    )
-                    stage_traces.append(
-                        self._build_targeted_orchestrator_trace(
-                            route_round=route_round,
-                            from_agent="Test Design Agent",
-                            to_agent="Requirements Analyst",
-                            feedback_messages=design_backtrack_feedback,
-                            runtime_config=runtime_lookup.get("orchestrator"),
-                            run_controls=control_config,
-                            total_feedback_messages=total_feedback_messages,
-                            duration_ms=0,
-                        )
-                    )
-                    requirements_feedback = design_backtrack_feedback
-                    route_round += 1
-                    current_stage = "requirements"
-                    continue
-                current_stage = "review"
-                continue
-
-            review_runtime = runtime_lookup.get("review")
-            self._emit_event(
-                event_callback,
-                event_type="stage_started",
-                agent_name="Review Agent",
-                iteration=route_round,
-                stage_index=3,
-                message="Running Review Agent.",
-            )
-            started_at = time.perf_counter()
-            review = self._run_with_timeout(
-                agent_name="Review Agent",
-                runtime_config=review_runtime,
-                func=self.reviewer.review,
-                args=(requirements, designs, review_runtime),
-            )
-            duration_ms = self._elapsed_ms(started_at)
-            review_trace = self._build_review_trace(route_round, requirements, designs, review, review_runtime, duration_ms)
-            stage_traces.append(review_trace)
-            self._emit_event(
-                event_callback,
-                event_type="stage_completed",
-                agent_name="Review Agent",
-                iteration=route_round,
-                stage_index=3,
-                duration_ms=duration_ms,
-                message=f"Review Agent completed in {duration_ms} ms.",
-                trace=review_trace.__dict__,
-            )
-            if review.approved:
-                self._emit_event(
-                    event_callback,
-                    event_type="routing",
-                    agent_name="Orchestrator Agent",
-                    iteration=route_round,
-                    stage_index=4,
-                    message="Orchestrator stopped the run because review approved the result.",
-                )
-                stage_traces.append(
-                    self._build_stop_orchestrator_trace(
-                        route_round=route_round,
-                        review=review,
-                        runtime_config=runtime_lookup.get("orchestrator"),
-                        run_controls=control_config,
-                        total_feedback_messages=total_feedback_messages,
-                        stop_reason="Stop pipeline because the review approved the result.",
-                        duration_ms=0,
-                    )
-                )
-                break
-
-            backtrack_route = self._select_review_backtrack_route(requirements, review)
-            if (
-                backtrack_route
-                and route_round < control_config.max_rounds
-                and self._can_send_feedback(
-                from_agent=backtrack_route["from_agent"],
-                to_agent=backtrack_route["to_agent"],
-                message_count=1,
+        while state.review is None or state.current_stage != "stop":
+            handler = stage_handlers[state.current_stage]
+            next_stage = handler(
+                state=state,
+                requirements_text=requirements_text,
+                runtime_lookup=runtime_lookup,
                 run_controls=control_config,
-                total_feedback_messages=total_feedback_messages,
-                pair_feedback_counts=pair_feedback_counts,
-                )
-            ):
-                total_feedback_messages += 1
-                pair_feedback_counts[(backtrack_route["from_agent"], backtrack_route["to_agent"])] += 1
-                self._emit_event(
-                    event_callback,
-                    event_type="routing",
-                    agent_name="Orchestrator Agent",
-                    iteration=route_round,
-                    stage_index=4,
-                    message=(
-                        f"Orchestrator routed targeted feedback from {backtrack_route['from_agent']} "
-                        f"to {backtrack_route['to_agent']}."
-                    ),
-                )
-                stage_traces.append(
-                    self._build_targeted_orchestrator_trace(
-                        route_round=route_round,
-                        from_agent=backtrack_route["from_agent"],
-                        to_agent=backtrack_route["to_agent"],
-                        feedback_messages=backtrack_route["feedback_messages"],
-                        runtime_config=runtime_lookup.get("orchestrator"),
-                        run_controls=control_config,
-                        total_feedback_messages=total_feedback_messages,
-                        duration_ms=0,
-                    )
-                )
-                if backtrack_route["to_agent"] == "Requirements Analyst":
-                    requirements_feedback = backtrack_route["feedback_messages"]
-                    current_stage = "requirements"
-                else:
-                    design_feedback = backtrack_route["feedback_messages"]
-                    current_stage = "design"
-                route_round += 1
-                continue
-
-            stage_traces.append(
-                self._build_stop_orchestrator_trace(
-                    route_round=route_round,
-                    review=review,
-                    runtime_config=runtime_lookup.get("orchestrator"),
-                    run_controls=control_config,
-                    total_feedback_messages=total_feedback_messages,
-                    stop_reason=(
-                        "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available."
-                    ),
-                    duration_ms=0,
-                )
+                run_session=run_session,
+                event_callback=event_callback,
             )
-            self._emit_event(
-                event_callback,
-                event_type="routing",
-                agent_name="Orchestrator Agent",
-                iteration=route_round,
-                stage_index=4,
-                message="Orchestrator stopped the run because no more valid backtracking was allowed.",
-            )
-            break
+            if next_stage == "stop":
+                state.current_stage = "stop"
+                break
+            state.current_stage = next_stage
 
         return PipelineResult(
             title=title,
             source_requirements=requirements_text,
-            requirements=requirements,
-            test_designs=designs,
+            requirements=state.requirements,
+            test_designs=state.designs,
             generated_artifacts=[],
-            review=review,
-            iterations=route_round,
+            review=state.review,
+            iterations=state.route_round,
             run_controls=control_config,
             agent_configs=runtime_configs,
-            stage_traces=stage_traces,
+            stage_traces=state.stage_traces,
+            run_session=run_session,
         )
+
+    def _handle_orchestrator_stage(
+        self,
+        *,
+        state: OrchestrationState,
+        requirements_text: str,
+        runtime_lookup: dict[str, AgentRuntimeConfig],
+        run_controls: RunControlConfig,
+        run_session: RunSession,
+        event_callback,
+    ) -> str:
+        del requirements_text
+        orchestrator_runtime = runtime_lookup.get("orchestrator")
+        initial_trace = self._build_initial_orchestrator_trace(
+            route_round=state.route_round,
+            runtime_config=orchestrator_runtime,
+            run_controls=run_controls,
+        )
+        state.stage_traces.append(initial_trace)
+        run_session.working_memory.write_shared("current_stage", "requirements", author="Orchestrator Agent")
+        self._emit_event(
+            event_callback,
+            event_type="routing",
+            agent_name="Orchestrator Agent",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("orchestrator").stage_index,
+            message="Orchestrator selected Requirements Analyst as the first agent.",
+            trace=initial_trace.__dict__,
+            run_session=run_session,
+        )
+        return "requirements"
+
+    def _handle_requirements_stage(
+        self,
+        *,
+        state: OrchestrationState,
+        requirements_text: str,
+        runtime_lookup: dict[str, AgentRuntimeConfig],
+        run_controls: RunControlConfig,
+        run_session: RunSession,
+        event_callback,
+    ) -> str:
+        requirements_runtime = runtime_lookup.get("requirements_analyst")
+        self._emit_event(
+            event_callback,
+            event_type="stage_started",
+            agent_name="Requirements Analyst",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("requirements").stage_index,
+            message="Running Requirements Analyst.",
+            run_session=run_session,
+        )
+        started_at = time.perf_counter()
+        state.requirements = self._run_with_timeout(
+            agent_name="Requirements Analyst",
+            runtime_config=requirements_runtime,
+            func=self.requirements_analyst.analyze,
+            args=(
+                requirements_text,
+                state.requirements_feedback,
+                requirements_runtime,
+                run_session,
+            ),
+        )
+        duration_ms = self._elapsed_ms(started_at)
+        requirements_trace = self._build_requirements_trace(
+            state.route_round,
+            requirements_text,
+            state.requirements,
+            state.requirements_feedback,
+            requirements_runtime,
+            duration_ms,
+        )
+        state.stage_traces.append(requirements_trace)
+        self._emit_event(
+            event_callback,
+            event_type="stage_completed",
+            agent_name="Requirements Analyst",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("requirements").stage_index,
+            duration_ms=duration_ms,
+            message=f"Requirements Analyst completed in {duration_ms} ms.",
+            trace=requirements_trace.__dict__,
+            run_session=run_session,
+        )
+        requirements_validation_findings = list(
+            self.requirements_analyst.last_execution.get("validation_findings") or []
+        )
+        if not state.requirements:
+            contract_feedback = self._build_requirements_contract_feedback(requirements_validation_findings)
+            if (
+                state.route_round < run_controls.max_rounds
+                and self._can_send_feedback(
+                    from_agent="Orchestrator Agent",
+                    to_agent="Requirements Analyst",
+                    message_count=1,
+                    run_controls=run_controls,
+                    total_feedback_messages=state.total_feedback_messages,
+                    pair_feedback_counts=state.pair_feedback_counts,
+                )
+            ):
+                state.total_feedback_messages += 1
+                state.pair_feedback_counts[("Orchestrator Agent", "Requirements Analyst")] += 1
+                state.stage_traces.append(
+                    self._build_targeted_orchestrator_trace(
+                        route_round=state.route_round,
+                        from_agent="Orchestrator Agent",
+                        to_agent="Requirements Analyst",
+                        feedback_messages=contract_feedback,
+                        runtime_config=runtime_lookup.get("orchestrator"),
+                        run_controls=run_controls,
+                        total_feedback_messages=state.total_feedback_messages,
+                        duration_ms=0,
+                    )
+                )
+                state.requirements_feedback = contract_feedback
+                state.route_round += 1
+                run_session.working_memory.write_shared(
+                    "pending_feedback",
+                    {"target": "requirements_analyst", "messages": list(contract_feedback)},
+                    author="Orchestrator Agent",
+                )
+                return "requirements"
+
+            state.stage_traces.append(
+                self._build_contract_failure_stop_trace(
+                    route_round=state.route_round,
+                    runtime_config=runtime_lookup.get("orchestrator"),
+                    run_controls=run_controls,
+                    total_feedback_messages=state.total_feedback_messages,
+                    failure_messages=contract_feedback,
+                )
+            )
+            state.review = self._build_contract_failure_review(contract_feedback)
+            run_session.working_memory.write_shared("review", state.review.__dict__, author="Orchestrator Agent")
+            return "stop"
+
+        state.requirements_feedback = []
+        run_session.working_memory.write_shared("current_stage", "design", author="Orchestrator Agent")
+        return "design"
+
+    def _handle_design_stage(
+        self,
+        *,
+        state: OrchestrationState,
+        requirements_text: str,
+        runtime_lookup: dict[str, AgentRuntimeConfig],
+        run_controls: RunControlConfig,
+        run_session: RunSession,
+        event_callback,
+    ) -> str:
+        del requirements_text
+        design_runtime = runtime_lookup.get("test_design")
+        self._emit_event(
+            event_callback,
+            event_type="stage_started",
+            agent_name="Test Design Agent",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("design").stage_index,
+            message="Running Test Design Agent.",
+            run_session=run_session,
+        )
+        started_at = time.perf_counter()
+        state.designs = self._run_with_timeout(
+            agent_name="Test Design Agent",
+            runtime_config=design_runtime,
+            func=self.test_designer.design,
+            args=(state.requirements, state.design_feedback, design_runtime, run_session),
+        )
+        duration_ms = self._elapsed_ms(started_at)
+        design_trace = self._build_design_trace(
+            state.route_round,
+            state.requirements,
+            state.designs,
+            state.design_feedback,
+            design_runtime,
+            duration_ms,
+        )
+        state.stage_traces.append(design_trace)
+        self._emit_event(
+            event_callback,
+            event_type="stage_completed",
+            agent_name="Test Design Agent",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("design").stage_index,
+            duration_ms=duration_ms,
+            message=f"Test Design Agent completed in {duration_ms} ms.",
+            trace=design_trace.__dict__,
+            run_session=run_session,
+        )
+        state.design_feedback = []
+        design_backtrack_feedback = self._build_design_backtrack_feedback(state.requirements)
+        if (
+            design_backtrack_feedback
+            and state.route_round < run_controls.max_rounds
+            and self._can_send_feedback(
+                from_agent="Test Design Agent",
+                to_agent="Requirements Analyst",
+                message_count=1,
+                run_controls=run_controls,
+                total_feedback_messages=state.total_feedback_messages,
+                pair_feedback_counts=state.pair_feedback_counts,
+            )
+        ):
+            state.total_feedback_messages += 1
+            state.pair_feedback_counts[("Test Design Agent", "Requirements Analyst")] += 1
+            self._emit_event(
+                event_callback,
+                event_type="routing",
+                agent_name="Orchestrator Agent",
+                iteration=state.route_round,
+                stage_index=4,
+                message="Orchestrator routed targeted feedback from Test Design Agent to Requirements Analyst.",
+                run_session=run_session,
+            )
+            state.stage_traces.append(
+                self._build_targeted_orchestrator_trace(
+                    route_round=state.route_round,
+                    from_agent="Test Design Agent",
+                    to_agent="Requirements Analyst",
+                    feedback_messages=design_backtrack_feedback,
+                    runtime_config=runtime_lookup.get("orchestrator"),
+                    run_controls=run_controls,
+                    total_feedback_messages=state.total_feedback_messages,
+                    duration_ms=0,
+                )
+            )
+            state.requirements_feedback = design_backtrack_feedback
+            state.route_round += 1
+            run_session.working_memory.write_shared(
+                "pending_feedback",
+                {"target": "requirements_analyst", "messages": list(design_backtrack_feedback)},
+                author="Orchestrator Agent",
+            )
+            return "requirements"
+        run_session.working_memory.write_shared("current_stage", "review", author="Orchestrator Agent")
+        return "review"
+
+    def _handle_review_stage(
+        self,
+        *,
+        state: OrchestrationState,
+        requirements_text: str,
+        runtime_lookup: dict[str, AgentRuntimeConfig],
+        run_controls: RunControlConfig,
+        run_session: RunSession,
+        event_callback,
+    ) -> str:
+        del requirements_text
+        review_runtime = runtime_lookup.get("review")
+        self._emit_event(
+            event_callback,
+            event_type="stage_started",
+            agent_name="Review Agent",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("review").stage_index,
+            message="Running Review Agent.",
+            run_session=run_session,
+        )
+        started_at = time.perf_counter()
+        state.review = self._run_with_timeout(
+            agent_name="Review Agent",
+            runtime_config=review_runtime,
+            func=self.reviewer.review,
+            args=(state.requirements, state.designs, review_runtime, run_session),
+        )
+        duration_ms = self._elapsed_ms(started_at)
+        review_trace = self._build_review_trace(
+            state.route_round,
+            state.requirements,
+            state.designs,
+            state.review,
+            review_runtime,
+            duration_ms,
+        )
+        state.stage_traces.append(review_trace)
+        self._emit_event(
+            event_callback,
+            event_type="stage_completed",
+            agent_name="Review Agent",
+            iteration=state.route_round,
+            stage_index=self.workflow_graph.get_node("review").stage_index,
+            duration_ms=duration_ms,
+            message=f"Review Agent completed in {duration_ms} ms.",
+            trace=review_trace.__dict__,
+            run_session=run_session,
+        )
+        if state.review.approved:
+            self._emit_event(
+                event_callback,
+                event_type="routing",
+                agent_name="Orchestrator Agent",
+                iteration=state.route_round,
+                stage_index=4,
+                message="Orchestrator stopped the run because review approved the result.",
+                run_session=run_session,
+            )
+            state.stage_traces.append(
+                self._build_stop_orchestrator_trace(
+                    route_round=state.route_round,
+                    review=state.review,
+                    runtime_config=runtime_lookup.get("orchestrator"),
+                    run_controls=run_controls,
+                    total_feedback_messages=state.total_feedback_messages,
+                    stop_reason="Stop pipeline because the review approved the result.",
+                    duration_ms=0,
+                )
+            )
+            return "stop"
+
+        backtrack_route = self._select_review_backtrack_route(state.requirements, state.review)
+        if (
+            backtrack_route
+            and state.route_round < run_controls.max_rounds
+            and self._can_send_feedback(
+                from_agent=backtrack_route["from_agent"],
+                to_agent=backtrack_route["to_agent"],
+                message_count=1,
+                run_controls=run_controls,
+                total_feedback_messages=state.total_feedback_messages,
+                pair_feedback_counts=state.pair_feedback_counts,
+            )
+        ):
+            state.total_feedback_messages += 1
+            state.pair_feedback_counts[(backtrack_route["from_agent"], backtrack_route["to_agent"])] += 1
+            self._emit_event(
+                event_callback,
+                event_type="routing",
+                agent_name="Orchestrator Agent",
+                iteration=state.route_round,
+                stage_index=4,
+                message=(
+                    f"Orchestrator routed targeted feedback from {backtrack_route['from_agent']} "
+                    f"to {backtrack_route['to_agent']}."
+                ),
+                run_session=run_session,
+            )
+            state.stage_traces.append(
+                self._build_targeted_orchestrator_trace(
+                    route_round=state.route_round,
+                    from_agent=backtrack_route["from_agent"],
+                    to_agent=backtrack_route["to_agent"],
+                    feedback_messages=backtrack_route["feedback_messages"],
+                    runtime_config=runtime_lookup.get("orchestrator"),
+                    run_controls=run_controls,
+                    total_feedback_messages=state.total_feedback_messages,
+                    duration_ms=0,
+                )
+            )
+            run_session.working_memory.write_shared(
+                "pending_feedback",
+                {
+                    "target": (
+                        "requirements_analyst"
+                        if backtrack_route["to_agent"] == "Requirements Analyst"
+                        else "test_design"
+                    ),
+                    "messages": list(backtrack_route["feedback_messages"]),
+                },
+                author="Orchestrator Agent",
+            )
+            if backtrack_route["to_agent"] == "Requirements Analyst":
+                state.requirements_feedback = backtrack_route["feedback_messages"]
+                next_stage = "requirements"
+            else:
+                state.design_feedback = backtrack_route["feedback_messages"]
+                next_stage = "design"
+            state.route_round += 1
+            return next_stage
+
+        state.stage_traces.append(
+            self._build_stop_orchestrator_trace(
+                route_round=state.route_round,
+                review=state.review,
+                runtime_config=runtime_lookup.get("orchestrator"),
+                run_controls=run_controls,
+                total_feedback_messages=state.total_feedback_messages,
+                stop_reason=(
+                    "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available."
+                ),
+                duration_ms=0,
+            )
+        )
+        self._emit_event(
+            event_callback,
+            event_type="routing",
+            agent_name="Orchestrator Agent",
+            iteration=state.route_round,
+            stage_index=4,
+            message="Orchestrator stopped the run because no more valid backtracking was allowed.",
+            run_session=run_session,
+        )
+        return "stop"
 
     def _build_requirements_trace(
         self,
@@ -991,6 +1108,7 @@ class OrchestratorAgent:
         message: str,
         duration_ms: int = 0,
         trace: dict | None = None,
+        run_session: RunSession | None = None,
     ) -> None:
         if not event_callback:
             return
@@ -1004,7 +1122,17 @@ class OrchestratorAgent:
         }
         if trace is not None:
             payload["trace"] = trace
+        if run_session is not None:
+            payload["memory_snapshot"] = self._snapshot_working_memory(run_session)
         event_callback(payload)
+
+    def _snapshot_working_memory(self, run_session: RunSession) -> dict:
+        working_memory = run_session.working_memory
+        return {
+            "shared": copy.deepcopy(working_memory.shared),
+            "agent_private": copy.deepcopy(working_memory.agent_private),
+            "timeline": list(working_memory.timeline),
+        }
 
     def _explain_review_finding(self, finding: str) -> str:
         if "weak oracle definition" in finding:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .llm_runtime import resolve_live_model_id
 from .models import AgentRuntimeConfig
+from .registry import build_default_agent_registry
 
 
 EXECUTION_MODE_CHOICES = ["LLM-backed", "Structured baseline"]
@@ -18,75 +19,27 @@ MODEL_FAMILY_CHOICES = [
     "DeepSeek R1",
     "gpt-oss-120b",
 ]
+DEFAULT_AGENT_REGISTRY = build_default_agent_registry()
 AGENT_PROVIDER_DEFAULTS = {
-    "orchestrator": "Ollama local",
-    "requirements_analyst": "Ollama local",
-    "test_design": "Ollama local",
-    "review": "Ollama local",
+    spec.agent_key: spec.default_provider_strategy for spec in DEFAULT_AGENT_REGISTRY.specs()
 }
 AGENT_MODEL_FAMILY_DEFAULTS = {
-    "orchestrator": "Qwen 3 32B",
-    "requirements_analyst": "Qwen 3 32B",
-    "test_design": "Qwen 3 32B",
-    "review": "DeepSeek R1",
+    spec.agent_key: spec.default_model_family for spec in DEFAULT_AGENT_REGISTRY.specs()
 }
 AGENT_MODEL_OVERRIDE_DEFAULTS = {
-    "orchestrator": "",
-    "requirements_analyst": "",
-    "test_design": "",
-    "review": "",
+    spec.agent_key: spec.default_model_override for spec in DEFAULT_AGENT_REGISTRY.specs()
 }
 AGENT_TIMEOUT_DEFAULTS = {
-    "orchestrator": 60,
-    "requirements_analyst": 120,
-    "test_design": 90,
-    "review": 60,
+    spec.agent_key: spec.default_timeout_seconds for spec in DEFAULT_AGENT_REGISTRY.specs()
 }
 AGENT_CONFIG_SPECS = [
     (
-        "orchestrator",
-        "Orchestrator Agent",
-        "Controls routing and decides whether the run should stop or continue.",
-        (
-            "Purpose: route the workflow to the next most relevant agent and minimize unnecessary work.\n"
-            "Required behavior: prefer the smallest valid backtracking step, send concrete actionable feedback, and stop when quality is sufficient or control limits are exhausted.\n"
-            "Forbidden behavior: do not restart the full pipeline when a narrower backtracking route is available; do not send vague feedback.\n"
-            "Quality bar: every routing decision must name the reason, the target agent, and the exact issue that triggered the handoff."
-        ),
-    ),
-    (
-        "requirements_analyst",
-        "Requirements Analyst Agent",
-        "Extracts structured requirements, priorities, assumptions, and acceptance criteria.",
-        (
-            "Purpose: extract only what the requirement text supports and make uncertainty explicit.\n"
-            "Required output: stable requirement IDs, normalized requirement text, priority, explicit acceptance criteria, assumptions, and open clarification points when needed.\n"
-            "Forbidden behavior: do not invent missing business rules or silently resolve ambiguity.\n"
-            "Quality bar: requirements must be testable, traceable, and clearly separated from assumptions."
-        ),
-    ),
-    (
-        "test_design",
-        "Test Design Agent",
-        "Turns requirements into test cases with type, steps, expected results, and oracle.",
-        (
-            "Purpose: create concrete, reviewable test cases rather than placeholders.\n"
-            "Required output: preconditions, concrete test data, executable steps, observable expected results, explicit oracle logic, and traceability to requirement IDs.\n"
-            "Forbidden behavior: do not use vague steps such as 'execute the primary flow' or generic expected results without observable outcomes.\n"
-            "Quality bar: every test case must be specific enough to run and judge as pass or fail."
-        ),
-    ),
-    (
-        "review",
-        "Review Agent",
-        "Evaluates coverage, unresolved assumptions, and the strength of each planned test case.",
-        (
-            "Purpose: challenge weak test design and decide whether the current result is good enough.\n"
-            "Required checks: traceability, oracle strength, negative coverage, edge cases, unresolved assumptions, and placeholder language.\n"
-            "Forbidden behavior: do not approve generic or weakly testable cases just because coverage looks complete.\n"
-            "Quality bar: explain exactly why quality passes or fails, identify the weakest test cases first, and send targeted feedback to the most relevant upstream agent."
-        ),
-    ),
+        spec.agent_key,
+        spec.agent_name,
+        spec.description,
+        spec.default_directives,
+    )
+    for spec in DEFAULT_AGENT_REGISTRY.specs()
 ]
 
 

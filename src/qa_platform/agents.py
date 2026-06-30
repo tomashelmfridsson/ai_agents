@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
+from dataclasses import asdict
 from dataclasses import dataclass, field
 from typing import Any
 
 from .llm_runtime import call_structured_llm, is_llm_enabled
 from .models import AgentRuntimeConfig
-from .models import RequirementItem, ReviewReport, TestCaseDesign
+from .models import RequirementItem, ReviewReport, RunSession, TestCaseDesign
 
 
 def _split_requirements(requirements_text: str) -> list[str]:
@@ -28,10 +29,11 @@ class RequirementsAnalystAgent:
         requirements_text: str,
         feedback_messages: list[str] | None = None,
         runtime_config: AgentRuntimeConfig | None = None,
+        run_session: RunSession | None = None,
     ) -> list[RequirementItem]:
         feedback_messages = feedback_messages or []
         if is_llm_enabled(runtime_config):
-            return self._analyze_with_llm(requirements_text, feedback_messages, runtime_config)
+            return self._analyze_with_llm(requirements_text, feedback_messages, runtime_config, run_session)
 
         items = []
         for index, raw_text in enumerate(_split_requirements(requirements_text), start=1):
@@ -59,6 +61,7 @@ class RequirementsAnalystAgent:
             "validation_findings": validation_findings,
             "contract_version": "requirements.v1",
         }
+        self._update_memory(run_session, items, feedback_messages, validation_findings)
         return items
 
     def _analyze_with_llm(
@@ -66,6 +69,7 @@ class RequirementsAnalystAgent:
         requirements_text: str,
         feedback_messages: list[str],
         runtime_config: AgentRuntimeConfig,
+        run_session: RunSession | None,
     ) -> list[RequirementItem]:
         system_prompt = (
             f"You are {runtime_config.agent_name}.\n"
@@ -150,7 +154,36 @@ class RequirementsAnalystAgent:
             "validation_findings": validation_findings,
             "contract_version": "requirements.v1",
         }
+        self._update_memory(run_session, items, feedback_messages, validation_findings)
         return items
+
+    def _update_memory(
+        self,
+        run_session: RunSession | None,
+        items: list[RequirementItem],
+        feedback_messages: list[str],
+        validation_findings: list[str],
+    ) -> None:
+        if not run_session:
+            return
+        run_session.working_memory.write_shared(
+            "requirements",
+            [asdict(item) for item in items],
+            author=self.name,
+        )
+        run_session.working_memory.write_agent(
+            "requirements_analyst",
+            "last_feedback_messages",
+            list(feedback_messages),
+        )
+        run_session.working_memory.write_agent(
+            "requirements_analyst",
+            "validation_findings",
+            list(validation_findings),
+        )
+        run_session.working_memory.add_note(
+            f"Requirements Analyst produced {len(items)} requirement item(s)."
+        )
 
     def _standardize_requirement_items(
         self,
@@ -276,10 +309,11 @@ class TestDesignAgent:
         requirements: list[RequirementItem],
         feedback_messages: list[str] | None = None,
         runtime_config: AgentRuntimeConfig | None = None,
+        run_session: RunSession | None = None,
     ) -> list[TestCaseDesign]:
         feedback_messages = feedback_messages or []
         if is_llm_enabled(runtime_config):
-            return self._design_with_llm(requirements, feedback_messages, runtime_config)
+            return self._design_with_llm(requirements, feedback_messages, runtime_config, run_session)
 
         designs = []
         for req in requirements:
@@ -315,6 +349,7 @@ class TestDesignAgent:
             "llm_used": False,
             "feedback_messages_to_requirements": self._feedback_messages_to_requirements(requirements),
         }
+        self._update_memory(run_session, designs, feedback_messages, self.last_execution["feedback_messages_to_requirements"])
         return designs
 
     def _design_with_llm(
@@ -322,6 +357,7 @@ class TestDesignAgent:
         requirements: list[RequirementItem],
         feedback_messages: list[str],
         runtime_config: AgentRuntimeConfig,
+        run_session: RunSession | None,
     ) -> list[TestCaseDesign]:
         requirements_payload = [
             {
@@ -427,7 +463,36 @@ class TestDesignAgent:
                 response.get("feedback_messages_to_requirements")
             ),
         }
+        self._update_memory(run_session, designs, feedback_messages, self.last_execution["feedback_messages_to_requirements"])
         return designs
+
+    def _update_memory(
+        self,
+        run_session: RunSession | None,
+        designs: list[TestCaseDesign],
+        feedback_messages: list[str],
+        feedback_to_requirements: list[str],
+    ) -> None:
+        if not run_session:
+            return
+        run_session.working_memory.write_shared(
+            "test_designs",
+            [asdict(item) for item in designs],
+            author=self.name,
+        )
+        run_session.working_memory.write_agent(
+            "test_design",
+            "last_feedback_messages",
+            list(feedback_messages),
+        )
+        run_session.working_memory.write_agent(
+            "test_design",
+            "feedback_messages_to_requirements",
+            list(feedback_to_requirements),
+        )
+        run_session.working_memory.add_note(
+            f"Test Design Agent produced {len(designs)} design(s)."
+        )
 
     def _choose_test_type(self, req: RequirementItem) -> str:
         lowered = req.normalized_text.lower()
@@ -530,9 +595,10 @@ class ReviewAgent:
         requirements: list[RequirementItem],
         test_designs: list[TestCaseDesign],
         runtime_config: AgentRuntimeConfig | None = None,
+        run_session: RunSession | None = None,
     ) -> ReviewReport:
         if is_llm_enabled(runtime_config):
-            return self._review_with_llm(requirements, test_designs, runtime_config)
+            return self._review_with_llm(requirements, test_designs, runtime_config, run_session)
 
         findings = []
         improvements = []
@@ -580,6 +646,7 @@ class ReviewAgent:
             "llm_used": False,
             "routing_focus": self._infer_routing_focus(findings),
         }
+        self._update_memory(run_session, report)
         return report
 
     def _review_with_llm(
@@ -587,6 +654,7 @@ class ReviewAgent:
         requirements: list[RequirementItem],
         test_designs: list[TestCaseDesign],
         runtime_config: AgentRuntimeConfig,
+        run_session: RunSession | None,
     ) -> ReviewReport:
         requirements_payload = [
             {
@@ -671,7 +739,21 @@ class ReviewAgent:
             "metadata": metadata,
             "routing_focus": _clean_string_list(response.get("routing_focus")),
         }
+        self._update_memory(run_session, report)
         return report
+
+    def _update_memory(self, run_session: RunSession | None, report: ReviewReport) -> None:
+        if not run_session:
+            return
+        run_session.working_memory.write_shared("review", asdict(report), author=self.name)
+        run_session.working_memory.write_agent(
+            "review",
+            "routing_focus",
+            list(self.last_execution.get("routing_focus") or []),
+        )
+        run_session.working_memory.add_note(
+            f"Review Agent recorded approved={report.approved} with {len(report.findings)} finding(s)."
+        )
 
     def _infer_routing_focus(self, findings: list[str]) -> list[str]:
         focus = []

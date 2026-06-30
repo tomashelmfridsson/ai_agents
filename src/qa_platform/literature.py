@@ -163,9 +163,6 @@ def render_markdown_document(title: str, eyebrow: str, markdown_text: str) -> st
       <header class="masthead">
         <p class="eyebrow">{safe_eyebrow}</p>
         <h1>{safe_title}</h1>
-        <p class="lede">
-          Markdown-dokumentet renderas i en läsvänlig vy. Samma källa visas också direkt i Gradio via Markdown-komponenten.
-        </p>
       </header>
       <article>
         {body}

@@ -25,6 +25,39 @@ class RunControlConfig:
 
 
 @dataclass
+class WorkingMemory:
+    shared: dict[str, Any] = field(default_factory=dict)
+    agent_private: dict[str, dict[str, Any]] = field(default_factory=dict)
+    timeline: list[str] = field(default_factory=list)
+
+    def read_shared(self, key: str, default: Any = None) -> Any:
+        return self.shared.get(key, default)
+
+    def write_shared(self, key: str, value: Any, *, author: str | None = None) -> None:
+        self.shared[key] = value
+        if author:
+            self.timeline.append(f"{author} wrote shared memory key '{key}'.")
+
+    def read_agent(self, agent_key: str, key: str, default: Any = None) -> Any:
+        return self.agent_private.get(agent_key, {}).get(key, default)
+
+    def write_agent(self, agent_key: str, key: str, value: Any) -> None:
+        self.agent_private.setdefault(agent_key, {})[key] = value
+        self.timeline.append(f"{agent_key} updated private memory key '{key}'.")
+
+    def add_note(self, note: str) -> None:
+        if note.strip():
+            self.timeline.append(note.strip())
+
+
+@dataclass
+class RunSession:
+    title: str
+    source_requirements: str
+    working_memory: WorkingMemory = field(default_factory=WorkingMemory)
+
+
+@dataclass
 class RequirementItem:
     requirement_id: str
     original_text: str
@@ -94,6 +127,7 @@ class PipelineResult:
     run_controls: RunControlConfig
     agent_configs: list[AgentRuntimeConfig] = field(default_factory=list)
     stage_traces: list[StageTrace] = field(default_factory=list)
+    run_session: RunSession | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

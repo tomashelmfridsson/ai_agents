@@ -64,6 +64,30 @@ class PipelineTests(unittest.TestCase):
         design_ids = {item.requirement_id for item in result.test_designs}
         self.assertEqual(requirement_ids, design_ids)
 
+    def test_pipeline_persists_shared_working_memory_across_agents(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+        result = orchestrator.process(
+            title="Shared memory demo",
+            requirements_text="The user must be able to sign in with email and password.",
+        )
+
+        self.assertIsNotNone(result.run_session)
+        working_memory = result.run_session.working_memory
+        self.assertIn("requirements", working_memory.shared)
+        self.assertIn("test_designs", working_memory.shared)
+        self.assertIn("review", working_memory.shared)
+        self.assertTrue(any("Requirements Analyst produced" in note for note in working_memory.timeline))
+        self.assertTrue(any("Test Design Agent produced" in note for note in working_memory.timeline))
+        self.assertTrue(any("Review Agent recorded" in note for note in working_memory.timeline))
+
+    def test_orchestrator_uses_registry_and_workflow_graph_defaults(self) -> None:
+        orchestrator = OrchestratorAgent()
+
+        self.assertEqual(orchestrator.workflow_graph.start_stage, "orchestrator")
+        self.assertEqual(orchestrator.workflow_graph.get_node("design").agent_key, "test_design")
+        self.assertEqual(orchestrator.registry.get_spec("review").stage_key, "review")
+        self.assertEqual(orchestrator.requirements_analyst.name, "Requirements Analyst")
+
     def test_review_flags_vague_requirements(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
         result = orchestrator.process(
@@ -116,7 +140,7 @@ class PipelineTests(unittest.TestCase):
             ),
         )
 
-        reasoning = result.stage_traces[2].reasoning_trace
+        reasoning = result.stage_traces[3].reasoning_trace
         self.assertFalse(result.review.approved)
         self.assertTrue(any("coverage_ratio=1.0" in line for line in reasoning))
         self.assertTrue(any("Weak-oracle checks triggered for:" in line for line in reasoning))
@@ -258,7 +282,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Completed stages before the stop: 0", report_html)
         self.assertIn("Log file: /tmp/live.log", report_html)
 
-    def test_build_runtime_timeline_shows_model_and_live_log_tail(self) -> None:
+    def test_build_runtime_timeline_shows_model_and_runtime_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = Path(tmpdir) / "live.txt"
             log_path.write_text("line 1\nline 2\nmessage: Running Requirements Analyst.\n", encoding="utf-8")
@@ -278,8 +302,48 @@ class PipelineTests(unittest.TestCase):
             )
 
         self.assertIn("gemma3:4b", html_output)
-        self.assertIn("Live log tail", html_output)
-        self.assertIn("message: Running Requirements Analyst.", html_output)
+        self.assertIn("Runtime activity", html_output)
+        self.assertNotIn("Live log tail", html_output)
+
+    def test_build_memory_panel_renders_shared_and_private_memory(self) -> None:
+        html_output = app_module.build_memory_panel(
+            {
+                "shared": {
+                    "current_stage": "design",
+                    "requirements": [{"requirement_id": "REQ-001"}],
+                },
+                "agent_private": {
+                    "requirements_analyst": {"validation_findings": ["none"]},
+                },
+                "timeline": [
+                    "Run session started.",
+                    "Requirements Analyst produced 1 requirement item(s).",
+                ],
+            }
+        )
+
+        self.assertIn("Working memory", html_output)
+        self.assertIn("<details", html_output)
+        self.assertIn("Shared memory", html_output)
+        self.assertIn("memory-value", html_output)
+        self.assertIn("current_stage", html_output)
+        self.assertIn("requirements_analyst", html_output)
+        self.assertIn("Run session started.", html_output)
+
+    def test_apply_global_agent_settings_updates_all_agents(self) -> None:
+        updates = app_module.apply_global_agent_settings(
+            "LLM-backed",
+            "Ollama local",
+            "DeepSeek R1",
+            "",
+            150,
+        )
+
+        self.assertEqual(len(updates), len(app_module.AGENT_CONFIG_SPECS) * 8)
+        self.assertEqual(updates[0]["value"], "LLM-backed")
+        self.assertEqual(updates[1]["value"], "Ollama local")
+        self.assertEqual(updates[2]["value"], "deepseek-r1:8b")
+        self.assertEqual(updates[4]["value"], 150)
 
     def test_build_error_report_shows_completed_agent_results(self) -> None:
         agent_configs = [
@@ -515,7 +579,7 @@ class PipelineTests(unittest.TestCase):
                 "",
             )
         )
-        status_html, report_html, log_file, runtime_html = updates[-1]
+        status_html, report_html, log_file, runtime_html, memory_html = updates[-1]
 
         self.assertEqual(len(updates), 1)
         self.assertIn("Run stopped because of an error", status_html)
@@ -523,6 +587,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Retry after correcting the configuration", report_html)
         self.assertIsNone(log_file)
         self.assertIn("Runtime activity", runtime_html)
+        self.assertIn("Working memory", memory_html)
 
     def test_process_requirements_streams_runtime_updates_before_final_result(self) -> None:
         class FakeResult:
@@ -547,6 +612,15 @@ class PipelineTests(unittest.TestCase):
                     },
                     "agent_configs": [],
                     "stage_traces": [],
+                    "run_session": {
+                        "title": "Demo",
+                        "source_requirements": "The user can log in.",
+                        "working_memory": {
+                            "shared": {"requirements": [{"requirement_id": "REQ-001"}]},
+                            "agent_private": {"requirements_analyst": {"validation_findings": []}},
+                            "timeline": ["Run session started."],
+                        },
+                    },
                 }
 
         def fake_process(self, title, requirements_text, agent_configs=None, run_controls=None, event_callback=None):
@@ -559,6 +633,11 @@ class PipelineTests(unittest.TestCase):
                     "stage_index": 1,
                     "message": "Running Requirements Analyst.",
                     "duration_ms": 0,
+                    "memory_snapshot": {
+                        "shared": {"current_stage": "requirements"},
+                        "agent_private": {"requirements_analyst": {"last_feedback_messages": []}},
+                        "timeline": ["Run session started."],
+                    },
                 }
             )
             event_callback(
@@ -569,6 +648,11 @@ class PipelineTests(unittest.TestCase):
                     "stage_index": 1,
                     "message": "Requirements Analyst completed.",
                     "duration_ms": 12,
+                    "memory_snapshot": {
+                        "shared": {"current_stage": "requirements", "requirements": [{"requirement_id": "REQ-001"}]},
+                        "agent_private": {"requirements_analyst": {"validation_findings": []}},
+                        "timeline": ["Run session started.", "Requirements Analyst produced 1 requirement item(s)."],
+                    },
                 }
             )
             return FakeResult()
@@ -593,15 +677,18 @@ class PipelineTests(unittest.TestCase):
                     )
 
         self.assertGreaterEqual(len(updates), 3)
-        running_status, running_report, running_file, running_runtime = updates[1]
-        final_status, _final_report, final_file, _final_runtime = updates[-1]
+        running_status, running_report, running_file, running_runtime, running_memory = updates[1]
+        final_status, _final_report, final_file, _final_runtime, final_memory = updates[-1]
 
         self.assertIn("Workflow is running", running_status)
         self.assertIn("Runtime events recorded: 1", running_report)
         self.assertEqual(running_file["value"].endswith("-live.txt"), True)
         self.assertIn("Requirements Analyst", running_runtime)
+        self.assertIn("Working memory", running_memory)
+        self.assertIn("current_stage", running_memory)
         self.assertIn("Saved as run #7", final_status)
         self.assertEqual(final_file["value"], "/tmp/run.log")
+        self.assertIn("Working memory", final_memory)
 
     def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
         configs = build_agent_runtime_configs(
@@ -719,7 +806,7 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(db_path.exists())
             self.assertTrue(Path(saved_run.log_path).exists())
             log_text = Path(saved_run.log_path).read_text(encoding="utf-8")
-            self.assertIn("Backtracking cycle", log_text)
+            self.assertIn("Backtracking round", log_text)
             self.assertIn("How this agent works", log_text)
             self.assertIn("Execution:", log_text)
             self.assertIn("Configured directive:", log_text)
