@@ -791,6 +791,24 @@ class ReviewAgent:
             findings=_clean_string_list(response.get("findings")),
             improvement_actions=_clean_string_list(response.get("improvement_actions")),
         )
+        if not report.approved and not report.findings:
+            if report.coverage_ratio < 1.0:
+                report.findings.append(
+                    "The review model rejected the run without concrete findings even though reported coverage was incomplete."
+                )
+            else:
+                report.findings.append(
+                    "The review model rejected the run without concrete findings. Treat this as incomplete review output."
+                )
+        if not report.approved and not report.improvement_actions:
+            if report.coverage_ratio < 1.0:
+                report.improvement_actions.append(
+                    "Inspect missing or weak planned test coverage and rerun the review with a more reliable model."
+                )
+            else:
+                report.improvement_actions.append(
+                    "Rerun the review with another model or switch the Review Agent to Structured baseline."
+                )
         if report.approved and not report.findings:
             report.findings.append("No critical issues were identified.")
         self.last_execution = {
@@ -799,7 +817,7 @@ class ReviewAgent:
             "notes": _clean_string_list(response.get("evaluation_notes")),
             "llm_used": True,
             "metadata": metadata,
-            "routing_focus": _clean_string_list(response.get("routing_focus")),
+            "routing_focus": _clean_string_list(response.get("routing_focus")) or self._infer_routing_focus(report.findings),
         }
         self._update_memory(run_session, report)
         return report

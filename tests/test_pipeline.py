@@ -18,7 +18,7 @@ if str(SRC) not in sys.path:
 
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
-from qa_platform.agents import RequirementsAnalystAgent
+from qa_platform.agents import RequirementsAnalystAgent, ReviewAgent
 from qa_platform.llm_runtime import LLMRuntimeError, call_structured_llm
 import qa_platform.llm_runtime as llm_runtime_module
 import qa_platform.orchestrator as orchestrator_module
@@ -537,6 +537,46 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(agent.last_execution["reasoning_source"], "llm_structured_output")
         self.assertTrue(agent.last_execution["llm_used"])
         self.assertTrue(any("configured LLM schema" in note for note in agent.last_execution["notes"]))
+
+    def test_review_agent_adds_fallback_finding_when_llm_rejects_without_findings(self) -> None:
+        runtime_config = AgentRuntimeConfig(
+            agent_key="review",
+            agent_name="Review Agent",
+            execution_mode="LLM-backed",
+            timeout_seconds=60,
+            provider_strategy="HF cheapest/free credits",
+            model_family="Qwen 3 32B",
+            model_id="Qwen/Qwen3-32B:cheapest",
+            directives="Review thoroughly.",
+        )
+        fake_response = (
+            {
+                "approved": False,
+                "coverage_ratio": 0.0,
+                "findings": [],
+                "improvement_actions": [],
+                "routing_focus": [],
+                "evaluation_notes": ["The model could not form a stable review decision."],
+            },
+            {
+                "model_id": runtime_config.model_id,
+                "provider_strategy": runtime_config.provider_strategy,
+            },
+        )
+
+        with patch("qa_platform.agents.call_structured_llm", return_value=fake_response):
+            agent = ReviewAgent()
+            report = agent.review(
+                requirements=[],
+                test_designs=[],
+                runtime_config=runtime_config,
+            )
+
+        self.assertFalse(report.approved)
+        self.assertEqual(report.coverage_ratio, 0.0)
+        self.assertTrue(report.findings)
+        self.assertTrue(report.improvement_actions)
+        self.assertTrue(any("rejected the run without concrete findings" in item for item in report.findings))
 
     def test_ollama_missing_local_model_fails_before_chat_request(self) -> None:
         runtime_config = AgentRuntimeConfig(

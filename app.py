@@ -107,6 +107,18 @@ def build_idle_memory_panel() -> str:
     )
 
 
+def build_interaction_feedback(message: str, tone: str = "info") -> str:
+    normalized_message = (message or "").strip() or "Ready."
+    normalized_tone = tone if tone in {"info", "success", "warning"} else "info"
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    return (
+        f"<div class='interaction-feedback interaction-feedback-{normalized_tone}'>"
+        f"<strong>Status</strong><span>{html.escape(normalized_message)}</span>"
+        f"<div class='interaction-feedback-time'>Updated {html.escape(timestamp)}</div>"
+        "</div>"
+    )
+
+
 def _register_active_run(stop_event: threading.Event) -> None:
     global _ACTIVE_RUN_STOP_EVENT
     with _ACTIVE_RUN_LOCK:
@@ -124,9 +136,12 @@ def request_stop_current_run() -> str:
     with _ACTIVE_RUN_LOCK:
         stop_event = _ACTIVE_RUN_STOP_EVENT
     if stop_event is None:
-        return "No workflow is currently running."
+        return build_interaction_feedback("No workflow is currently running.", "warning")
     stop_event.set()
-    return "Stop requested. The current agent pass will finish before the workflow stops."
+    return build_interaction_feedback(
+        "Stop requested. The current agent pass will finish before the workflow stops.",
+        "warning",
+    )
 
 
 def _build_live_log_path(title: str) -> Path:
@@ -445,9 +460,12 @@ def apply_global_agent_settings(
         )
     updates.append(
         gr.update(
-            value=(
-                f"Applied common settings to {len(AGENT_CONFIG_SPECS)} agents. "
-                f"Provider: {provider_strategy}. Model: {model_value}."
+            value=build_interaction_feedback(
+                (
+                    f"Applied common settings to {len(AGENT_CONFIG_SPECS)} agents. "
+                    f"Provider: {provider_strategy}. Model: {model_value}."
+                ),
+                "success",
             )
         )
     )
@@ -475,7 +493,7 @@ def process_requirements(
             None,
             build_idle_runtime_timeline(),
             build_idle_memory_panel(),
-            "Run blocked. Add requirements before starting the workflow.",
+            build_interaction_feedback("Run blocked. Add requirements before starting the workflow.", "warning"),
         )
         return
     round_limit = max(1, int(max_rounds))
@@ -514,7 +532,9 @@ def process_requirements(
         gr.update(value=str(live_log_path)),
         build_idle_runtime_timeline(),
         build_idle_memory_panel(),
-        "Workflow starting. Press Stop workflow to stop after the current agent pass.",
+        build_interaction_feedback(
+            "Workflow starting. Press Stop workflow to stop after the current agent pass."
+        ),
     )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
@@ -571,7 +591,7 @@ def process_requirements(
                     gr.update(value=str(live_log_path)),
                     build_runtime_timeline(runtime_events, str(live_log_path)),
                     build_memory_panel(latest_memory_snapshot),
-                    "Workflow is running.",
+                    build_interaction_feedback("Workflow is running."),
                 )
                 emitted = True
         if worker_state["done"] and event_queue.empty():
@@ -584,7 +604,10 @@ def process_requirements(
                 gr.update(value=str(live_log_path)),
                 build_runtime_timeline(runtime_events, str(live_log_path)),
                 build_memory_panel(latest_memory_snapshot),
-                "Stop requested. Waiting for the current agent pass to finish.",
+                build_interaction_feedback(
+                    "Stop requested. Waiting for the current agent pass to finish.",
+                    "warning",
+                ),
             )
         if not emitted:
             time.sleep(0.1)
@@ -606,7 +629,7 @@ def process_requirements(
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
-            "Workflow stopped.",
+            build_interaction_feedback("Workflow stopped.", "warning"),
         )
         return
     if isinstance(error, LLMRuntimeError):
@@ -617,7 +640,7 @@ def process_requirements(
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
-            "Workflow stopped because of an LLM/backend error.",
+            build_interaction_feedback("Workflow stopped because of an LLM/backend error.", "warning"),
         )
         return
     if isinstance(error, AgentTimeoutError):
@@ -636,7 +659,7 @@ def process_requirements(
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
-            "Workflow stopped because an agent hit its timeout.",
+            build_interaction_feedback("Workflow stopped because an agent hit its timeout.", "warning"),
         )
         return
     if error is not None:
@@ -692,7 +715,7 @@ def process_requirements(
         gr.update(value=saved_run.log_path),
         build_runtime_timeline(runtime_events, str(live_log_path)),
         build_memory_panel((payload.get("run_session") or {}).get("working_memory")),
-        f"Workflow finished. Run #{payload['run_id']} was saved.",
+        build_interaction_feedback(f"Workflow finished. Run #{payload['run_id']} was saved.", "success"),
     )
 
 
@@ -1108,6 +1131,45 @@ CUSTOM_CSS = """
       font-size: 0.92rem;
       line-height: 1.55;
       font-weight: 600;
+    }
+    .interaction-feedback {
+      margin: 10px 0 0;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      background: rgba(255, 250, 243, 0.98);
+      color: #130d08 !important;
+      box-shadow: 0 8px 20px rgba(50, 28, 8, 0.08);
+    }
+    .interaction-feedback strong {
+      display: block;
+      margin: 0 0 4px;
+      color: #130d08 !important;
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+    .interaction-feedback span,
+    .interaction-feedback div {
+      color: #130d08 !important;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      font-weight: 600;
+    }
+    .interaction-feedback-time {
+      margin-top: 6px;
+      color: #5a493b !important;
+      font-size: 0.82rem !important;
+      font-weight: 600;
+    }
+    .interaction-feedback-success {
+      border-color: rgba(44, 118, 73, 0.22);
+      background: rgba(240, 251, 244, 0.98);
+    }
+    .interaction-feedback-warning {
+      border-color: rgba(143, 53, 24, 0.22);
+      background: rgba(255, 247, 241, 0.98);
     }
     .llm-summary {
       margin: 0 0 12px;
@@ -1862,9 +1924,9 @@ def build_demo() -> gr.Blocks:
                     lines=12,
                 )
                 run_button = gr.Button("Run workflow", variant="primary")
-                interaction_feedback_output = gr.Markdown(
-                    value="Ready.",
-                    elem_classes=["execution-mode-help"],
+                interaction_feedback_output = gr.HTML(
+                    value=build_interaction_feedback("Ready."),
+                    elem_classes=["interaction-feedback-shell"],
                 )
 
             with gr.Group(elem_classes=["panel-card"]):
