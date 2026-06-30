@@ -22,6 +22,7 @@ from qa_platform.agents import RequirementsAnalystAgent, ReviewAgent
 from qa_platform.llm_runtime import LLMRuntimeError, call_structured_llm
 import qa_platform.llm_runtime as llm_runtime_module
 import qa_platform.orchestrator as orchestrator_module
+from qa_platform import models as qa_models
 from qa_platform.models import AgentRuntimeConfig, ReviewReport
 from qa_platform.models import RunControlConfig, RunSession
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
@@ -42,7 +43,7 @@ class PipelineTests(unittest.TestCase):
         )
 
         self.assertEqual(len(result.requirements), 2)
-        self.assertEqual(len(result.test_designs), 2)
+        self.assertGreaterEqual(len(result.test_designs), 3)
         self.assertEqual(len(result.generated_artifacts), 0)
         self.assertEqual(result.review.coverage_ratio, 1.0)
         self.assertGreaterEqual(result.iterations, 1)
@@ -63,7 +64,8 @@ class PipelineTests(unittest.TestCase):
 
         requirement_ids = {item.requirement_id for item in result.requirements}
         design_ids = {item.requirement_id for item in result.test_designs}
-        self.assertEqual(requirement_ids, design_ids)
+        self.assertTrue(requirement_ids.issubset(design_ids))
+        self.assertGreater(len(result.test_designs), len(result.requirements))
 
     def test_pipeline_persists_shared_working_memory_across_agents(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
@@ -99,6 +101,40 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(result.review.approved)
         self.assertTrue(result.review.findings)
         self.assertTrue(any("REQ-001" in finding for finding in result.review.findings))
+
+    def test_review_flags_thin_one_to_one_coverage_for_multi_behavior_requirement(self) -> None:
+        agent = ReviewAgent()
+        report = agent.review(
+            requirements=[
+                qa_models.RequirementItem(
+                    requirement_id="REQ-001",
+                    original_text="The user must be able to sign in with email and password.",
+                    normalized_text="The user must be able to sign in with email and password.",
+                    priority="high",
+                    acceptance_criteria=[
+                        "The user shall be authenticated with valid credentials.",
+                        "Invalid credentials shall produce a clear error message.",
+                    ],
+                    assumptions=[],
+                )
+            ],
+            test_designs=[
+                qa_models.TestCaseDesign(
+                    test_case_id="TC-001",
+                    requirement_id="REQ-001",
+                    title="Successful sign-in with valid credentials",
+                    test_type="scenario",
+                    preconditions=["The application is available."],
+                    steps=["Open sign-in", "Enter valid credentials", "Submit form"],
+                    expected_results=["The user is authenticated.", "The dashboard is shown."],
+                    oracle="Authentication succeeds and the dashboard is visible.",
+                    risks=[],
+                )
+            ],
+        )
+
+        self.assertFalse(report.approved)
+        self.assertTrue(any("has only one designed test case" in finding for finding in report.findings))
 
     def test_sample_scenario_loader_uses_selected_preset(self) -> None:
         title, requirements = load_sample_scenario("Scenario 4 - support tickets", DEFAULT_TITLE, "")
@@ -184,18 +220,12 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(configs[3].model_family, "")
         self.assertEqual(configs[3].model_id, "")
 
-    def test_default_ollama_presets_resolve_to_available_local_models(self) -> None:
+    def test_default_runtime_presets_resolve_to_hf_gpt_oss_20b(self) -> None:
         configs = build_agent_runtime_configs()
 
-        self.assertEqual(configs[0].provider_strategy, "Ollama local")
-        self.assertEqual(configs[0].timeout_seconds, 60)
-        self.assertEqual(configs[1].timeout_seconds, 120)
-        self.assertEqual(configs[2].timeout_seconds, 90)
-        self.assertEqual(configs[3].timeout_seconds, 60)
-        self.assertEqual(configs[0].model_id, "qwen3:8b")
-        self.assertEqual(configs[1].model_id, "qwen3:8b")
-        self.assertEqual(configs[2].model_id, "qwen3:8b")
-        self.assertEqual(configs[3].model_id, "deepseek-r1:8b")
+        self.assertTrue(all(config.provider_strategy == "HF cheapest/free credits" for config in configs))
+        self.assertTrue(all(config.timeout_seconds == 150 for config in configs))
+        self.assertTrue(all(config.model_id == "openai/gpt-oss-20b:cheapest" for config in configs))
 
     def test_model_family_choices_include_new_hf_candidates(self) -> None:
         self.assertIn("Qwen3-30B-A3B", app_module.MODEL_FAMILY_CHOICES)
@@ -482,6 +512,45 @@ class PipelineTests(unittest.TestCase):
                 for line in orchestrator_trace.reasoning_trace
             )
         )
+
+    def test_orchestrator_explains_pair_limit_stop_reason_exactly(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=10)
+        stop_reason, stop_details = orchestrator._determine_review_stop_reason(
+            backtrack_route={
+                "from_agent": "Review Agent",
+                "to_agent": "Test Design Agent",
+                "feedback_messages": ["Strengthen oracle quality."],
+            },
+            run_controls=RunControlConfig(
+                max_rounds=10,
+                max_feedback_messages=12,
+                max_feedback_per_agent_pair=4,
+            ),
+            route_round=6,
+            total_feedback_messages=5,
+            pair_feedback_counts={("Review Agent", "Test Design Agent"): 4},
+        )
+
+        self.assertIn("Maximum feedback messages per agent pair", stop_reason)
+        self.assertIn("Review Agent -> Test Design Agent", stop_reason)
+        self.assertTrue(any("Configured pair limit: 4" in item for item in stop_details))
+
+    def test_orchestrator_explains_missing_route_stop_reason_exactly(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=10)
+        stop_reason, stop_details = orchestrator._determine_review_stop_reason(
+            backtrack_route=None,
+            run_controls=RunControlConfig(
+                max_rounds=10,
+                max_feedback_messages=12,
+                max_feedback_per_agent_pair=4,
+            ),
+            route_round=6,
+            total_feedback_messages=5,
+            pair_feedback_counts={},
+        )
+
+        self.assertEqual(stop_reason, "Stop pipeline because no valid backtracking route was available.")
+        self.assertTrue(any("did not produce a usable routing target" in item for item in stop_details))
 
     def test_requirements_trace_shows_targeted_backtracking_feedback(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=2)
@@ -1054,7 +1123,7 @@ class PipelineTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            self.assertEqual(row, ("Persistence demo", 1, 1, 1))
+            self.assertEqual(row, ("Persistence demo", 1, 2, 1))
 
 
 if __name__ == "__main__":

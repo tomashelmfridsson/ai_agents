@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import asdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -369,32 +370,11 @@ class TestDesignAgent:
             return self._design_with_llm(requirements, feedback_messages, runtime_config, run_session)
 
         designs = []
+        design_index = 1
         for req in requirements:
-            test_type = self._choose_test_type(req)
-            design_id = f"TC-{req.requirement_id.split('-')[-1]}"
-            title = self._build_title(req)
-            steps = self._build_steps(req)
-            expected_results = [criterion for criterion in req.acceptance_criteria]
-            steps, expected_results, oracle = self._apply_feedback(
-                req.requirement_id,
-                steps,
-                expected_results,
-                feedback_messages,
-            )
-            risks = self._identify_risks(req)
-            designs.append(
-                TestCaseDesign(
-                    test_case_id=design_id,
-                    requirement_id=req.requirement_id,
-                    title=title,
-                    test_type=test_type,
-                    preconditions=["The application is available.", "Test data is initialized."],
-                    steps=steps,
-                    expected_results=expected_results,
-                    oracle=oracle,
-                    risks=risks,
-                )
-            )
+            requirement_designs = self._build_structured_designs(req, feedback_messages, design_index)
+            designs.extend(requirement_designs)
+            design_index += len(requirement_designs)
         self.last_execution = {
             "mode": "structured",
             "reasoning_source": "structured_trace",
@@ -472,7 +452,11 @@ class TestDesignAgent:
             f"{requirements_payload}\n\n"
             "Incoming upstream feedback:\n"
             f"{feedback_block}\n\n"
-            "Create one test case per requirement unless a requirement is too unclear to support strong design. "
+            "Create realistic QA design coverage, not a flat one-to-one mapping. "
+            "A single requirement may need multiple planned test cases such as positive, negative, boundary, "
+            "authorization, validation, or state-based checks. "
+            "Keep every test case linked to exactly one primary requirement_id in this schema, but produce multiple "
+            "test cases for the same requirement when the behavior clearly needs it. "
             "If a requirement is too unclear, keep the test design as strong as possible but also add targeted "
             "feedback messages to the requirements analyst."
         )
@@ -547,6 +531,50 @@ class TestDesignAgent:
             f"Test Design Agent produced {len(designs)} design(s)."
         )
 
+    def _build_structured_designs(
+        self,
+        req: RequirementItem,
+        feedback_messages: list[str],
+        start_index: int,
+    ) -> list[TestCaseDesign]:
+        variants = [self._build_primary_variant(req)]
+        if self._should_add_negative_design(req):
+            variants.append(self._build_negative_variant(req))
+        if self._should_add_authorization_design(req):
+            variants.append(self._build_authorization_variant(req))
+
+        seen_titles = set()
+        deduplicated_variants = []
+        for variant in variants:
+            title_key = variant["title"].strip().lower()
+            if title_key in seen_titles:
+                continue
+            seen_titles.add(title_key)
+            deduplicated_variants.append(variant)
+
+        designs = []
+        for offset, variant in enumerate(deduplicated_variants, start=0):
+            steps, expected_results, oracle = self._apply_feedback(
+                req.requirement_id,
+                variant["steps"],
+                variant["expected_results"],
+                feedback_messages,
+            )
+            designs.append(
+                TestCaseDesign(
+                    test_case_id=f"TC-{start_index + offset:03d}",
+                    requirement_id=req.requirement_id,
+                    title=variant["title"],
+                    test_type=variant["test_type"],
+                    preconditions=variant["preconditions"],
+                    steps=steps,
+                    expected_results=expected_results,
+                    oracle=oracle,
+                    risks=self._identify_risks(req, variant["risk_hints"]),
+                )
+            )
+        return designs
+
     def _choose_test_type(self, req: RequirementItem) -> str:
         lowered = req.normalized_text.lower()
         if any(keyword in lowered for keyword in ("ui", "gui", "knapp", "formulär", "page", "sida")):
@@ -565,6 +593,144 @@ class TestDesignAgent:
             "Verify the expected result against the acceptance criteria.",
             "Execute a negative or boundary case when applicable.",
         ]
+
+    def _build_primary_variant(self, req: RequirementItem) -> dict[str, Any]:
+        lowered = req.normalized_text.lower()
+        if any(keyword in lowered for keyword in ("login", "logga in", "sign in", "authenticate", "autentis")):
+            return {
+                "title": "Successful sign-in with valid credentials",
+                "test_type": self._choose_test_type(req),
+                "preconditions": ["The application is available.", "A registered user account exists."],
+                "steps": [
+                    "Open the sign-in view.",
+                    "Enter a valid email address and password.",
+                    "Submit the sign-in form.",
+                ],
+                "expected_results": [
+                    "The user is authenticated successfully.",
+                    "The application redirects the user to the authorized landing page.",
+                ],
+                "risk_hints": [],
+            }
+        if any(keyword in lowered for keyword in ("register", "registrera", "new account", "konto", "signup", "sign up")):
+            return {
+                "title": "Register a new account with valid mandatory data",
+                "test_type": self._choose_test_type(req),
+                "preconditions": ["The application is available.", "No existing account uses the test email address."],
+                "steps": [
+                    "Open the registration form.",
+                    "Enter valid mandatory account data.",
+                    "Submit the form.",
+                ],
+                "expected_results": [
+                    "The account is created successfully.",
+                    "The user sees a clear confirmation or is signed in according to the product rule.",
+                ],
+                "risk_hints": [],
+            }
+        return {
+            "title": self._build_title(req),
+            "test_type": self._choose_test_type(req),
+            "preconditions": ["The application is available.", "Test data is initialized."],
+            "steps": self._build_steps(req),
+            "expected_results": [criterion for criterion in req.acceptance_criteria],
+            "risk_hints": [],
+        }
+
+    def _build_negative_variant(self, req: RequirementItem) -> dict[str, Any]:
+        lowered = req.normalized_text.lower()
+        if any(keyword in lowered for keyword in ("login", "logga in", "sign in", "authenticate", "autentis")):
+            return {
+                "title": "Reject sign-in with invalid credentials",
+                "test_type": self._choose_test_type(req),
+                "preconditions": ["The application is available.", "A registered user account exists."],
+                "steps": [
+                    "Open the sign-in view.",
+                    "Enter a valid email address and an invalid password.",
+                    "Submit the sign-in form.",
+                ],
+                "expected_results": [
+                    "Authentication is rejected.",
+                    "A clear error message is shown to the user.",
+                    "No authenticated session is created.",
+                ],
+                "risk_hints": ["Negative-path coverage is required for this requirement."],
+            }
+        if any(keyword in lowered for keyword in ("register", "registrera", "new account", "konto", "signup", "sign up", "form")):
+            return {
+                "title": "Reject account registration with invalid or missing mandatory data",
+                "test_type": self._choose_test_type(req),
+                "preconditions": ["The application is available."],
+                "steps": [
+                    "Open the registration form.",
+                    "Enter invalid or incomplete mandatory data.",
+                    "Submit the form.",
+                ],
+                "expected_results": [
+                    "The account is not created.",
+                    "Validation feedback identifies the invalid or missing fields.",
+                ],
+                "risk_hints": ["Validation coverage is required for this requirement."],
+            }
+        return {
+            "title": f"{self._build_title(req)} - negative path",
+            "test_type": self._choose_test_type(req),
+            "preconditions": ["The application is available.", "Test data is initialized."],
+            "steps": [
+                f"Identify the functionality associated with {req.requirement_id}.",
+                "Prepare invalid, missing, or boundary input data.",
+                "Execute the negative or failure flow.",
+                "Observe how the system rejects or handles the input.",
+            ],
+            "expected_results": [
+                "The system rejects invalid or disallowed input safely.",
+                "The failure is observable through validation, error messaging, or blocked state change.",
+            ],
+            "risk_hints": ["Negative-path coverage is required for this requirement."],
+        }
+
+    def _build_authorization_variant(self, req: RequirementItem) -> dict[str, Any]:
+        return {
+            "title": f"{self._build_title(req)} - unauthorized access is blocked",
+            "test_type": self._choose_test_type(req),
+            "preconditions": ["The application is available.", "A user without the required role exists."],
+            "steps": [
+                "Authenticate as a user without the required role or permissions.",
+                "Attempt to access the protected function or view.",
+            ],
+            "expected_results": [
+                "Access is denied.",
+                "The user does not see or execute the protected behavior.",
+            ],
+            "risk_hints": ["Authorization coverage is required for this requirement."],
+        }
+
+    def _should_add_negative_design(self, req: RequirementItem) -> bool:
+        lowered = " ".join(
+            [req.normalized_text, *req.acceptance_criteria, *req.assumptions]
+        ).lower()
+        return any(
+            keyword in lowered
+            for keyword in (
+                "error",
+                "invalid",
+                "negative",
+                "failure",
+                "fel",
+                "ogiltig",
+                "login",
+                "logga in",
+                "sign in",
+                "register",
+                "registrera",
+                "form",
+                "validate",
+            )
+        )
+
+    def _should_add_authorization_design(self, req: RequirementItem) -> bool:
+        lowered = " ".join([req.normalized_text, *req.acceptance_criteria]).lower()
+        return any(keyword in lowered for keyword in ("admin", "authorization", "authorisation", "role", "access", "behörighet"))
 
     def _build_title(self, req: RequirementItem) -> str:
         cleaned = req.normalized_text.strip()
@@ -589,12 +755,15 @@ class TestDesignAgent:
             return "Register a new account through the form"
         return text if len(text) <= 72 else text[:69].rstrip() + "..."
 
-    def _identify_risks(self, req: RequirementItem) -> list[str]:
+    def _identify_risks(self, req: RequirementItem, extra_risks: list[str] | None = None) -> list[str]:
         risks = []
         if req.assumptions:
             risks.append("The requirement contains assumptions that can distort test design.")
         if len(req.acceptance_criteria) < 2:
             risks.append("Limited specificity can reduce testability.")
+        for risk in extra_risks or []:
+            if risk not in risks:
+                risks.append(risk)
         return risks
 
     def _feedback_messages_to_requirements(self, requirements: list[RequirementItem]) -> list[str]:
@@ -666,12 +835,21 @@ class ReviewAgent:
         improvements = []
 
         covered_requirements = {design.requirement_id for design in test_designs}
+        design_counts = Counter(design.requirement_id for design in test_designs)
         coverage_ratio = len(covered_requirements) / len(requirements) if requirements else 0.0
 
         for requirement in requirements:
             if requirement.requirement_id not in covered_requirements:
                 findings.append(f"{requirement.requirement_id} is missing a designed test case.")
                 improvements.append(f"Design at least one test for {requirement.requirement_id}.")
+                continue
+            if self._requires_multiple_test_designs(requirement) and design_counts[requirement.requirement_id] < 2:
+                findings.append(
+                    f"{requirement.requirement_id} has only one designed test case even though the requirement implies multiple behaviors."
+                )
+                improvements.append(
+                    f"Add at least one more targeted test case for {requirement.requirement_id}, such as a negative, validation, authorization, or boundary scenario."
+                )
 
         for design in test_designs:
             if len(design.expected_results) < 2:
@@ -691,7 +869,13 @@ class ReviewAgent:
                     f"Clarify requirement {requirement.requirement_id} to reduce misinterpretation."
                 )
 
-        approved = coverage_ratio == 1.0 and len(findings) <= max(1, len(requirements) // 2)
+        blocking_findings = any(
+            "missing a designed test case" in finding
+            or "has only one designed test case" in finding
+            or "weak oracle definition" in finding
+            for finding in findings
+        )
+        approved = coverage_ratio == 1.0 and not blocking_findings and len(findings) <= max(1, len(requirements) // 2)
         if approved and not findings:
             findings.append("No critical issues were identified.")
 
@@ -839,9 +1023,41 @@ class ReviewAgent:
         focus = []
         if any("assumptions" in finding for finding in findings):
             focus.append("requirements")
-        if any("weak oracle definition" in finding or "missing a designed test case" in finding for finding in findings):
+        if any(
+            "weak oracle definition" in finding
+            or "missing a designed test case" in finding
+            or "has only one designed test case" in finding
+            for finding in findings
+        ):
             focus.append("test_design")
         return focus
+
+    def _requires_multiple_test_designs(self, requirement: RequirementItem) -> bool:
+        lowered = " ".join(
+            [requirement.normalized_text, *requirement.acceptance_criteria, *requirement.assumptions]
+        ).lower()
+        return any(
+            keyword in lowered
+            for keyword in (
+                "error",
+                "invalid",
+                "negative",
+                "failure",
+                "fel",
+                "ogiltig",
+                "login",
+                "logga in",
+                "sign in",
+                "register",
+                "registrera",
+                "admin",
+                "access",
+                "role",
+                "authorization",
+                "form",
+                "validate",
+            )
+        )
 
 
 def _clean_text(value: Any) -> str:

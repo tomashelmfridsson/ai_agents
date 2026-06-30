@@ -62,9 +62,9 @@ def build_default_agent_registry() -> AgentRegistry:
                 "Forbidden behavior: do not restart the full pipeline when a narrower backtracking route is available; do not send vague feedback.\n"
                 "Quality bar: every routing decision must name the reason, the target agent, and the exact issue that triggered the handoff."
             ),
-            default_provider_strategy="Ollama local",
-            default_model_family="Qwen 3 32B",
-            default_timeout_seconds=60,
+            default_provider_strategy="HF cheapest/free credits",
+            default_model_family="gpt-oss-20b",
+            default_timeout_seconds=150,
             stage_key="orchestrator",
             stage_index=0,
         ),
@@ -80,9 +80,9 @@ def build_default_agent_registry() -> AgentRegistry:
                 "Forbidden behavior: do not invent missing business rules or silently resolve ambiguity.\n"
                 "Quality bar: requirements must be testable, traceable, and clearly separated from assumptions."
             ),
-            default_provider_strategy="Ollama local",
-            default_model_family="Qwen 3 32B",
-            default_timeout_seconds=120,
+            default_provider_strategy="HF cheapest/free credits",
+            default_model_family="gpt-oss-20b",
+            default_timeout_seconds=150,
             stage_key="requirements",
             stage_index=1,
         ),
@@ -96,12 +96,13 @@ def build_default_agent_registry() -> AgentRegistry:
             default_directives=(
                 "Purpose: create concrete, reviewable test cases rather than placeholders.\n"
                 "Required output: preconditions, concrete test data, executable steps, observable expected results, explicit oracle logic, and traceability to requirement IDs.\n"
+                "Coverage rule: do not flatten the design into one test case per requirement when the requirement implies multiple behaviors such as positive, negative, validation, boundary, or authorization scenarios.\n"
                 "Forbidden behavior: do not use vague steps such as 'execute the primary flow' or generic expected results without observable outcomes.\n"
                 "Quality bar: every test case must be specific enough to run and judge as pass or fail."
             ),
-            default_provider_strategy="Ollama local",
-            default_model_family="Qwen 3 32B",
-            default_timeout_seconds=90,
+            default_provider_strategy="HF cheapest/free credits",
+            default_model_family="gpt-oss-20b",
+            default_timeout_seconds=150,
             stage_key="design",
             stage_index=2,
         ),
@@ -114,13 +115,13 @@ def build_default_agent_registry() -> AgentRegistry:
             description="Evaluates coverage, unresolved assumptions, and the strength of each planned test case.",
             default_directives=(
                 "Purpose: challenge weak test design and decide whether the current result is good enough.\n"
-                "Required checks: traceability, oracle strength, negative coverage, edge cases, unresolved assumptions, and placeholder language.\n"
+                "Required checks: traceability, oracle strength, negative coverage, edge cases, unresolved assumptions, placeholder language, and suspicious one-to-one requirement-to-test mappings.\n"
                 "Forbidden behavior: do not approve generic or weakly testable cases just because coverage looks complete.\n"
                 "Quality bar: explain exactly why quality passes or fails, identify the weakest test cases first, and send targeted feedback to the most relevant upstream agent."
             ),
-            default_provider_strategy="Ollama local",
-            default_model_family="DeepSeek R1",
-            default_timeout_seconds=60,
+            default_provider_strategy="HF cheapest/free credits",
+            default_model_family="gpt-oss-20b",
+            default_timeout_seconds=150,
             stage_key="review",
             stage_index=3,
         ),

@@ -1669,23 +1669,23 @@ def build_demo() -> gr.Blocks:
                     max_iterations_input = gr.Slider(
                         label="Maximum rounds",
                         minimum=1,
-                        maximum=10,
+                        maximum=20,
                         step=1,
-                        value=2,
+                        value=10,
                     )
                     max_feedback_messages_input = gr.Slider(
                         label="Maximum feedback messages",
                         minimum=0,
-                        maximum=12,
+                        maximum=24,
                         step=1,
-                        value=4,
+                        value=12,
                     )
                     max_feedback_per_pair_input = gr.Slider(
                         label="Maximum feedback messages per agent pair",
                         minimum=0,
-                        maximum=4,
+                        maximum=8,
                         step=1,
-                        value=2,
+                        value=4,
                     )
                     gr.HTML(
                         """
@@ -1737,18 +1737,18 @@ def build_demo() -> gr.Blocks:
                     global_provider_strategy_input = gr.Dropdown(
                         label="Provider strategy for all agents",
                         choices=PROVIDER_STRATEGY_CHOICES,
-                        value="Ollama local",
+                        value="HF cheapest/free credits",
                     )
                     global_model_input = gr.Dropdown(
                         label="Model for all agents",
-                        choices=get_model_choices("Ollama local"),
-                        value=get_initial_model_value("Ollama local", "Qwen 3 32B"),
+                        choices=get_model_choices("HF cheapest/free credits"),
+                        value=get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
                         allow_custom_value=True,
                     )
                     global_llm_summary = gr.Markdown(
                         value=format_llm_config_summary(
-                            "Ollama local",
-                            get_initial_model_value("Ollama local", "Qwen 3 32B"),
+                            "HF cheapest/free credits",
+                            get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
                             "",
                         ),
                         elem_classes=["llm-summary"],
@@ -1763,7 +1763,7 @@ def build_demo() -> gr.Blocks:
                         minimum=30,
                         maximum=300,
                         step=15,
-                        value=120,
+                        value=150,
                     )
                     apply_global_settings_button = gr.Button("Apply to all agents")
                     global_provider_strategy_input.change(
@@ -2089,7 +2089,7 @@ def build_trace_overview(payload: dict) -> str:
     return (
         "<section class='diagram-card'>"
         "<h3>Requirement to test case mapping</h3>"
-        "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each one is linked directly to a requirement ID and reviewed without a separate generation stage.</p>"
+        "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each case is linked directly to a requirement ID and reviewed without a separate generation stage, and one requirement can map to several test cases.</p>"
         "<div class='table-scroll'><table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
@@ -2151,7 +2151,7 @@ def build_test_case_overview(payload: dict) -> str:
     return (
         "<section class='diagram-card'>"
         "<h3>Planned test cases</h3>"
-        "<p class='agent-config-text'>This section shows the actual test cases produced by the Test Design Agent, including steps, expected results, and oracle.</p>"
+        "<p class='agent-config-text'>This section shows the actual test cases produced by the Test Design Agent, including steps, expected results, and oracle. Requirements can expand into multiple focused test cases.</p>"
         "</section>"
         "<div class='stage-grid'>"
         + "".join(cards)

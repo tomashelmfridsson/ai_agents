@@ -419,6 +419,10 @@ class OrchestratorAgent:
                     run_controls=run_controls,
                     total_feedback_messages=state.total_feedback_messages,
                     stop_reason="Stop pipeline because the review approved the result.",
+                    stop_details=[
+                        f"Approved at round: {state.route_round}",
+                        f"Coverage ratio: {state.review.coverage_ratio:.2f}",
+                    ],
                     duration_ms=0,
                 )
             )
@@ -484,6 +488,13 @@ class OrchestratorAgent:
             state.route_round += 1
             return next_stage
 
+        stop_reason, stop_details = self._determine_review_stop_reason(
+            backtrack_route=backtrack_route,
+            run_controls=run_controls,
+            route_round=state.route_round,
+            total_feedback_messages=state.total_feedback_messages,
+            pair_feedback_counts=state.pair_feedback_counts,
+        )
         state.stage_traces.append(
             self._build_stop_orchestrator_trace(
                 route_round=state.route_round,
@@ -491,9 +502,8 @@ class OrchestratorAgent:
                 runtime_config=runtime_lookup.get("orchestrator"),
                 run_controls=run_controls,
                 total_feedback_messages=state.total_feedback_messages,
-                stop_reason=(
-                    "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available."
-                ),
+                stop_reason=stop_reason,
+                stop_details=stop_details,
                 duration_ms=0,
             )
         )
@@ -503,7 +513,7 @@ class OrchestratorAgent:
             agent_name="Orchestrator Agent",
             iteration=state.route_round,
             stage_index=4,
-            message="Orchestrator stopped the run because no more valid backtracking was allowed.",
+            message=stop_reason,
             run_session=run_session,
         )
         return "stop"
@@ -656,7 +666,7 @@ class OrchestratorAgent:
                         f"Submit the structured requirements to {runtime_config.model_id} to generate concrete test cases."
                         if runtime_config
                         else "Submit the structured requirements to the configured LLM to generate concrete test cases.",
-                        "Validate the structured test-design JSON, then preserve one test case per returned requirement mapping.",
+                        "Validate the structured test-design JSON, then preserve realistic one-to-many requirement coverage when the model returns multiple test cases for the same requirement.",
                         (
                             "No targeted design feedback was applied in this pass."
                             if not feedback_messages
@@ -668,7 +678,7 @@ class OrchestratorAgent:
                     else [
                         "Read each structured requirement together with its acceptance criteria and assumptions.",
                         "Choose a test type from deterministic keyword routing such as gui/e2e, api/integration, unit, or scenario.",
-                        "Build a test-case shell with fixed preconditions, reusable steps, expected results, and a generic oracle.",
+                        "Generate one or more test-case designs per requirement when the requirement implies positive, negative, authorization, validation, or boundary behavior.",
                         "Carry forward requirement assumptions as design risks so later review can challenge weak testability.",
                         (
                             "No targeted design feedback was applied in this pass."
@@ -683,14 +693,14 @@ class OrchestratorAgent:
                 (
                     "This agent used a live LLM to convert structured requirements into concrete planned test cases with titles, steps, expected results, and oracle text."
                     if llm_active
-                    else "This agent converts each structured requirement into a test case design. The test type is selected from keywords, and the rest of the design is filled from fixed templates."
+                    else "This agent converts structured requirements into one or more concrete test case designs. It expands requirements that imply multiple behaviors into separate positive, negative, validation, or authorization-focused cases."
                 )
             ),
             decision_explanation=(
                 (
                     f"Live model call used: {runtime_config.model_id} via {runtime_config.provider_strategy}."
                     if llm_active and runtime_config
-                    else "The label 'designs' means draft test cases before code generation. In this app they are the planned test cases, each tied to a requirement ID."
+                    else "The label 'designs' means draft test cases before code generation. In this app they are the planned test cases, and a single requirement can map to several test cases."
                 )
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
@@ -749,6 +759,7 @@ class OrchestratorAgent:
                     if llm_active
                     else [
                         "Compute requirement coverage by checking whether each requirement ID appears in at least one designed test case.",
+                        "Check whether requirements that imply multiple behaviors were expanded into more than one focused test case.",
                         "Flag designs with too few expected results because weak oracles reduce confidence in the generated tests.",
                         "Flag requirements that still contain assumptions because automation would otherwise encode guesses.",
                         "Approve only when full coverage is reached and the number of findings stays below the hard-coded threshold.",
@@ -760,14 +771,14 @@ class OrchestratorAgent:
                 (
                     "This review stage used a live LLM to evaluate coverage quality, oracle strength, unresolved assumptions, and the most relevant backtracking target."
                     if llm_active
-                    else "This review stage is a deterministic rule check, not an autonomous evaluator. It computes requirement coverage from designed test cases, flags test cases with too few expected results, and flags requirements that still contain assumptions."
+                    else "This review stage is a deterministic rule check, not an autonomous evaluator. It computes requirement coverage, flags suspicious one-to-one mappings for multi-behavior requirements, flags test cases with too few expected results, and flags requirements that still contain assumptions."
                 )
             ),
             decision_explanation=(
                 (
                     f"Live model call used: {runtime_config.model_id} via {runtime_config.provider_strategy}."
                     if llm_active and runtime_config
-                    else "Approval becomes true only when every requirement has at least one designed test case and the total number of findings stays at or below the hard-coded threshold. In this implementation, findings mainly come from three sources: missing designed coverage, weak oracle definitions, and unresolved assumptions."
+                    else "Approval becomes true only when every requirement has at least one designed test case and the total number of findings stays at or below the hard-coded threshold. In this implementation, findings mainly come from four sources: missing designed coverage, suspiciously thin one-to-one coverage, weak oracle definitions, and unresolved assumptions."
                 )
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
@@ -830,7 +841,9 @@ class OrchestratorAgent:
         assumption_findings = [finding for finding in review.findings if "contains assumptions" in finding]
         missing_design_findings = [finding for finding in review.findings if "missing a designed test case" in finding]
 
-        if weak_oracle_findings or missing_design_findings:
+        thin_design_findings = [finding for finding in review.findings if "has only one designed test case" in finding]
+
+        if weak_oracle_findings or missing_design_findings or thin_design_findings:
             feedback_messages = []
             if weak_oracle_findings:
                 feedback_messages.append(
@@ -839,6 +852,10 @@ class OrchestratorAgent:
             if missing_design_findings:
                 feedback_messages.append(
                     "Design missing test coverage for every uncovered requirement."
+                )
+            if thin_design_findings:
+                feedback_messages.append(
+                    "Expand thin one-to-one mappings into multiple focused test cases when a requirement implies positive, negative, validation, authorization, or boundary behavior."
                 )
             return {
                 "from_agent": "Review Agent",
@@ -1022,6 +1039,65 @@ class OrchestratorAgent:
             ],
         )
 
+    def _determine_review_stop_reason(
+        self,
+        *,
+        backtrack_route: dict | None,
+        run_controls: RunControlConfig,
+        route_round: int,
+        total_feedback_messages: int,
+        pair_feedback_counts: dict[tuple[str, str], int],
+    ) -> tuple[str, list[str]]:
+        if route_round >= run_controls.max_rounds:
+            return (
+                f"Stop pipeline because Maximum rounds ({run_controls.max_rounds}) was reached.",
+                [
+                    f"Current round: {route_round}",
+                    f"Configured maximum rounds: {run_controls.max_rounds}",
+                ],
+            )
+
+        if not backtrack_route:
+            return (
+                "Stop pipeline because no valid backtracking route was available.",
+                [
+                    "The review step did not produce a usable routing target.",
+                    "No targeted repair route to Requirements Analyst or Test Design Agent could be selected.",
+                ],
+            )
+
+        from_agent = backtrack_route["from_agent"]
+        to_agent = backtrack_route["to_agent"]
+        pair_used = pair_feedback_counts[(from_agent, to_agent)]
+        pair_limit = run_controls.max_feedback_per_agent_pair
+
+        if run_controls.max_feedback_messages and total_feedback_messages + 1 > run_controls.max_feedback_messages:
+            return (
+                f"Stop pipeline because Maximum feedback messages ({run_controls.max_feedback_messages}) was reached.",
+                [
+                    f"Feedback messages already used: {total_feedback_messages}",
+                    f"Attempted next route: {from_agent} -> {to_agent}",
+                ],
+            )
+
+        if pair_limit and pair_used + 1 > pair_limit:
+            return (
+                (
+                    "Stop pipeline because Maximum feedback messages per agent pair "
+                    f"was reached for {from_agent} -> {to_agent} ({pair_used}/{pair_limit})."
+                ),
+                [
+                    f"Blocked pair: {from_agent} -> {to_agent}",
+                    f"Feedback already used for this pair: {pair_used}",
+                    f"Configured pair limit: {pair_limit}",
+                ],
+            )
+
+        return (
+            "Stop pipeline because no more targeted feedback is allowed or no valid backtracking route was available.",
+            [],
+        )
+
     def _build_stop_orchestrator_trace(
         self,
         route_round: int,
@@ -1030,6 +1106,7 @@ class OrchestratorAgent:
         run_controls: RunControlConfig,
         total_feedback_messages: int,
         stop_reason: str,
+        stop_details: list[str],
         duration_ms: int,
     ) -> StageTrace:
         llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
@@ -1047,6 +1124,7 @@ class OrchestratorAgent:
             ],
             output_summary=[
                 stop_reason,
+                *stop_details,
                 (
                     f"Primary reason: {review.findings[0]}"
                     if review.findings
@@ -1155,6 +1233,10 @@ class OrchestratorAgent:
             return (
                 f"{finding} This means the requirement currently has no designed test candidate."
             )
+        if "has only one designed test case" in finding:
+            return (
+                f"{finding} This means the requirement looks broader than the current coverage and should likely be split into several focused test cases."
+            )
         return finding
 
     def _explain_requirement_derivation(self, item) -> list[str]:
@@ -1258,6 +1340,28 @@ class OrchestratorAgent:
         reasoning.append(
             "Missing designed test coverage: "
             + (", ".join(missing_requirements) if missing_requirements else "none")
+            + "."
+        )
+
+        design_counts = {}
+        for design in designs:
+            design_counts[design.requirement_id] = design_counts.get(design.requirement_id, 0) + 1
+        reasoning.append(
+            "Designed test cases per requirement: "
+            + (
+                ", ".join(f"{requirement_id}={count}" for requirement_id, count in sorted(design_counts.items()))
+                if design_counts
+                else "none"
+            )
+            + "."
+        )
+
+        thin_coverage_findings = [
+            finding for finding in review.findings if "has only one designed test case" in finding
+        ]
+        reasoning.append(
+            "Thin one-to-one coverage findings: "
+            + (", ".join(thin_coverage_findings) if thin_coverage_findings else "none")
             + "."
         )
 
