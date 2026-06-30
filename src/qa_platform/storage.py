@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,6 +31,12 @@ def get_db_path() -> Path:
 def get_log_dir() -> Path:
     override = os.getenv("QA_RUNS_LOG_DIR")
     return Path(override) if override else DEFAULT_LOG_DIR
+
+
+def _slugify_title(title: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", (title or "").strip().lower())
+    normalized = normalized.strip("-")
+    return normalized or "scenario"
 
 
 def _ensure_schema(connection: sqlite3.Connection) -> None:
@@ -108,6 +115,7 @@ def build_run_log_text(
                 [
                     str(config.get("agent_name", "")),
                     f"Execution mode: {config.get('execution_mode', '')}",
+                    f"Timeout: {config.get('timeout_seconds', 60)} seconds",
                     f"Resolved model: {config.get('model_id', '') or 'deterministic implementation'}",
                     f"Directives: {config.get('directives', '') or 'No directives configured.'}",
                     "",
@@ -133,6 +141,7 @@ def build_run_log_text(
                     str(trace.get("agent_name", "")),
                     f"Status: {trace.get('status', '')}",
                     f"Execution: {execution_mode} / {model_id}",
+                    f"Timeout: {runtime_config.get('timeout_seconds', 60)} seconds",
                     f"Time: {int(trace.get('duration_ms', 0) or 0)} ms",
                     f"Configured directive: {runtime_config.get('directives', '') or 'No directives configured.'}",
                 ]
@@ -238,7 +247,9 @@ def save_run(payload: dict[str, Any]) -> SavedRun:
 
     log_dir = get_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"run_{run_id:04d}.txt"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    scenario_slug = _slugify_title(str(payload.get("title", "")))
+    log_path = log_dir / f"{scenario_slug}-{timestamp}.txt"
     log_path.write_text(
         build_run_log_text(
             payload=payload,

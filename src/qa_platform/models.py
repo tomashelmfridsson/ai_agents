@@ -9,8 +9,10 @@ class AgentRuntimeConfig:
     agent_key: str
     agent_name: str
     execution_mode: str
+    timeout_seconds: int = 60
     provider_strategy: str = ""
     model_family: str = ""
+    model_override: str = ""
     model_id: str = ""
     directives: str = ""
 

@@ -1,8 +1,12 @@
 import os
 import sqlite3
 import tempfile
+import json
 from pathlib import Path
 import sys
+import tempfile
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -15,10 +19,14 @@ if str(SRC) not in sys.path:
 from qa_platform.orchestrator import OrchestratorAgent
 from qa_platform.agent_runtime import build_agent_runtime_configs
 from qa_platform.agents import RequirementsAnalystAgent
-from qa_platform.models import ReviewReport
+from qa_platform.llm_runtime import LLMRuntimeError, call_structured_llm
+import qa_platform.orchestrator as orchestrator_module
+from qa_platform.models import AgentRuntimeConfig, ReviewReport
 from qa_platform.models import RunControlConfig
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import save_run
+import app as app_module
+from app import process_requirements
 
 
 class PipelineTests(unittest.TestCase):
@@ -37,8 +45,9 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result.generated_artifacts), 0)
         self.assertEqual(result.review.coverage_ratio, 1.0)
         self.assertGreaterEqual(result.iterations, 1)
-        self.assertGreaterEqual(len(result.stage_traces), 4)
-        self.assertEqual(result.stage_traces[0].agent_name, "Requirements Analyst")
+        self.assertGreaterEqual(len(result.stage_traces), 5)
+        self.assertEqual(result.stage_traces[0].agent_name, "Orchestrator Agent")
+        self.assertEqual(result.stage_traces[1].agent_name, "Requirements Analyst")
         self.assertEqual(result.stage_traces[-1].agent_name, "Orchestrator Agent")
         self.assertTrue(all(trace.reasoning_trace for trace in result.stage_traces))
         self.assertTrue(
@@ -89,7 +98,7 @@ class PipelineTests(unittest.TestCase):
             requirements_text="The user must be able to sign in with email and password.",
         )
 
-        reasoning = result.stage_traces[0].reasoning_trace
+        reasoning = result.stage_traces[1].reasoning_trace
         self.assertTrue(any("REQ-001: raw text" in line for line in reasoning))
         self.assertTrue(any("priority -> high" in line for line in reasoning))
         self.assertTrue(any("authentication rule triggered" in line for line in reasoning))
@@ -149,6 +158,170 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(configs[3].provider_strategy, "")
         self.assertEqual(configs[3].model_family, "")
         self.assertEqual(configs[3].model_id, "")
+
+    def test_default_ollama_presets_resolve_to_available_local_models(self) -> None:
+        configs = build_agent_runtime_configs()
+
+        self.assertEqual(configs[0].provider_strategy, "Ollama local")
+        self.assertEqual(configs[0].timeout_seconds, 60)
+        self.assertEqual(configs[1].timeout_seconds, 120)
+        self.assertEqual(configs[2].timeout_seconds, 90)
+        self.assertEqual(configs[3].timeout_seconds, 60)
+        self.assertEqual(configs[0].model_id, "qwen3:8b")
+        self.assertEqual(configs[1].model_id, "qwen3:8b")
+        self.assertEqual(configs[2].model_id, "qwen3:8b")
+        self.assertEqual(configs[3].model_id, "deepseek-r1:8b")
+
+    def test_agent_runtime_configs_accept_per_agent_timeout_values(self) -> None:
+        configs = build_agent_runtime_configs(
+            "LLM-backed",
+            "Ollama local",
+            "qwen3:8b",
+            "",
+            "150",
+            "Route clearly.",
+            "LLM-backed",
+            "Ollama local",
+            "qwen3:8b",
+            "",
+            "180",
+            "Extract strict requirement objects.",
+            "LLM-backed",
+            "Ollama local",
+            "qwen3:8b",
+            "",
+            "90",
+            "Design stronger oracles.",
+            "LLM-backed",
+            "Ollama local",
+            "deepseek-r1:8b",
+            "",
+            "75",
+            "Review thoroughly.",
+        )
+
+        self.assertEqual([config.timeout_seconds for config in configs], [150, 180, 90, 75])
+
+    def test_ollama_list_is_parsed_into_model_choices(self) -> None:
+        fake_output = (
+            "NAME                           ID              SIZE      MODIFIED\n"
+            "gemma3:4b                      a2af6cc3eb7f    3.3 GB    36 seconds ago\n"
+            "deepseek-r1:8b                 6995872bfe4c    5.2 GB    3 minutes ago\n"
+            "qwen3:8b                       500a1f067a9f    5.2 GB    8 minutes ago\n"
+        )
+        with patch.object(
+            app_module.subprocess,
+            "run",
+            return_value=SimpleNamespace(stdout=fake_output),
+        ):
+            choices = app_module.get_ollama_model_choices()
+
+        self.assertEqual(choices, ["gemma3:4b", "deepseek-r1:8b", "qwen3:8b"])
+
+    def test_execution_mode_help_uses_plain_language(self) -> None:
+        help_text = app_module.format_execution_mode_help("LLM-backed")
+
+        self.assertIn("agent calls the selected model", help_text)
+        self.assertIn("Timeouts and run limits", help_text)
+
+    def test_build_error_report_includes_model_and_progress_context(self) -> None:
+        runtime_events = [
+            {
+                "event_type": "stage_started",
+                "agent_name": "Requirements Analyst",
+                "iteration": 1,
+                "stage_index": 1,
+                "message": "Running Requirements Analyst.",
+                "duration_ms": 0,
+            }
+        ]
+        agent_configs = [
+            AgentRuntimeConfig(
+                agent_key="requirements_analyst",
+                agent_name="Requirements Analyst Agent",
+                execution_mode="LLM-backed",
+                timeout_seconds=120,
+                provider_strategy="Ollama local",
+                model_family="qwen3:8b",
+                model_override="",
+                model_id="qwen3:8b",
+                directives="",
+            )
+        ]
+
+        report_html = app_module.build_error_report("Timed out.", runtime_events, agent_configs, "/tmp/live.log")
+
+        self.assertIn("Last active agent: Requirements Analyst", report_html)
+        self.assertIn("Model for that agent: qwen3:8b", report_html)
+        self.assertIn("Configured timeout for that agent: 120 seconds", report_html)
+        self.assertIn("Last runtime event: stage_started", report_html)
+        self.assertIn("Completed stages before the stop: 0", report_html)
+        self.assertIn("Log file: /tmp/live.log", report_html)
+
+    def test_build_runtime_timeline_shows_model_and_live_log_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "live.txt"
+            log_path.write_text("line 1\nline 2\nmessage: Running Requirements Analyst.\n", encoding="utf-8")
+            html_output = app_module.build_runtime_timeline(
+                [
+                    {
+                        "iteration": 1,
+                        "stage_index": 1,
+                        "agent_name": "Requirements Analyst",
+                        "model_id": "gemma3:4b",
+                        "event_type": "stage_started",
+                        "duration_ms": 0,
+                        "message": "Running Requirements Analyst.",
+                    }
+                ],
+                str(log_path),
+            )
+
+        self.assertIn("gemma3:4b", html_output)
+        self.assertIn("Live log tail", html_output)
+        self.assertIn("message: Running Requirements Analyst.", html_output)
+
+    def test_build_error_report_shows_completed_agent_results(self) -> None:
+        agent_configs = [
+            AgentRuntimeConfig(
+                agent_key="requirements_analyst",
+                agent_name="Requirements Analyst Agent",
+                execution_mode="LLM-backed",
+                timeout_seconds=120,
+                provider_strategy="Ollama local",
+                model_family="qwen3:8b",
+                model_override="",
+                model_id="qwen3:8b",
+                directives="",
+            )
+        ]
+        completed_traces = [
+            {
+                "iteration": 1,
+                "stage_index": 1,
+                "agent_name": "Requirements Analyst",
+                "input_summary": ["Raw requirement lines: 1"],
+                "output_summary": ["Extracted 1 requirement item(s).", 'REQ-001: "Login"'],
+                "status": "completed",
+                "reasoning_trace": ["REQ-001: raw text"],
+                "reasoning_source": "structured_trace",
+                "agent_explanation": "",
+                "decision_explanation": "",
+                "duration_ms": 1234,
+            }
+        ]
+
+        report_html = app_module.build_error_report(
+            "Timed out.",
+            runtime_events=[],
+            agent_configs=agent_configs,
+            log_path="/tmp/live.log",
+            completed_traces=completed_traces,
+        )
+
+        self.assertIn("Completed agent results", report_html)
+        self.assertIn("Requirements Analyst", report_html)
+        self.assertIn("Extracted 1 requirement item", report_html)
 
     def test_run_controls_are_stored_and_reflected_in_orchestrator_trace(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=3)
@@ -258,6 +431,178 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(agent.last_execution["llm_used"])
         self.assertTrue(any("configured LLM schema" in note for note in agent.last_execution["notes"]))
 
+    def test_ollama_missing_local_model_fails_before_chat_request(self) -> None:
+        runtime_config = AgentRuntimeConfig(
+            agent_key="orchestrator",
+            agent_name="Orchestrator Agent",
+            execution_mode="LLM-backed",
+            provider_strategy="Ollama local",
+            model_family="Qwen 3 32B",
+            model_override="missing-model:latest",
+            model_id="missing-model:latest",
+            directives="Route clearly.",
+        )
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps({"models": [{"model": "qwen3:8b"}]}).encode("utf-8")
+
+        with patch("qa_platform.llm_runtime.request.urlopen", return_value=FakeResponse()) as mock_urlopen:
+            with self.assertRaises(LLMRuntimeError) as context:
+                call_structured_llm(
+                    runtime_config=runtime_config,
+                    system_prompt="Return JSON.",
+                    user_prompt="Test prompt",
+                    schema_name="test_schema",
+                    schema={"type": "object", "properties": {}, "required": []},
+                )
+
+        self.assertIn("missing-model:latest", str(context.exception))
+        self.assertIn("not installed", str(context.exception))
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    def test_agent_timeout_returns_without_waiting_for_worker_shutdown(self) -> None:
+        orchestrator = OrchestratorAgent()
+
+        def slow_call():
+            time.sleep(1.1)
+            return "done"
+
+        started_at = time.perf_counter()
+        with patch.object(orchestrator_module, "AGENT_TIMEOUT_SECONDS", 1):
+            with self.assertRaises(orchestrator_module.AgentTimeoutError):
+                orchestrator._run_with_timeout("Slow Agent", None, slow_call, ())
+        elapsed = time.perf_counter() - started_at
+
+        self.assertLess(elapsed, 1.05)
+
+    def test_agent_timeout_uses_runtime_config_value(self) -> None:
+        orchestrator = OrchestratorAgent()
+        runtime_config = AgentRuntimeConfig(
+            agent_key="requirements_analyst",
+            agent_name="Requirements Analyst Agent",
+            execution_mode="LLM-backed",
+            timeout_seconds=1,
+        )
+
+        def slow_call():
+            time.sleep(1.1)
+            return "done"
+
+        started_at = time.perf_counter()
+        with self.assertRaises(orchestrator_module.AgentTimeoutError) as context:
+            orchestrator._run_with_timeout("Requirements Analyst", runtime_config, slow_call, ())
+        elapsed = time.perf_counter() - started_at
+
+        self.assertLess(elapsed, 1.05)
+        self.assertEqual(context.exception.timeout_seconds, 1)
+
+    def test_process_requirements_returns_formatted_error_panel_for_missing_requirements(self) -> None:
+        updates = list(
+            process_requirements(
+                "Demo",
+                "",
+                2,
+                0,
+                0,
+                "http://127.0.0.1:11434",
+                "",
+            )
+        )
+        status_html, report_html, log_file, runtime_html = updates[-1]
+
+        self.assertEqual(len(updates), 1)
+        self.assertIn("Run stopped because of an error", status_html)
+        self.assertIn("Requirements saknas", status_html)
+        self.assertIn("Retry after correcting the configuration", report_html)
+        self.assertIsNone(log_file)
+        self.assertIn("Runtime activity", runtime_html)
+
+    def test_process_requirements_streams_runtime_updates_before_final_result(self) -> None:
+        class FakeResult:
+            def to_dict(self):
+                return {
+                    "title": "Demo",
+                    "source_requirements": "The user can log in.",
+                    "requirements": [{"requirement_id": "REQ-001"}],
+                    "test_designs": [{"test_case_id": "TC-001"}],
+                    "generated_artifacts": [],
+                    "review": {
+                        "approved": True,
+                        "coverage_ratio": 1.0,
+                        "findings": [],
+                        "improvement_actions": [],
+                    },
+                    "iterations": 1,
+                    "run_controls": {
+                        "max_rounds": 2,
+                        "max_feedback_messages": 0,
+                        "max_feedback_per_agent_pair": 0,
+                    },
+                    "agent_configs": [],
+                    "stage_traces": [],
+                }
+
+        def fake_process(self, title, requirements_text, agent_configs=None, run_controls=None, event_callback=None):
+            assert event_callback is not None
+            event_callback(
+                {
+                    "event_type": "stage_started",
+                    "agent_name": "Requirements Analyst",
+                    "iteration": 1,
+                    "stage_index": 1,
+                    "message": "Running Requirements Analyst.",
+                    "duration_ms": 0,
+                }
+            )
+            event_callback(
+                {
+                    "event_type": "stage_completed",
+                    "agent_name": "Requirements Analyst",
+                    "iteration": 1,
+                    "stage_index": 1,
+                    "message": "Requirements Analyst completed.",
+                    "duration_ms": 12,
+                }
+            )
+            return FakeResult()
+
+        with patch.object(app_module.OrchestratorAgent, "process", new=fake_process):
+            with patch.object(
+                app_module,
+                "save_run",
+                return_value=SimpleNamespace(run_id=7, stored_at="now", db_path="/tmp/run.db", log_path="/tmp/run.log"),
+            ):
+                with patch.object(app_module, "build_workflow_report", return_value="<section>final report</section>"):
+                    updates = list(
+                        process_requirements(
+                            "Demo",
+                            "The user can log in.",
+                            2,
+                            0,
+                            0,
+                            "http://127.0.0.1:11434",
+                            "",
+                        )
+                    )
+
+        self.assertGreaterEqual(len(updates), 3)
+        running_status, running_report, running_file, running_runtime = updates[1]
+        final_status, _final_report, final_file, _final_runtime = updates[-1]
+
+        self.assertIn("Workflow is running", running_status)
+        self.assertIn("Runtime events recorded: 1", running_report)
+        self.assertEqual(running_file["value"].endswith("-live.txt"), True)
+        self.assertIn("Requirements Analyst", running_runtime)
+        self.assertIn("Saved as run #7", final_status)
+        self.assertEqual(final_file["value"], "/tmp/run.log")
+
     def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
         configs = build_agent_runtime_configs(
             "Structured baseline",
@@ -335,7 +680,10 @@ class PipelineTests(unittest.TestCase):
 
         self.assertFalse(result.review.approved)
         self.assertEqual(len(result.test_designs), 0)
-        self.assertEqual([trace.agent_name for trace in result.stage_traces], ["Requirements Analyst", "Orchestrator Agent"])
+        self.assertEqual(
+            [trace.agent_name for trace in result.stage_traces],
+            ["Orchestrator Agent", "Requirements Analyst", "Orchestrator Agent"],
+        )
         self.assertTrue(
             any("requirements.v1 contract" in finding for finding in result.review.findings)
         )

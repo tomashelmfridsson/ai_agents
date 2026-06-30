@@ -17,7 +17,10 @@ AGENT_TIMEOUT_SECONDS = 60
 
 
 class AgentTimeoutError(RuntimeError):
-    pass
+    def __init__(self, agent_name: str, timeout_seconds: int):
+        self.agent_name = agent_name
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"{agent_name} exceeded the {timeout_seconds}-second timeout.")
 
 
 @dataclass
@@ -51,9 +54,29 @@ class OrchestratorAgent:
         route_round = 1
         requirements_feedback: list[str] = []
         design_feedback: list[str] = []
-        current_stage = "requirements"
+        current_stage = "orchestrator"
 
         while True:
+            if current_stage == "orchestrator":
+                orchestrator_runtime = runtime_lookup.get("orchestrator")
+                initial_trace = self._build_initial_orchestrator_trace(
+                    route_round=route_round,
+                    runtime_config=orchestrator_runtime,
+                    run_controls=control_config,
+                )
+                stage_traces.append(initial_trace)
+                self._emit_event(
+                    event_callback,
+                    event_type="routing",
+                    agent_name="Orchestrator Agent",
+                    iteration=route_round,
+                    stage_index=0,
+                    message="Orchestrator selected Requirements Analyst as the first agent.",
+                    trace=initial_trace.__dict__,
+                )
+                current_stage = "requirements"
+                continue
+
             if current_stage == "requirements":
                 requirements_runtime = runtime_lookup.get("requirements_analyst")
                 self._emit_event(
@@ -67,6 +90,7 @@ class OrchestratorAgent:
                 started_at = time.perf_counter()
                 requirements = self._run_with_timeout(
                     agent_name="Requirements Analyst",
+                    runtime_config=requirements_runtime,
                     func=self.requirements_analyst.analyze,
                     args=(
                         requirements_text,
@@ -75,6 +99,15 @@ class OrchestratorAgent:
                     ),
                 )
                 duration_ms = self._elapsed_ms(started_at)
+                requirements_trace = self._build_requirements_trace(
+                    route_round,
+                    requirements_text,
+                    requirements,
+                    requirements_feedback,
+                    requirements_runtime,
+                    duration_ms,
+                )
+                stage_traces.append(requirements_trace)
                 self._emit_event(
                     event_callback,
                     event_type="stage_completed",
@@ -83,16 +116,7 @@ class OrchestratorAgent:
                     stage_index=1,
                     duration_ms=duration_ms,
                     message=f"Requirements Analyst completed in {duration_ms} ms.",
-                )
-                stage_traces.append(
-                    self._build_requirements_trace(
-                        route_round,
-                        requirements_text,
-                        requirements,
-                        requirements_feedback,
-                        requirements_runtime,
-                        duration_ms,
-                    )
+                    trace=requirements_trace.__dict__,
                 )
                 requirements_validation_findings = list(
                     self.requirements_analyst.last_execution.get("validation_findings") or []
@@ -159,10 +183,20 @@ class OrchestratorAgent:
                 started_at = time.perf_counter()
                 designs = self._run_with_timeout(
                     agent_name="Test Design Agent",
+                    runtime_config=design_runtime,
                     func=self.test_designer.design,
                     args=(requirements, design_feedback, design_runtime),
                 )
                 duration_ms = self._elapsed_ms(started_at)
+                design_trace = self._build_design_trace(
+                    route_round,
+                    requirements,
+                    designs,
+                    design_feedback,
+                    design_runtime,
+                    duration_ms,
+                )
+                stage_traces.append(design_trace)
                 self._emit_event(
                     event_callback,
                     event_type="stage_completed",
@@ -171,16 +205,7 @@ class OrchestratorAgent:
                     stage_index=2,
                     duration_ms=duration_ms,
                     message=f"Test Design Agent completed in {duration_ms} ms.",
-                )
-                stage_traces.append(
-                    self._build_design_trace(
-                        route_round,
-                        requirements,
-                        designs,
-                        design_feedback,
-                        design_runtime,
-                        duration_ms,
-                    )
+                    trace=design_trace.__dict__,
                 )
                 design_feedback = []
                 design_backtrack_feedback = self._build_design_backtrack_feedback(requirements)
@@ -237,10 +262,13 @@ class OrchestratorAgent:
             started_at = time.perf_counter()
             review = self._run_with_timeout(
                 agent_name="Review Agent",
+                runtime_config=review_runtime,
                 func=self.reviewer.review,
                 args=(requirements, designs, review_runtime),
             )
             duration_ms = self._elapsed_ms(started_at)
+            review_trace = self._build_review_trace(route_round, requirements, designs, review, review_runtime, duration_ms)
+            stage_traces.append(review_trace)
             self._emit_event(
                 event_callback,
                 event_type="stage_completed",
@@ -249,9 +277,7 @@ class OrchestratorAgent:
                 stage_index=3,
                 duration_ms=duration_ms,
                 message=f"Review Agent completed in {duration_ms} ms.",
-            )
-            stage_traces.append(
-                self._build_review_trace(route_round, requirements, designs, review, review_runtime, duration_ms)
+                trace=review_trace.__dict__,
             )
             if review.approved:
                 self._emit_event(
@@ -773,6 +799,57 @@ class OrchestratorAgent:
             duration_ms=duration_ms,
         )
 
+    def _build_initial_orchestrator_trace(
+        self,
+        route_round: int,
+        runtime_config: AgentRuntimeConfig | None,
+        run_controls: RunControlConfig,
+    ) -> StageTrace:
+        llm_active = bool(runtime_config and runtime_config.execution_mode == "LLM-backed")
+        return StageTrace(
+            iteration=route_round,
+            stage_index=0,
+            agent_name="Orchestrator Agent",
+            input_summary=[
+                "Initial routing decision before any worker agent starts.",
+                f"Maximum rounds: {run_controls.max_rounds}",
+                f"Maximum feedback messages: {run_controls.max_feedback_messages}",
+                f"Maximum feedback per agent pair: {run_controls.max_feedback_per_agent_pair}",
+            ],
+            output_summary=[
+                "Start the workflow with Requirements Analyst.",
+                "Requirements must be extracted before test design or review can continue.",
+            ],
+            status="route to requirements analyst",
+            reasoning_trace=[
+                *(
+                    [
+                        f"Use the configured orchestration mode under {runtime_config.model_id} to decide the first valid handoff.",
+                        "Requirements Analyst must run first because the downstream agents depend on structured requirements.",
+                        "Do not start Test Design or Review before the requirement contract exists.",
+                    ]
+                    if llm_active and runtime_config
+                    else [
+                        "Evaluate which agent has the minimum required inputs at the start of the run.",
+                        "Requirements Analyst must run first because the downstream agents depend on structured requirements.",
+                        "Do not start Test Design or Review before the requirement contract exists.",
+                    ]
+                ),
+            ],
+            agent_explanation=(
+                "The orchestrator starts the workflow by selecting the first agent that has enough information to act."
+            ),
+            decision_explanation=(
+                (
+                    f"Configured execution mode is LLM-backed with {runtime_config.model_id}, but the first routing decision is still constrained by the local workflow contract."
+                    if llm_active and runtime_config
+                    else "The run starts with Requirements Analyst because raw scenario text must be turned into structured requirements before downstream work can start."
+                )
+            ),
+            reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",
+            duration_ms=0,
+        )
+
     def _build_contract_failure_stop_trace(
         self,
         route_round: int,
@@ -891,16 +968,17 @@ class OrchestratorAgent:
     def _elapsed_ms(self, started_at: float) -> int:
         return max(0, int(round((time.perf_counter() - started_at) * 1000)))
 
-    def _run_with_timeout(self, agent_name: str, func, args: tuple):
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(func, *args)
-            try:
-                return future.result(timeout=AGENT_TIMEOUT_SECONDS)
-            except FuturesTimeoutError as exc:
-                future.cancel()
-                raise AgentTimeoutError(
-                    f"{agent_name} exceeded the {AGENT_TIMEOUT_SECONDS}-second timeout."
-                ) from exc
+    def _run_with_timeout(self, agent_name: str, runtime_config: AgentRuntimeConfig | None, func, args: tuple):
+        timeout_seconds = max(1, int(runtime_config.timeout_seconds if runtime_config else AGENT_TIMEOUT_SECONDS))
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(func, *args)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise AgentTimeoutError(agent_name=agent_name, timeout_seconds=timeout_seconds) from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _emit_event(
         self,
@@ -912,19 +990,21 @@ class OrchestratorAgent:
         stage_index: int,
         message: str,
         duration_ms: int = 0,
+        trace: dict | None = None,
     ) -> None:
         if not event_callback:
             return
-        event_callback(
-            {
-                "event_type": event_type,
-                "agent_name": agent_name,
-                "iteration": iteration,
-                "stage_index": stage_index,
-                "message": message,
-                "duration_ms": duration_ms,
-            }
-        )
+        payload = {
+            "event_type": event_type,
+            "agent_name": agent_name,
+            "iteration": iteration,
+            "stage_index": stage_index,
+            "message": message,
+            "duration_ms": duration_ms,
+        }
+        if trace is not None:
+            payload["trace"] = trace
+        event_callback(payload)
 
     def _explain_review_finding(self, finding: str) -> str:
         if "weak oracle definition" in finding:

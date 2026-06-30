@@ -19,16 +19,28 @@ MODEL_FAMILY_CHOICES = [
     "gpt-oss-120b",
 ]
 AGENT_PROVIDER_DEFAULTS = {
-    "orchestrator": "HF cheapest/free credits",
-    "requirements_analyst": "HF cheapest/free credits",
-    "test_design": "HF cheapest/free credits",
-    "review": "HF cheapest/free credits",
+    "orchestrator": "Ollama local",
+    "requirements_analyst": "Ollama local",
+    "test_design": "Ollama local",
+    "review": "Ollama local",
 }
 AGENT_MODEL_FAMILY_DEFAULTS = {
     "orchestrator": "Qwen 3 32B",
     "requirements_analyst": "Qwen 3 32B",
-    "test_design": "Llama 3.3 70B Instruct",
+    "test_design": "Qwen 3 32B",
     "review": "DeepSeek R1",
+}
+AGENT_MODEL_OVERRIDE_DEFAULTS = {
+    "orchestrator": "",
+    "requirements_analyst": "",
+    "test_design": "",
+    "review": "",
+}
+AGENT_TIMEOUT_DEFAULTS = {
+    "orchestrator": 60,
+    "requirements_analyst": 120,
+    "test_design": 90,
+    "review": 60,
 }
 AGENT_CONFIG_SPECS = [
     (
@@ -78,7 +90,10 @@ AGENT_CONFIG_SPECS = [
 ]
 
 
-def compose_model_id(provider_strategy: str, model_family: str) -> str:
+def compose_model_id(provider_strategy: str, model_family: str, model_override: str = "") -> str:
+    override = (model_override or "").strip()
+    if override:
+        return override
     if not provider_strategy or not model_family:
         return ""
     if provider_strategy == "Ollama local":
@@ -103,8 +118,17 @@ def compose_model_id(provider_strategy: str, model_family: str) -> str:
 
 def build_agent_runtime_configs(*values: str) -> list[AgentRuntimeConfig]:
     configs = []
+    legacy_stride = 4
+    extended_stride = 5
+    timeout_stride = 6
+    if len(values) >= len(AGENT_CONFIG_SPECS) * timeout_stride:
+        stride = timeout_stride
+    elif len(values) >= len(AGENT_CONFIG_SPECS) * extended_stride:
+        stride = extended_stride
+    else:
+        stride = legacy_stride
     for index, (agent_key, agent_name, _description, default_directives) in enumerate(AGENT_CONFIG_SPECS):
-        base = index * 4
+        base = index * stride
         execution_mode = values[base] if len(values) > base else EXECUTION_MODE_CHOICES[0]
         provider_strategy = (
             values[base + 1]
@@ -116,15 +140,34 @@ def build_agent_runtime_configs(*values: str) -> list[AgentRuntimeConfig]:
             if len(values) > base + 2
             else AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0])
         )
-        directives = values[base + 3] if len(values) > base + 3 else default_directives
+        model_override = (
+            values[base + 3]
+            if stride in {extended_stride, timeout_stride} and len(values) > base + 3
+            else AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, "")
+        )
+        timeout_seconds = (
+            max(1, int(float(values[base + 4])))
+            if stride == timeout_stride and len(values) > base + 4
+            else AGENT_TIMEOUT_DEFAULTS.get(agent_key, 60)
+        )
+        directives_index = (
+            base + 5
+            if stride == timeout_stride
+            else base + 4
+            if stride == extended_stride
+            else base + 3
+        )
+        directives = values[directives_index] if len(values) > directives_index else default_directives
         llm_active = execution_mode == "LLM-backed"
         config = AgentRuntimeConfig(
             agent_key=agent_key,
             agent_name=agent_name,
             execution_mode=execution_mode,
+            timeout_seconds=timeout_seconds,
             provider_strategy=provider_strategy if llm_active else "",
             model_family=model_family if llm_active else "",
-            model_id=compose_model_id(provider_strategy, model_family) if llm_active else "",
+            model_override=model_override if llm_active else "",
+            model_id=compose_model_id(provider_strategy, model_family, model_override) if llm_active else "",
             directives=(directives or "").strip(),
         )
         if llm_active:

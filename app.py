@@ -1,8 +1,14 @@
 import html
 import inspect
 import os
+import queue
+import subprocess
 import sys
+import threading
+import time
+from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 import gradio as gr
 
@@ -15,7 +21,9 @@ if str(SRC) not in sys.path:
 from qa_platform.agent_runtime import (
     AGENT_CONFIG_SPECS,
     AGENT_MODEL_FAMILY_DEFAULTS,
+    AGENT_MODEL_OVERRIDE_DEFAULTS,
     AGENT_PROVIDER_DEFAULTS,
+    AGENT_TIMEOUT_DEFAULTS,
     EXECUTION_MODE_CHOICES,
     MODEL_FAMILY_CHOICES,
     PROVIDER_STRATEGY_CHOICES,
@@ -23,7 +31,7 @@ from qa_platform.agent_runtime import (
 )
 from qa_platform.llm_runtime import LLMRuntimeError
 from qa_platform.orchestrator import AGENT_TIMEOUT_SECONDS, AgentTimeoutError, OrchestratorAgent
-from qa_platform.models import RunControlConfig
+from qa_platform.models import AgentRuntimeConfig, RunControlConfig
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
     DEFAULT_SCENARIO,
@@ -31,9 +39,15 @@ from qa_platform.sample_scenarios import (
     SAMPLE_SCENARIOS,
     load_sample_scenario,
 )
-from qa_platform.storage import save_run
+from qa_platform.storage import get_log_dir, save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
+DEFAULT_OLLAMA_MODEL_CHOICES = [
+    "qwen3:8b",
+    "deepseek-r1:8b",
+    "gemma3:4b",
+    "llama3:latest",
+]
 
 
 APP_THEME = gr.themes.Soft(
@@ -48,6 +62,233 @@ def _blocks_support_launch_theming() -> bool:
     return "theme" in launch_signature.parameters and "css" in launch_signature.parameters
 
 
+def build_idle_status() -> str:
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Run status</h3>"
+        "<p class='agent-config-text'>Ready to run. Start the workflow to execute the configured agents and save a traceable run log.</p>"
+        "</section>"
+    )
+
+
+def build_idle_report() -> str:
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Run report</h3>"
+        "<p class='agent-config-text'>No run has been executed yet. After the first run, this panel will show summaries, mappings, agent traces, review findings, and orchestrator decisions.</p>"
+        "</section>"
+    )
+
+
+def build_idle_runtime_timeline() -> str:
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Runtime activity</h3>"
+        "<p class='agent-config-text'>No runtime activity yet. After a run starts, this panel will show agent events, model names, and a live tail of the current run log.</p>"
+        "</section>"
+    )
+
+
+def _build_live_log_path(title: str) -> Path:
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in (title or "scenario")).strip("-")
+    slug = "-".join(part for part in slug.split("-") if part) or "scenario"
+    return log_dir / f"{slug}-{timestamp}-live.txt"
+
+
+def _write_live_log_header(
+    log_path: Path,
+    *,
+    title: str,
+    requirements: str,
+    agent_configs: list[AgentRuntimeConfig],
+) -> None:
+    lines = [
+        f"Scenario: {title}",
+        f"Started at: {datetime.now().isoformat(timespec='seconds')}",
+        "",
+        "Source requirements:",
+        requirements,
+        "",
+        "Configured agent runtime:",
+    ]
+    for config in agent_configs:
+        lines.extend(
+            [
+                f"- {config.agent_name}",
+                f"  Execution mode: {config.execution_mode}",
+                f"  Timeout: {config.timeout_seconds} seconds",
+                f"  Provider: {config.provider_strategy or 'Structured baseline'}",
+                f"  Resolved model: {config.model_id or 'deterministic implementation'}",
+            ]
+        )
+    lines.extend(["", "Runtime events:"])
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _append_live_log(log_path: Path, lines: list[str]) -> None:
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+
+def _append_runtime_event_to_live_log(
+    log_path: Path,
+    event: dict[str, object],
+    agent_configs: list[AgentRuntimeConfig],
+) -> None:
+    runtime_config = _find_agent_runtime_config(str(event.get("agent_name", "")), agent_configs)
+    model_label = runtime_config.model_id if runtime_config and runtime_config.model_id else "not available"
+    _append_live_log(
+        log_path,
+        [
+            (
+                f"[{datetime.now().isoformat(timespec='seconds')}] "
+                f"cycle={event.get('iteration', '-')} stage={event.get('stage_index', '-')} "
+                f"agent={event.get('agent_name', '-')} event={event.get('event_type', '-')} "
+                f"model={model_label} duration_ms={event.get('duration_ms', 0)}"
+            ),
+            f"message: {event.get('message', '')}",
+            "",
+        ],
+    )
+
+
+def build_error_status(message: str) -> str:
+    return (
+        "<section class='diagram-card error-card'>"
+        "<h3>Run status</h3>"
+        "<p class='result-status error-status'>Run stopped because of an error.</p>"
+        f"<p class='agent-config-text error-text'>{html.escape(message)}</p>"
+        "</section>"
+    )
+
+
+def _find_agent_runtime_config(
+    agent_name: str | None,
+    agent_configs: list[AgentRuntimeConfig],
+) -> AgentRuntimeConfig | None:
+    if not agent_name:
+        return None
+    normalized = agent_name.strip().lower()
+    for config in agent_configs:
+        candidate = config.agent_name.strip().lower()
+        if candidate == normalized or candidate.replace(" agent", "") == normalized:
+            return config
+    return None
+
+
+def build_error_report(
+    message: str,
+    runtime_events: list[dict[str, object]] | None = None,
+    agent_configs: list[AgentRuntimeConfig] | None = None,
+    log_path: str | None = None,
+    completed_traces: list[dict[str, object]] | None = None,
+) -> str:
+    runtime_events = runtime_events or []
+    agent_configs = agent_configs or []
+    last_event = runtime_events[-1] if runtime_events else {}
+    last_agent = str(last_event.get("agent_name", "")) or None
+    last_event_type = str(last_event.get("event_type", "-")) if runtime_events else "-"
+    completed_count = sum(1 for event in runtime_events if event.get("event_type") == "stage_completed")
+    last_iteration = str(last_event.get("iteration", "-")) if runtime_events else "-"
+    runtime_config = _find_agent_runtime_config(last_agent, agent_configs)
+    model_label = runtime_config.model_id if runtime_config and runtime_config.model_id else "not available"
+    timeout_label = (
+        f"{runtime_config.timeout_seconds} seconds"
+        if runtime_config and getattr(runtime_config, "timeout_seconds", None)
+        else "not available"
+    )
+    items = [
+        f"<li>Last active agent: {html.escape(last_agent or 'not available')}</li>",
+        f"<li>Model for that agent: {html.escape(model_label)}</li>",
+        f"<li>Configured timeout for that agent: {html.escape(timeout_label)}</li>",
+        f"<li>Last runtime event: {html.escape(last_event_type)}</li>",
+        f"<li>Workflow cycle reached: {html.escape(last_iteration)}</li>",
+        f"<li>Completed stages before the stop: {completed_count}</li>",
+        f"<li>Log file: {html.escape(log_path or 'not available')}</li>",
+        "<li>Check local services such as `ollama serve` and the configured base URL if the model did not answer.</li>",
+        "<li>Retry after correcting the configuration, or switch the affected agent to `Structured baseline`.</li>",
+    ]
+    partial_results = ""
+    if completed_traces:
+        partial_results = (
+            "<div class='report-shell'>"
+            "<section class='diagram-card'>"
+            "<h3>Completed agent results</h3>"
+            "<p class='agent-config-text'>These agent results were completed before the run stopped.</p>"
+            "</section>"
+            "<div class='stage-grid'>"
+            + build_trace_sections(completed_traces, [config.__dict__ for config in agent_configs])
+            + "</div></div>"
+        )
+    return (
+        "<section class='diagram-card error-card'>"
+        "<h3>Run report</h3>"
+        "<p class='agent-config-text error-text'>"
+        f"{html.escape(message)}"
+        "</p>"
+        f"<ul class='summary-list'>{''.join(items)}</ul>"
+        "</section>"
+        + partial_results
+    )
+
+
+def build_running_status(runtime_events: list[dict[str, object]]) -> str:
+    last_message = (
+        str(runtime_events[-1].get("message", "Workflow is running."))
+        if runtime_events
+        else "Workflow is starting."
+    )
+    completed_count = sum(1 for event in runtime_events if event.get("event_type") == "stage_completed")
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Run status</h3>"
+        "<p class='result-status'>Workflow is running.</p>"
+        f"<p class='agent-config-text'>{html.escape(last_message)}</p>"
+        f"<p class='agent-config-text'>Completed stages so far: {completed_count}.</p>"
+        "</section>"
+    )
+
+
+def build_running_report(runtime_events: list[dict[str, object]]) -> str:
+    return build_running_report_with_log(runtime_events, None)
+
+
+def build_running_report_with_log(runtime_events: list[dict[str, object]], log_path: str | None) -> str:
+    last_agent = str(runtime_events[-1].get("agent_name", "-")) if runtime_events else "-"
+    last_event = str(runtime_events[-1].get("event_type", "-")) if runtime_events else "-"
+    items = [
+        f"<li>Latest agent: {html.escape(last_agent)}</li>",
+        f"<li>Latest event: {html.escape(last_event)}</li>",
+        f"<li>Runtime events recorded: {len(runtime_events)}</li>",
+        f"<li>Live log file: {html.escape(log_path or 'not available')}</li>",
+    ]
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Run report</h3>"
+        "<p class='agent-config-text'>Workflow is in progress. This panel updates as agents start, complete, or route work.</p>"
+        f"<ul class='summary-list'>{''.join(items)}</ul>"
+        "</section>"
+    )
+
+
+def build_live_log_preview(log_path: str | None, line_count: int = 12) -> str:
+    if not log_path:
+        return "<p class='agent-config-text'>Live log file is not available yet.</p>"
+    path = Path(log_path)
+    if not path.exists():
+        return f"<p class='agent-config-text'>Waiting for live log file: {html.escape(log_path)}</p>"
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    preview = "\n".join(lines[-line_count:])
+    return (
+        "<div class='live-log-preview'>"
+        f"<pre>{html.escape(preview)}</pre>"
+        "</div>"
+    )
+
+
 def process_requirements(
     title: str,
     requirements: str,
@@ -58,11 +299,13 @@ def process_requirements(
     openai_base_url: str,
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
-) -> tuple[str, str, str, str]:
+) -> Iterator[tuple[str, str, str | None, str]]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
-        raise gr.Error("Requirements saknas. Fyll i minst ett krav innan du kör workflow.")
+        message = "Requirements saknas. Fyll i minst ett krav innan du kör workflow."
+        yield build_error_status(message), build_error_report(message), None, build_idle_runtime_timeline()
+        return
     round_limit = max(1, int(max_rounds))
     run_controls = RunControlConfig(
         max_rounds=round_limit,
@@ -74,33 +317,131 @@ def process_requirements(
     if custom_openai_base_url:
         os.environ["OPENAI_BASE_URL"] = custom_openai_base_url
     agent_configs = build_agent_runtime_configs(*agent_values)
+    live_log_path = _build_live_log_path(normalized_title)
+    _write_live_log_header(
+        live_log_path,
+        title=normalized_title,
+        requirements=normalized_requirements,
+        agent_configs=agent_configs,
+    )
     runtime_events: list[dict[str, object]] = []
+    completed_stage_traces: list[dict[str, object]] = []
+    event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+    worker_state: dict[str, object] = {
+        "done": False,
+        "result": None,
+        "error": None,
+    }
+
+    yield (
+        build_running_status(runtime_events),
+        build_running_report_with_log(runtime_events, str(live_log_path)),
+        gr.update(value=str(live_log_path)),
+        build_idle_runtime_timeline(),
+    )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
-        runtime_events.append(event)
-        progress(None, desc=str(event.get("message", "Processing workflow...")))
+        event_queue.put(("event", event))
 
-    try:
-        progress(None, desc="Starting workflow.")
-        result = OrchestratorAgent(max_iterations=round_limit).process(
-            title=normalized_title,
-            requirements_text=normalized_requirements,
-            agent_configs=agent_configs,
-            run_controls=run_controls,
-            event_callback=handle_runtime_event,
+    def run_workflow() -> None:
+        try:
+            worker_state["result"] = OrchestratorAgent(max_iterations=round_limit).process(
+                title=normalized_title,
+                requirements_text=normalized_requirements,
+                agent_configs=agent_configs,
+                run_controls=run_controls,
+                event_callback=handle_runtime_event,
+            )
+        except Exception as exc:  # noqa: BLE001
+            worker_state["error"] = exc
+        finally:
+            worker_state["done"] = True
+            event_queue.put(("done", None))
+
+    progress(None, desc="Starting workflow.")
+    worker = threading.Thread(target=run_workflow, daemon=True)
+    worker.start()
+
+    while True:
+        emitted = False
+        while True:
+            try:
+                kind, payload = event_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if kind == "event":
+                event = payload
+                assert isinstance(event, dict)
+                runtime_config = _find_agent_runtime_config(str(event.get("agent_name", "")), agent_configs)
+                if runtime_config and runtime_config.model_id:
+                    event = {**event, "model_id": runtime_config.model_id}
+                runtime_events.append(event)
+                trace = event.get("trace")
+                if isinstance(trace, dict):
+                    completed_stage_traces.append(trace)
+                _append_runtime_event_to_live_log(live_log_path, event, agent_configs)
+                progress(None, desc=str(event.get("message", "Processing workflow...")))
+                yield (
+                    build_running_status(runtime_events),
+                    build_running_report_with_log(runtime_events, str(live_log_path)),
+                    gr.update(value=str(live_log_path)),
+                    build_runtime_timeline(runtime_events, str(live_log_path)),
+                )
+                emitted = True
+        if worker_state["done"] and event_queue.empty():
+            break
+        if not emitted:
+            time.sleep(0.1)
+
+    error = worker_state["error"]
+    if isinstance(error, LLMRuntimeError):
+        message = format_user_error(str(error))
+        yield (
+            build_error_status(message),
+            build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            gr.update(value=str(live_log_path)),
+            build_runtime_timeline(runtime_events, str(live_log_path)),
         )
-    except LLMRuntimeError as exc:
-        raise gr.Error(format_user_error(str(exc))) from exc
-    except AgentTimeoutError as exc:
-        raise gr.Error(
-            f"En agent hann inte klart inom timeoutgränsen på {AGENT_TIMEOUT_SECONDS} sekunder. {exc}"
-        ) from exc
+        return
+    if isinstance(error, AgentTimeoutError):
+        message = f"An agent did not finish within its configured timeout. {error}"
+        _append_live_log(
+            live_log_path,
+            [
+                f"[{datetime.now().isoformat(timespec='seconds')}] ERROR timeout",
+                message,
+                "",
+            ],
+        )
+        yield (
+            build_error_status(message),
+            build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            gr.update(value=str(live_log_path)),
+            build_runtime_timeline(runtime_events, str(live_log_path)),
+        )
+        return
+    if error is not None:
+        raise error
+
+    result = worker_state["result"]
+    if result is None:
+        raise RuntimeError("Workflow finished without result or error.")
     payload = result.to_dict()
     saved_run = save_run(payload)
     payload["run_id"] = saved_run.run_id
     payload["stored_at"] = saved_run.stored_at
     payload["storage_path"] = saved_run.db_path
     payload["log_path"] = saved_run.log_path
+    _append_live_log(
+        live_log_path,
+        [
+            f"[{datetime.now().isoformat(timespec='seconds')}] RUN COMPLETED",
+            f"Saved run id: {saved_run.run_id}",
+            f"Detailed saved log: {saved_run.log_path}",
+            "",
+        ],
+    )
     findings_count = len(payload["review"]["findings"])
     improvement_count = len(payload["review"]["improvement_actions"])
     live_llm_agents = [config.agent_name for config in agent_configs if config.execution_mode == "LLM-backed"]
@@ -109,17 +450,25 @@ def process_requirements(
         if live_llm_agents
         else ""
     )
+    status_items = [
+        f"<li>Completed with {payload['iterations']} backtracking cycle(s) within a limit of {round_limit}.</li>",
+        f"<li>Coverage ratio: {payload['review']['coverage_ratio']}.</li>",
+        f"<li>Approved: {'yes' if payload['review']['approved'] else 'no'}.</li>",
+        f"<li>Findings: {findings_count}. Improvement actions: {improvement_count}.</li>",
+        f"<li>Log file: {html.escape(payload['log_path'])}</li>",
+    ]
+    if llm_note:
+        status_items.append(f"<li>{html.escape(llm_note.strip())}</li>")
     status = (
-        "<div class='result-status'>"
-        f"Saved as run #{payload['run_id']}. "
-        f"Completed with {payload['iterations']} backtracking cycle(s) within a limit of {round_limit}. "
-        f"Coverage ratio: {payload['review']['coverage_ratio']}. "
-        f"Approved: {'yes' if payload['review']['approved'] else 'no'}. "
-        f"Findings: {findings_count}. Improvement actions: {improvement_count}. "
-        f"Log file: {html.escape(payload['log_path'])}.{llm_note}"
-        "</div>"
+        "<section class='diagram-card'>"
+        "<h3>Run status</h3>"
+        f"<p class='result-status'>Saved as run #{payload['run_id']}.</p>"
+        "<ul class='summary-list'>"
+        + "".join(status_items)
+        + "</ul>"
+        "</section>"
     )
-    return status, build_workflow_report(payload), saved_run.log_path, build_runtime_timeline(runtime_events)
+    yield status, build_workflow_report(payload), gr.update(value=saved_run.log_path), build_runtime_timeline(runtime_events, str(live_log_path))
 
 
 def mark_custom_scenario(*_args: str) -> str:
@@ -148,6 +497,16 @@ def format_user_error(raw_message: str) -> str:
         return (
             "Live LLM-körningen kunde inte nå modellens endpoint. Kontrollera nätverk, lokal backend eller bas-URL och försök igen."
         )
+    if "requested local ollama model" in lowered and "is not installed" in lowered:
+        return (
+            "Live LLM-körningen stoppades direkt eftersom den valda Ollama-modellen inte finns lokalt. "
+            "Pull:a modellen först med `ollama pull ...`, eller välj en modell som redan är installerad."
+        )
+    if "could not reach local ollama" in lowered or "did not respond to model discovery" in lowered:
+        return (
+            "Live LLM-körningen kunde inte verifiera lokala Ollama-modeller. "
+            "Kontrollera att `ollama serve` kör, att bas-URL:en stämmer, och försök igen."
+        )
     if "model response did not contain" in lowered or "could not locate a json object" in lowered:
         return (
             "Modellen svarade, men i ett format som inte kunde tolkas korrekt. "
@@ -161,19 +520,21 @@ def format_user_error(raw_message: str) -> str:
     return f"Körningen stoppades av ett fel: {raw_message}"
 
 
-def build_runtime_timeline(runtime_events: list[dict[str, object]]) -> str:
+def build_runtime_timeline(runtime_events: list[dict[str, object]], log_path: str | None = None) -> str:
     if not runtime_events:
-        return "<div class='empty-state'>No runtime events recorded yet.</div>"
+        return build_idle_runtime_timeline()
 
     rows = []
     for event in runtime_events:
         duration_ms = int(event.get("duration_ms", 0) or 0)
         duration_label = f"{duration_ms} ms" if duration_ms > 0 else "-"
+        model_label = str(event.get("model_id", "-"))
         rows.append(
             "<tr>"
             f"<td>{html.escape(str(event.get('iteration', '')))}</td>"
             f"<td>{html.escape(str(event.get('stage_index', '')))}</td>"
             f"<td>{html.escape(str(event.get('agent_name', '')))}</td>"
+            f"<td>{html.escape(model_label)}</td>"
             f"<td>{html.escape(str(event.get('event_type', '')))}</td>"
             f"<td>{html.escape(duration_label)}</td>"
             f"<td>{html.escape(str(event.get('message', '')))}</td>"
@@ -183,9 +544,12 @@ def build_runtime_timeline(runtime_events: list[dict[str, object]]) -> str:
         "<section class='diagram-card'>"
         "<h3>Runtime activity</h3>"
         "<p class='agent-config-text'>This panel shows which agent was active, when routing happened, and how long completed agent passes took.</p>"
-        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Event</th><th>Time</th><th>Message</th></tr></thead><tbody>"
+        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Model</th><th>Event</th><th>Time</th><th>Message</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
+        + "<h3>Live log tail</h3>"
+        + build_live_log_preview(log_path)
+        + 
         "</section>"
     )
 
@@ -248,21 +612,79 @@ def build_debug_panel(payload: dict) -> str:
     )
 
 
-def format_llm_config_summary(provider_strategy: str, model_family: str) -> str:
+def format_llm_config_summary(provider_strategy: str, model_family: str, model_override: str) -> str:
     provider = provider_strategy or "Provider not set"
+    override = (model_override or "").strip()
+    if override:
+        return f"LLM configuration: {provider} / model: {override}"
     model = model_family or "Model not set"
-    return f"LLM configuration: {provider} / {model}"
+    return f"LLM configuration: {provider} / model: {model}"
 
 
 def format_execution_mode_help(execution_mode: str) -> str:
     if execution_mode == "LLM-backed":
-        return "LLM-backed enables live model execution where implemented and stores the resolved runtime details in the trace. Orchestration limits are still enforced locally."
-    return "Structured baseline - deterministic implementation."
+        return "LLM-backed means the agent calls the selected model during execution. Timeouts and run limits are still enforced by the app."
+    return "Structured baseline means the agent uses the built-in deterministic logic without calling a model."
 
 
-def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict]:
+def get_ollama_model_choices() -> list[str]:
+    try:
+        completed = subprocess.run(
+            ["ollama", "list"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, TimeoutError):
+        return DEFAULT_OLLAMA_MODEL_CHOICES.copy()
+
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if len(lines) <= 1:
+        return DEFAULT_OLLAMA_MODEL_CHOICES.copy()
+
+    models: list[str] = []
+    for line in lines[1:]:
+        name = line.split()[0].strip()
+        if name and name not in models:
+            models.append(name)
+    return models or DEFAULT_OLLAMA_MODEL_CHOICES.copy()
+
+
+def get_model_choices(provider_strategy: str) -> list[str]:
+    if provider_strategy == "Ollama local":
+        return get_ollama_model_choices()
+    return MODEL_FAMILY_CHOICES
+
+
+def get_initial_model_value(provider_strategy: str, model_family: str) -> str:
+    choices = get_model_choices(provider_strategy)
+    if provider_strategy == "Ollama local":
+        ollama_map = {
+            "Qwen 3 32B": "qwen3:8b",
+            "Llama 3.3 70B Instruct": "llama3:latest",
+            "DeepSeek R1": "deepseek-r1:8b",
+            "gpt-oss-120b": "gpt-oss:120b",
+        }
+        resolved = ollama_map.get(model_family, model_family)
+        if resolved in choices:
+            return resolved
+    return model_family if model_family in choices else choices[0]
+
+
+def update_model_dropdown(provider_strategy: str, current_value: str, model_override: str) -> tuple[dict, str]:
+    choices = get_model_choices(provider_strategy)
+    value = current_value if current_value in choices else get_initial_model_value(provider_strategy, current_value)
+    return (
+        gr.update(choices=choices, value=value, label="Model"),
+        format_llm_config_summary(provider_strategy, value, model_override),
+    )
+
+
+def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict, dict]:
     is_llm = execution_mode == "LLM-backed"
     return (
+        gr.update(visible=is_llm),
         gr.update(visible=is_llm),
         gr.update(visible=is_llm),
         gr.update(visible=is_llm),
@@ -695,9 +1117,20 @@ CUSTOM_CSS = """
       border: none !important;
     }
     .result-status {
-      font-size: 1rem;
-      color: var(--app-muted) !important;
+      font-size: 1.05rem;
+      color: var(--app-ink) !important;
       margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .error-card {
+      border-color: rgba(143, 53, 24, 0.28);
+      background: linear-gradient(180deg, rgba(255, 247, 243, 0.99), rgba(255, 251, 247, 0.99));
+    }
+    .error-status {
+      color: var(--app-accent) !important;
+    }
+    .error-text {
+      color: var(--app-ink) !important;
       font-weight: 600;
     }
     .report-shell { display: grid; gap: 18px; }
@@ -943,9 +1376,9 @@ def build_demo() -> gr.Blocks:
                     gr.HTML(
                         """
                         <div class="baseline-note">
-                          <strong>Agent feedback budget</strong> defines how much direct back-and-forth the future LLM agents may use.
-                          Use it to stop Requirements Analyst, Test Design, and Review from sending too many correction messages to each other.
-                          The current structured baseline stores these limits now, but still reruns the full pipeline instead of routing targeted feedback.
+                          <strong>Agent feedback budget</strong> controls how many correction rounds the agents may use.
+                          If one agent finds problems, it can send the work back, but these limits stop unnecessary back-and-forth.
+                          Right now the app stores these settings and uses them as execution limits.
                         </div>
                         """
                     )
@@ -962,11 +1395,9 @@ def build_demo() -> gr.Blocks:
                     gr.HTML(
                         """
                         <div class="baseline-note">
-                          <strong>Local Ollama</strong> works best when `ollama serve` is running and the mapped models are already available locally.
-                          Typical pulls:
-                          `ollama pull qwen3:32b`,
-                          `ollama pull llama3.3:70b`,
-                          `ollama pull deepseek-r1:32b`.
+                          <strong>Local Ollama</strong> reads installed models from your local Ollama environment.
+                          The list under <em>Model</em> should therefore match `ollama list`.
+                          If you want to enter an exact model name manually, use <em>Model override</em>, for example `qwen3:8b`.
                         </div>
                         """
                     )
@@ -992,10 +1423,16 @@ def build_demo() -> gr.Blocks:
                                     value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
                                     elem_classes=["execution-mode-help"],
                                 )
+                                initial_provider = AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0])
+                                initial_model = get_initial_model_value(
+                                    initial_provider,
+                                    AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                )
                                 llm_summary = gr.Markdown(
                                     value=format_llm_config_summary(
-                                        AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
-                                        AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                        initial_provider,
+                                        initial_model,
+                                        AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
                                     ),
                                     elem_classes=["llm-summary"],
                                     visible=True,
@@ -1003,13 +1440,27 @@ def build_demo() -> gr.Blocks:
                                 provider_strategy_input = gr.Dropdown(
                                     label="Provider strategy",
                                     choices=PROVIDER_STRATEGY_CHOICES,
-                                    value=AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0]),
+                                    value=initial_provider,
                                     visible=True,
                                 )
                                 model_family_input = gr.Dropdown(
-                                    label="Model family",
-                                    choices=MODEL_FAMILY_CHOICES,
-                                    value=AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                    label="Model",
+                                    choices=get_model_choices(initial_provider),
+                                    value=initial_model,
+                                    visible=True,
+                                )
+                                model_override_input = gr.Textbox(
+                                    label="Model override (optional)",
+                                    value=AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
+                                    placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b, openai/gpt-oss-120b",
+                                    visible=True,
+                                )
+                                timeout_input = gr.Slider(
+                                    label="Agent timeout (seconds)",
+                                    minimum=30,
+                                    maximum=300,
+                                    step=15,
+                                    value=AGENT_TIMEOUT_DEFAULTS.get(agent_key, AGENT_TIMEOUT_SECONDS),
                                     visible=True,
                                 )
                                 directives_input = gr.Textbox(
@@ -1019,13 +1470,18 @@ def build_demo() -> gr.Blocks:
                                     visible=True,
                                 )
                                 provider_strategy_input.change(
-                                    fn=format_llm_config_summary,
-                                    inputs=[provider_strategy_input, model_family_input],
-                                    outputs=[llm_summary],
+                                    fn=update_model_dropdown,
+                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
+                                    outputs=[model_family_input, llm_summary],
                                 )
                                 model_family_input.change(
                                     fn=format_llm_config_summary,
-                                    inputs=[provider_strategy_input, model_family_input],
+                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
+                                    outputs=[llm_summary],
+                                )
+                                model_override_input.change(
+                                    fn=format_llm_config_summary,
+                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
                                     outputs=[llm_summary],
                                 )
                                 execution_mode_input.change(
@@ -1040,17 +1496,21 @@ def build_demo() -> gr.Blocks:
                                         llm_summary,
                                         provider_strategy_input,
                                         model_family_input,
+                                        model_override_input,
+                                        timeout_input,
                                         directives_input,
                                     ],
                                 )
-                            agent_config_inputs.extend(
-                                [
-                                    execution_mode_input,
-                                    provider_strategy_input,
-                                    model_family_input,
-                                    directives_input,
-                                ]
-                            )
+                                agent_config_inputs.extend(
+                                    [
+                                        execution_mode_input,
+                                        provider_strategy_input,
+                                        model_family_input,
+                                        model_override_input,
+                                        timeout_input,
+                                        directives_input,
+                                    ]
+                                )
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Scenario")
                 scenario_picker = gr.Dropdown(
@@ -1069,18 +1529,17 @@ def build_demo() -> gr.Blocks:
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Result")
                 status_output = gr.HTML(
-                    value="<div class='result-status'>Waiting for input.</div>"
-                    ,
+                    value=build_idle_status(),
                     show_label=False,
                     container=False,
                 )
                 result_output = gr.HTML(
-                    value="<div class='empty-state'>No run has been executed yet. Start the workflow to inspect stages, technical outputs, review findings, and orchestration decisions.</div>",
+                    value=build_idle_report(),
                     show_label=False,
                     container=False,
                 )
                 runtime_output = gr.HTML(
-                    value="<div class='empty-state'>No runtime activity yet.</div>",
+                    value=build_idle_runtime_timeline(),
                     show_label=False,
                     container=False,
                 )
@@ -1238,14 +1697,12 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
         directives = config.get("directives") or "No extra directives."
         llm_active = config.get("execution_mode") == "LLM-backed"
         model_id = config.get("model_id") or ("Not active in structured baseline" if not llm_active else "Not set")
-        provider_strategy = config.get("provider_strategy") or ("Not active in structured baseline" if not llm_active else "Not set")
-        model_family = config.get("model_family") or ("Not active in structured baseline" if not llm_active else "Not set")
+        timeout_seconds = config.get("timeout_seconds", AGENT_TIMEOUT_SECONDS)
         rows.append(
             "<tr>"
             f"<td>{html.escape(config['agent_name'])}</td>"
             f"<td>{html.escape(config['execution_mode'])}</td>"
-            f"<td>{html.escape(provider_strategy)}</td>"
-            f"<td>{html.escape(model_family)}</td>"
+            f"<td>{html.escape(str(timeout_seconds))}</td>"
             f"<td>{html.escape(model_id)}</td>"
             f"<td>{html.escape(directives)}</td>"
             "</tr>"
@@ -1257,7 +1714,7 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
         f"{controls_table}"
         "<h3>Agent runtime configuration</h3>"
         "<p class='agent-config-text'>This run stores per-agent execution settings and the resolved live model details for every LLM-backed agent.</p>"
-        "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Provider strategy</th><th>Model family</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
+        "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Timeout (s)</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"
         "</section>"

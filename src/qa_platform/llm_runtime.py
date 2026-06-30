@@ -17,6 +17,7 @@ class LLMRuntimeError(RuntimeError):
 
 
 HTTP_TIMEOUT_SECONDS = 55
+OLLAMA_DISCOVERY_TIMEOUT_SECONDS = 2
 
 
 @dataclass
@@ -52,9 +53,9 @@ def resolve_live_model_id(runtime_config: AgentRuntimeConfig) -> str:
         "gpt-oss-120b": "openai/gpt-oss-120b",
     }
     ollama_family_map = {
-        "Qwen 3 32B": "qwen3:32b",
-        "Llama 3.3 70B Instruct": "llama3.3:70b",
-        "DeepSeek R1": "deepseek-r1:32b",
+        "Qwen 3 32B": "qwen3:8b",
+        "Llama 3.3 70B Instruct": "llama3:latest",
+        "DeepSeek R1": "deepseek-r1:8b",
         "gpt-oss-120b": "gpt-oss:120b",
     }
     recommended_family = {
@@ -63,6 +64,9 @@ def resolve_live_model_id(runtime_config: AgentRuntimeConfig) -> str:
         "test_design": "Llama 3.3 70B Instruct",
         "review": "DeepSeek R1",
     }.get(runtime_config.agent_key, "Qwen 3 32B")
+    override = (runtime_config.model_override or "").strip()
+    if override:
+        return override
     family = runtime_config.model_family or recommended_family
     strategy = runtime_config.provider_strategy
 
@@ -71,7 +75,7 @@ def resolve_live_model_id(runtime_config: AgentRuntimeConfig) -> str:
     if strategy == "HF fastest":
         return f"{hf_family_map.get(family, hf_family_map[recommended_family])}:fastest"
     if strategy == "Ollama local":
-        return ollama_family_map.get(family, ollama_family_map[recommended_family])
+        return ollama_family_map.get(family, family)
     if strategy == "Custom OpenAI-compatible":
         return hf_family_map.get(family, hf_family_map[recommended_family])
     return runtime_config.model_id or hf_family_map[recommended_family]
@@ -97,6 +101,7 @@ def call_structured_llm(
         )
 
     endpoint, api_key = _resolve_endpoint_and_key(runtime_config)
+    _validate_runtime_config(runtime_config)
     messages = [
         {"role": "system", "content": system_prompt.strip()},
         {"role": "user", "content": user_prompt.strip()},
@@ -323,12 +328,62 @@ def _candidate_model_ids(runtime_config: AgentRuntimeConfig) -> list[str]:
     return candidates
 
 
+def _validate_runtime_config(runtime_config: AgentRuntimeConfig) -> None:
+    if runtime_config.provider_strategy != "Ollama local":
+        return
+    _assert_ollama_model_available(
+        base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"),
+        model_id=resolve_live_model_id(runtime_config),
+    )
+
+
 def _normalize_chat_endpoint(base_url: str) -> str:
     if base_url.endswith("/chat/completions"):
         return base_url
     if base_url.endswith("/v1"):
         return f"{base_url}/chat/completions"
     return f"{base_url}/v1/chat/completions"
+
+
+def _ollama_tags_endpoint(base_url: str) -> str:
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3]
+    if base_url.endswith("/v1/chat/completions"):
+        base_url = base_url[: -len("/v1/chat/completions")]
+    return f"{base_url.rstrip('/')}/api/tags"
+
+
+def _assert_ollama_model_available(base_url: str, model_id: str) -> None:
+    req = request.Request(_ollama_tags_endpoint(base_url), method="GET")
+    try:
+        with request.urlopen(req, timeout=OLLAMA_DISCOVERY_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise LLMRuntimeError(
+            "Could not verify local Ollama models before execution. "
+            f"HTTP {exc.code} from {_ollama_tags_endpoint(base_url)}: {_summarize_error_detail(detail)}"
+        ) from exc
+    except error.URLError as exc:
+        raise LLMRuntimeError(
+            f"Could not reach local Ollama at {base_url} while checking available models: {exc.reason}"
+        ) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise LLMRuntimeError(
+            f"Local Ollama at {base_url} did not respond to model discovery within {OLLAMA_DISCOVERY_TIMEOUT_SECONDS} seconds."
+        ) from exc
+
+    available_models = {
+        str(model.get("model") or "").strip()
+        for model in (payload.get("models") or [])
+        if isinstance(model, dict)
+    }
+    if model_id not in available_models:
+        available_list = ", ".join(sorted(name for name in available_models if name)) or "inga modeller hittades"
+        raise LLMRuntimeError(
+            f"Requested local Ollama model '{model_id}' is not installed at {base_url}. "
+            f"Available models: {available_list}. Pull the model first with `ollama pull {model_id}`."
+        )
 
 
 def _post_hf_inference_chat_completion(
