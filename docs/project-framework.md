@@ -72,6 +72,32 @@ Bedöm varje plattform utifrån följande kriterier:
 | AutoGen | Stark agent-till-agent-dialog | Hur robust blir deterministisk processkontroll? |
 | OpenAI Agents SDK | Bra verktygs- och modellintegration | Hur väl stödjer den komplex flerstegsorkestrering? |
 
+## Aktuell statusbedömning mot projektmålet
+
+Den nuvarande QA Agent POC:n har nu nått en nivå där den ger en praktisk förståelse för flera centrala agentbegrepp som tidigare endast fanns som teori i projektbriefen. POC:n visar i körbar form hur ett fleragentsystem kan organiseras kring specialiserade roller, styras av en orkestrator och kombineras med både strukturerad baslinjekörning och LLM-backed körning.
+
+Det som nu tydligt är uppnått är:
+
+- specialiserade agentroller med tydligt ansvar,
+- orchestrator-first routing,
+- selektiv backtracking i stället för endast full rerun,
+- shared working memory och agent private memory,
+- per-agent modell-, provider-, timeout- och direktivkonfiguration,
+- runtime visibility genom GUI, runtime activity och live log,
+- partial-result preservation on failure,
+- stöd för både lokal Ollama-körning och externa modellstrategier.
+
+Detta innebär att projektet i hög grad har uppnått målet att förstå vad agentiska system är på en praktisk nivå, särskilt inom ett QA-orienterat arbetsflöde. Systemet visar inte bara att flera agenter kan existera samtidigt, utan också hur routing, återkoppling, minne, observability och styrbar exekvering påverkar resultatet.
+
+Samtidigt återstår viktiga steg innan lösningen kan beskrivas som ett mer generellt agentramverk:
+
+- agentexpansion är fortfarande kodnära och inte fullt dynamisk,
+- tool-runtime och MCP-baserad integration är ännu inte en central del av arkitekturen,
+- persistence och checkpointing är inte generiska på ramverksnivå,
+- jämförelsen mot externa agentramverk är ännu inte genomförd empiriskt i samma detalj som den interna POC:n.
+
+Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas.
+
 ## Lokal vs molnbaserad modellkörning
 
 ### Ollama / lokala modeller

@@ -26,7 +26,7 @@ from qa_platform import models as qa_models
 from qa_platform.models import AgentRuntimeConfig, ReviewReport
 from qa_platform.models import RunControlConfig, RunSession
 from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
-from qa_platform.storage import save_run
+from qa_platform.storage import export_run_evaluations_csv, get_export_dir, save_run, save_run_evaluation
 import app as app_module
 from app import process_requirements
 
@@ -335,6 +335,8 @@ class PipelineTests(unittest.TestCase):
 
         report_html = app_module.build_error_report("Timed out.", runtime_events, agent_configs, "/tmp/live.log")
 
+        self.assertIn("Run summary", report_html)
+        self.assertIn("<details class='stage-toggle' open>", report_html)
         self.assertIn("Last active agent: Requirements Analyst", report_html)
         self.assertIn("Model for that agent: qwen3:8b", report_html)
         self.assertIn("Configured timeout for that agent: 120 seconds", report_html)
@@ -429,6 +431,46 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Enter valid email", html_output)
         self.assertIn("Dashboard is shown", html_output)
         self.assertIn("Authentication succeeds and the dashboard is visible.", html_output)
+
+    def test_build_evaluation_panel_shows_review_snapshot_and_score_guidance(self) -> None:
+        html_output = app_module.build_evaluation_panel(
+            {
+                "run_id": 9,
+                "title": "Demo",
+                "test_designs": [
+                    {
+                        "test_case_id": "TC-001",
+                        "requirement_id": "REQ-001",
+                        "title": "Sign in with valid credentials",
+                        "test_type": "scenario",
+                        "expected_results": ["User is authenticated", "Dashboard is shown"],
+                    }
+                ],
+                "review": {
+                    "approved": True,
+                    "coverage_ratio": 1.0,
+                    "findings": [],
+                    "improvement_actions": [],
+                },
+            }
+        )
+
+        self.assertIn("Derived Review Score", html_output)
+        self.assertIn("Human score formula", html_output)
+        self.assertIn("TC-001", html_output)
+
+    def test_default_export_dir_points_to_downloads(self) -> None:
+        previous_export_dir = os.environ.get("QA_EXPORT_DIR")
+        os.environ.pop("QA_EXPORT_DIR", None)
+        try:
+            export_dir = get_export_dir()
+        finally:
+            if previous_export_dir is None:
+                os.environ.pop("QA_EXPORT_DIR", None)
+            else:
+                os.environ["QA_EXPORT_DIR"] = previous_export_dir
+
+        self.assertEqual(export_dir, Path.home() / "Downloads")
 
     def test_apply_global_agent_settings_updates_all_agents(self) -> None:
         updates = app_module.apply_global_agent_settings(
@@ -760,16 +802,19 @@ class PipelineTests(unittest.TestCase):
                 "",
             )
         )
-        status_html, report_html, log_file, runtime_html, memory_html, feedback_text = updates[-1]
+        status_html, report_html, log_file, runtime_html, memory_html, feedback_text, evaluation_state, evaluation_html = updates[-1]
 
         self.assertEqual(len(updates), 1)
         self.assertIn("Run stopped because of an error", status_html)
         self.assertIn("Requirements saknas", status_html)
-        self.assertIn("Retry after correcting the configuration", report_html)
+        self.assertIn("Retry after correcting the configuration", status_html)
+        self.assertEqual(report_html, "")
         self.assertIsNone(log_file)
         self.assertIn("Runtime activity", runtime_html)
         self.assertIn("Working memory", memory_html)
         self.assertIn("Run blocked", feedback_text)
+        self.assertIsNone(evaluation_state)
+        self.assertIn("Evaluation", evaluation_html)
 
     def test_process_requirements_streams_runtime_updates_before_final_result(self) -> None:
         class FakeResult:
@@ -868,20 +913,26 @@ class PipelineTests(unittest.TestCase):
                     )
 
         self.assertGreaterEqual(len(updates), 3)
-        running_status, running_report, running_file, running_runtime, running_memory, running_feedback = updates[1]
-        final_status, _final_report, final_file, _final_runtime, final_memory, final_feedback = updates[-1]
+        running_status, running_report, running_file, running_runtime, running_memory, running_feedback, running_state, running_evaluation = updates[1]
+        final_status, final_report, final_file, _final_runtime, final_memory, final_feedback, final_state, final_evaluation = updates[-1]
 
         self.assertIn("Workflow is running", running_status)
-        self.assertIn("Runtime events recorded: 1", running_report)
+        self.assertIn("Runtime events recorded: 1", running_status)
+        self.assertEqual(running_report, "")
         self.assertEqual(running_file["value"].endswith("-live.txt"), True)
         self.assertIn("Requirements Analyst", running_runtime)
         self.assertIn("Working memory", running_memory)
         self.assertIn("current_stage", running_memory)
         self.assertIn("Workflow is running", running_feedback)
+        self.assertIsNone(running_state)
+        self.assertIn("Evaluation", running_evaluation)
         self.assertIn("Saved as run #7", final_status)
+        self.assertEqual(final_report, "<section>final report</section>")
         self.assertEqual(final_file["value"], "/tmp/run.log")
         self.assertIn("Working memory", final_memory)
         self.assertIn("Workflow finished", final_feedback)
+        self.assertEqual(final_state["run_id"], 7)
+        self.assertIn("Derived Review Score", final_evaluation)
 
     def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
         configs = build_agent_runtime_configs(
@@ -1124,6 +1175,66 @@ class PipelineTests(unittest.TestCase):
                 connection.close()
 
             self.assertEqual(row, ("Persistence demo", 1, 2, 1))
+
+    def test_save_run_evaluation_and_export_csv(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=1)
+        result = orchestrator.process(
+            title="Evaluation persistence demo",
+            requirements_text="The user must be able to sign in with email and password.",
+        )
+        payload = result.to_dict()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "qa_runs_test.sqlite3"
+            log_dir = Path(tmpdir) / "run_logs"
+            export_dir = Path(tmpdir) / "exports"
+            previous_db = os.environ.get("QA_RUNS_DB_PATH")
+            previous_log_dir = os.environ.get("QA_RUNS_LOG_DIR")
+            previous_export_dir = os.environ.get("QA_EXPORT_DIR")
+            os.environ["QA_RUNS_DB_PATH"] = str(db_path)
+            os.environ["QA_RUNS_LOG_DIR"] = str(log_dir)
+            os.environ["QA_EXPORT_DIR"] = str(export_dir)
+            try:
+                saved_run = save_run(payload)
+                evaluation_id = save_run_evaluation(
+                    run_id=saved_run.run_id,
+                    evaluator_type="human",
+                    evaluator_name="Human QA specialist",
+                    approved=True,
+                    score=82.5,
+                    dimensions={
+                        "relevance": 4.0,
+                        "completeness": 4.0,
+                        "oracle_quality": 4.5,
+                        "executability": 4.0,
+                    },
+                    findings=["Strong negative-path coverage."],
+                    notes="Good overall quality.",
+                )
+                export_result = export_run_evaluations_csv(saved_run.run_id)
+            finally:
+                if previous_db is None:
+                    os.environ.pop("QA_RUNS_DB_PATH", None)
+                else:
+                    os.environ["QA_RUNS_DB_PATH"] = previous_db
+                if previous_log_dir is None:
+                    os.environ.pop("QA_RUNS_LOG_DIR", None)
+                else:
+                    os.environ["QA_RUNS_LOG_DIR"] = previous_log_dir
+                if previous_export_dir is None:
+                    os.environ.pop("QA_EXPORT_DIR", None)
+                else:
+                    os.environ["QA_EXPORT_DIR"] = previous_export_dir
+
+            self.assertGreater(evaluation_id, 0)
+            self.assertGreaterEqual(export_result.row_count, 1)
+            self.assertTrue(Path(export_result.csv_path).exists())
+            csv_text = Path(export_result.csv_path).read_text(encoding="utf-8")
+            self.assertIn("test_case_id", csv_text)
+            self.assertIn("test_case_title", csv_text)
+            self.assertIn("human_score", csv_text)
+            self.assertIn("review_agent_score", csv_text)
+            self.assertIn("82.5", csv_text)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -13,6 +14,7 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = ROOT_DIR / "data" / "qa_runs.sqlite3"
 DEFAULT_LOG_DIR = ROOT_DIR / "data" / "run_logs"
+DEFAULT_EXPORT_DIR = ROOT_DIR / "data" / "exports"
 
 
 @dataclass
@@ -23,6 +25,12 @@ class SavedRun:
     log_path: str
 
 
+@dataclass
+class SavedEvaluationExport:
+    csv_path: str
+    row_count: int
+
+
 def get_db_path() -> Path:
     override = os.getenv("QA_RUNS_DB_PATH")
     return Path(override) if override else DEFAULT_DB_PATH
@@ -31,6 +39,13 @@ def get_db_path() -> Path:
 def get_log_dir() -> Path:
     override = os.getenv("QA_RUNS_LOG_DIR")
     return Path(override) if override else DEFAULT_LOG_DIR
+
+
+def get_export_dir() -> Path:
+    override = os.getenv("QA_EXPORT_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / "Downloads"
 
 
 def _slugify_title(title: str) -> str:
@@ -55,6 +70,24 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
             finding_count INTEGER NOT NULL,
             improvement_count INTEGER NOT NULL,
             payload_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS run_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL,
+            evaluator_type TEXT NOT NULL,
+            evaluator_name TEXT NOT NULL,
+            evaluator_model TEXT NOT NULL,
+            approved INTEGER,
+            score REAL,
+            dimensions_json TEXT NOT NULL,
+            findings_json TEXT NOT NULL,
+            notes TEXT NOT NULL,
+            stored_at TEXT NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES qa_runs(id)
         )
         """
     )
@@ -261,3 +294,223 @@ def save_run(payload: dict[str, Any]) -> SavedRun:
     )
 
     return SavedRun(run_id=run_id, stored_at=stored_at, db_path=str(db_path), log_path=str(log_path))
+
+
+def save_run_evaluation(
+    *,
+    run_id: int,
+    evaluator_type: str,
+    evaluator_name: str,
+    evaluator_model: str = "",
+    approved: bool | None = None,
+    score: float | None = None,
+    dimensions: dict[str, Any] | None = None,
+    findings: list[str] | None = None,
+    notes: str = "",
+) -> int:
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    stored_at = datetime.now(timezone.utc).isoformat()
+
+    connection = sqlite3.connect(db_path)
+    try:
+        _ensure_schema(connection)
+        cursor = connection.execute(
+            """
+            INSERT INTO run_evaluations (
+                run_id,
+                evaluator_type,
+                evaluator_name,
+                evaluator_model,
+                approved,
+                score,
+                dimensions_json,
+                findings_json,
+                notes,
+                stored_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                evaluator_type,
+                evaluator_name,
+                evaluator_model,
+                None if approved is None else (1 if approved else 0),
+                score,
+                json.dumps(dimensions or {}, ensure_ascii=False),
+                json.dumps(findings or [], ensure_ascii=False),
+                notes or "",
+                stored_at,
+            ),
+        )
+        connection.commit()
+        return int(cursor.lastrowid)
+    finally:
+        connection.close()
+
+
+def export_run_evaluations_csv(run_id: int | None = None) -> SavedEvaluationExport:
+    db_path = get_db_path()
+    export_dir = get_export_dir()
+    try:
+        export_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        export_dir = DEFAULT_EXPORT_DIR
+        export_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target_name = f"run-evaluations-{run_id}-{timestamp}.csv" if run_id is not None else f"run-evaluations-all-{timestamp}.csv"
+    csv_path = export_dir / target_name
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        _ensure_schema(connection)
+        if run_id is None:
+            run_rows = connection.execute(
+                """
+                SELECT id, stored_at, title, payload_json
+                FROM qa_runs
+                ORDER BY id
+                """
+            ).fetchall()
+        else:
+            run_rows = connection.execute(
+                """
+                SELECT id, stored_at, title, payload_json
+                FROM qa_runs
+                WHERE id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+
+        evaluation_rows = connection.execute(
+            """
+            SELECT
+                id,
+                run_id,
+                evaluator_type,
+                evaluator_name,
+                evaluator_model,
+                approved,
+                score,
+                dimensions_json,
+                findings_json,
+                notes,
+                stored_at
+            FROM run_evaluations
+            ORDER BY run_id, id
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+
+    evaluations_by_run: dict[int, dict[str, sqlite3.Row]] = {}
+    for row in evaluation_rows:
+        evaluations_by_run.setdefault(int(row["run_id"]), {})[str(row["evaluator_type"])] = row
+
+    fieldnames = [
+        "run_id",
+        "scenario_title",
+        "run_stored_at",
+        "source_requirements",
+        "requirement_count",
+        "test_case_count",
+        "requirement_id",
+        "requirement_text",
+        "test_case_id",
+        "test_case_title",
+        "test_type",
+        "steps_json",
+        "expected_results_json",
+        "oracle",
+        "risks_json",
+        "review_agent_approved",
+        "review_agent_score",
+        "review_agent_model",
+        "review_agent_findings_json",
+        "review_agent_notes",
+        "human_approved",
+        "human_score",
+        "human_relevance",
+        "human_completeness",
+        "human_oracle_quality",
+        "human_executability",
+        "human_findings_json",
+        "human_notes",
+        "deepeval_approved",
+        "deepeval_score",
+        "deepeval_model",
+        "deepeval_findings_json",
+        "deepeval_notes",
+    ]
+
+    exported_rows: list[dict[str, Any]] = []
+    for run_row in run_rows:
+        payload = json.loads(str(run_row["payload_json"]))
+        requirements = payload.get("requirements", []) or []
+        test_designs = payload.get("test_designs", []) or []
+        requirement_map = {
+            str(item.get("requirement_id", "")): str(item.get("normalized_text", "") or item.get("original_text", ""))
+            for item in requirements
+        }
+        run_evaluations = evaluations_by_run.get(int(run_row["id"]), {})
+        review_eval = run_evaluations.get("review_agent")
+        human_eval = run_evaluations.get("human")
+        deepeval_eval = run_evaluations.get("deepeval")
+
+        review_findings = json.loads(str(review_eval["findings_json"])) if review_eval else []
+        human_findings = json.loads(str(human_eval["findings_json"])) if human_eval else []
+        deepeval_findings = json.loads(str(deepeval_eval["findings_json"])) if deepeval_eval else []
+        human_dimensions = json.loads(str(human_eval["dimensions_json"])) if human_eval else {}
+
+        if not test_designs:
+            test_designs = [{}]
+
+        for test_case in test_designs:
+            requirement_id = str(test_case.get("requirement_id", ""))
+            exported_rows.append(
+                {
+                    "run_id": run_row["id"],
+                    "scenario_title": run_row["title"],
+                    "run_stored_at": run_row["stored_at"],
+                    "source_requirements": payload.get("source_requirements", ""),
+                    "requirement_count": len(requirements),
+                    "test_case_count": len(payload.get("test_designs", []) or []),
+                    "requirement_id": requirement_id,
+                    "requirement_text": requirement_map.get(requirement_id, ""),
+                    "test_case_id": test_case.get("test_case_id", ""),
+                    "test_case_title": test_case.get("title", ""),
+                    "test_type": test_case.get("test_type", ""),
+                    "steps_json": json.dumps(test_case.get("steps", []) or [], ensure_ascii=False),
+                    "expected_results_json": json.dumps(test_case.get("expected_results", []) or [], ensure_ascii=False),
+                    "oracle": test_case.get("oracle", ""),
+                    "risks_json": json.dumps(test_case.get("risks", []) or [], ensure_ascii=False),
+                    "review_agent_approved": review_eval["approved"] if review_eval else "",
+                    "review_agent_score": review_eval["score"] if review_eval else "",
+                    "review_agent_model": review_eval["evaluator_model"] if review_eval else "",
+                    "review_agent_findings_json": json.dumps(review_findings, ensure_ascii=False),
+                    "review_agent_notes": review_eval["notes"] if review_eval else "",
+                    "human_approved": human_eval["approved"] if human_eval else "",
+                    "human_score": human_eval["score"] if human_eval else "",
+                    "human_relevance": human_dimensions.get("relevance", ""),
+                    "human_completeness": human_dimensions.get("completeness", ""),
+                    "human_oracle_quality": human_dimensions.get("oracle_quality", ""),
+                    "human_executability": human_dimensions.get("executability", ""),
+                    "human_findings_json": json.dumps(human_findings, ensure_ascii=False),
+                    "human_notes": human_eval["notes"] if human_eval else "",
+                    "deepeval_approved": deepeval_eval["approved"] if deepeval_eval else "",
+                    "deepeval_score": deepeval_eval["score"] if deepeval_eval else "",
+                    "deepeval_model": deepeval_eval["evaluator_model"] if deepeval_eval else "",
+                    "deepeval_findings_json": json.dumps(deepeval_findings, ensure_ascii=False),
+                    "deepeval_notes": deepeval_eval["notes"] if deepeval_eval else "",
+                }
+            )
+
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in exported_rows:
+            writer.writerow(row)
+
+    return SavedEvaluationExport(csv_path=str(csv_path), row_count=len(exported_rows))

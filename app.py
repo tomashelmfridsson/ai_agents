@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import gradio as gr
 
@@ -45,7 +45,7 @@ from qa_platform.sample_scenarios import (
     SAMPLE_SCENARIOS,
     load_sample_scenario,
 )
-from qa_platform.storage import get_log_dir, save_run
+from qa_platform.storage import export_run_evaluations_csv, get_log_dir, save_run, save_run_evaluation
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
@@ -72,29 +72,95 @@ def _blocks_support_launch_theming() -> bool:
     return "theme" in launch_signature.parameters and "css" in launch_signature.parameters
 
 
-def build_idle_status() -> str:
+def _build_run_summary_panel(
+    title: str,
+    status_text: str,
+    summary_text: str,
+    details_html: str = "",
+    *,
+    open_by_default: bool = True,
+    tone: str = "default",
+) -> str:
+    open_attr = " open" if open_by_default else ""
+    card_class = "diagram-card error-card" if tone == "error" else "diagram-card"
+    status_class = "result-status error-status" if tone == "error" else "result-status"
+    summary_class = "agent-config-text error-text" if tone == "error" else "agent-config-text"
+    return (
+        f"<section class='{card_class}'>"
+        f"<details class='stage-toggle'{open_attr}>"
+        "<summary>"
+        "<div class='stage-head'>"
+        "<div><div class='stage-index'>Run</div><div class='stage-role'>Run summary</div></div>"
+        "<div class='stage-meta'>Expanded by default. Collapse when you want more room for runtime activity and results.</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        "<div class='stage-body'>"
+        f"<h3>{html.escape(title)}</h3>"
+        f"<p class='{status_class}'>{html.escape(status_text)}</p>"
+        f"<p class='{summary_class}'>{html.escape(summary_text)}</p>"
+        f"{details_html}"
+        "</div>"
+        "</details>"
+        "</section>"
+    )
+
+
+def _build_collapsible_report_section(
+    section_title: str,
+    summary_text: str,
+    body_html: str,
+    *,
+    section_index: str = "Section",
+    open_by_default: bool = False,
+) -> str:
+    open_attr = " open" if open_by_default else ""
     return (
         "<section class='diagram-card'>"
-        "<h3>Run status</h3>"
-        "<p class='agent-config-text'>Ready to run. Start the workflow to execute the configured agents and save a traceable run log.</p>"
+        f"<details class='stage-toggle'{open_attr}>"
+        "<summary>"
+        "<div class='stage-head'>"
+        f"<div><div class='stage-index'>{html.escape(section_index)}</div><div class='stage-role'>{html.escape(section_title)}</div></div>"
+        f"<div class='stage-meta'>{html.escape(summary_text)}</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        f"<div class='stage-body'>{body_html}</div>"
+        "</details>"
         "</section>"
+    )
+
+
+def build_idle_status() -> str:
+    return _build_run_summary_panel(
+        "Run summary",
+        "Ready to run.",
+        (
+            "Start the workflow to execute the configured agents and save a traceable run log. "
+            "After the first run, this panel will show status, progress, resolved models, and saved run details."
+        ),
     )
 
 
 def build_idle_report() -> str:
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Run report</h3>"
-        "<p class='agent-config-text'>No run has been executed yet. After the first run, this panel will show summaries, mappings, agent traces, review findings, and orchestrator decisions.</p>"
-        "</section>"
-    )
+    return ""
 
 
 def build_idle_runtime_timeline() -> str:
     return (
         "<section class='diagram-card'>"
-        "<h3>Runtime activity</h3>"
+        "<details class='stage-toggle' open>"
+        "<summary>"
+        "<div class='stage-head'>"
+        "<div><div class='stage-index'>Runtime</div><div class='stage-role'>Runtime activity</div></div>"
+        "<div class='stage-meta'>Expand or collapse live runtime details.</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        "<div class='stage-body'>"
         "<p class='agent-config-text'>No runtime activity yet. After a run starts, this panel will show agent events, model names, and a live tail of the current run log.</p>"
+        "</div>"
+        "</details>"
         "</section>"
     )
 
@@ -102,8 +168,18 @@ def build_idle_runtime_timeline() -> str:
 def build_idle_memory_panel() -> str:
     return (
         "<section class='diagram-card'>"
-        "<h3>Working memory</h3>"
+        "<details class='stage-toggle'>"
+        "<summary>"
+        "<div class='stage-head'>"
+        "<div><div class='stage-index'>Memory</div><div class='stage-role'>Working memory</div></div>"
+        "<div class='stage-meta'>Collapsed by default. Expand when you want to inspect shared and private memory.</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        "<div class='stage-body'>"
         "<p class='agent-config-text'>No shared memory has been recorded yet. After a run starts, this panel will show shared keys, per-agent notes, and the memory timeline.</p>"
+        "</div>"
+        "</details>"
         "</section>"
     )
 
@@ -117,6 +193,195 @@ def build_interaction_feedback(message: str, tone: str = "info") -> str:
         f"<strong>Status</strong><span>{html.escape(normalized_message)}</span>"
         f"<div class='interaction-feedback-time'>Updated {html.escape(timestamp)}</div>"
         "</div>"
+    )
+
+
+def build_idle_evaluation_panel() -> str:
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Evaluation</h3>"
+        "<p class='agent-config-text'>Run a workflow first. This area will then let you review the generated test cases as a human QA expert, capture a DeepEval assessment, and compare both against the built-in Review Agent result.</p>"
+        "</section>"
+    )
+
+
+def _clip_score(value: float) -> float:
+    return round(max(0.0, min(100.0, value)), 1)
+
+
+def compute_human_evaluation_score(
+    relevance_score: float,
+    completeness_score: float,
+    oracle_score: float,
+    executability_score: float,
+) -> float:
+    average = (
+        float(relevance_score)
+        + float(completeness_score)
+        + float(oracle_score)
+        + float(executability_score)
+    ) / 4.0
+    return _clip_score((average / 5.0) * 100.0)
+
+
+def derive_review_agent_score(review: dict[str, Any]) -> float:
+    coverage_ratio = float(review.get("coverage_ratio", 0.0) or 0.0)
+    findings = review.get("findings", []) or []
+    approved = bool(review.get("approved"))
+    quality_component = max(0.0, 30.0 - (len(findings) * 5.0))
+    approval_adjustment = 0.0 if approved else -10.0
+    return _clip_score((coverage_ratio * 70.0) + quality_component + approval_adjustment)
+
+
+def build_evaluation_panel(run_context: dict[str, Any] | None) -> str:
+    if not run_context:
+        return build_idle_evaluation_panel()
+
+    review = run_context.get("review", {}) if isinstance(run_context, dict) else {}
+    test_designs = run_context.get("test_designs", []) if isinstance(run_context, dict) else []
+    review_score = derive_review_agent_score(review if isinstance(review, dict) else {})
+    rows = []
+    for test_case in list(test_designs)[:8]:
+        expected = test_case.get("expected_results") or []
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(test_case.get('test_case_id', '-')))}</td>"
+            f"<td>{html.escape(str(test_case.get('requirement_id', '-')))}</td>"
+            f"<td>{html.escape(str(test_case.get('title', '-')))}</td>"
+            f"<td>{html.escape(str(test_case.get('test_type', '-')))}</td>"
+            f"<td>{html.escape(str(len(expected)))}</td>"
+            "</tr>"
+        )
+    findings = review.get("findings", []) if isinstance(review, dict) else []
+    finding_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in findings[:4]) or "<li>No findings recorded.</li>"
+    return (
+        "<section class='diagram-card'>"
+        "<h3>Evaluation</h3>"
+        f"<p class='agent-config-text'>Current run: <strong>{html.escape(str(run_context.get('title', 'Untitled run')))}</strong> "
+        f"(run #{html.escape(str(run_context.get('run_id', 'not saved')))}). "
+        "Use the rubric below for the human QA assessment. The built-in Review Agent result is shown as a reference snapshot. "
+        "DeepEval fields are stored in the same evaluation dataset so they can be automated later without changing the study format.</p>"
+        "<div class='summary-grid'>"
+        f"<section class='metric-card'><div class='metric-label'>Review Approved</div><div class='metric-value'>{html.escape('yes' if review.get('approved') else 'no')}</div></section>"
+        f"<section class='metric-card'><div class='metric-label'>Coverage Ratio</div><div class='metric-value'>{html.escape(str(review.get('coverage_ratio', 0)))}</div></section>"
+        f"<section class='metric-card'><div class='metric-label'>Derived Review Score</div><div class='metric-value'>{html.escape(str(review_score))}</div></section>"
+        f"<section class='metric-card'><div class='metric-label'>Planned Test Cases</div><div class='metric-value'>{html.escape(str(len(test_designs)))}</div></section>"
+        "</div>"
+        "<p class='agent-config-text'>Human score formula: average of Relevance, Completeness, Oracle quality, and Executability, each on a 0-5 scale, normalized to 0-100. "
+        "Built-in Review Agent score is a derived proxy: 70% coverage ratio plus a capped quality component reduced by findings. DeepEval score should also be stored as 0-100 so the three evaluators can be compared directly.</p>"
+        "<div class='table-scroll'><table><thead><tr><th>Test case</th><th>Requirement</th><th>Title</th><th>Type</th><th>Expected results</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+        "<div class='io-section'>"
+        "<div class='log-title'>Built-in Review Agent findings</div>"
+        f"<ul class='log-list'>{finding_items}</ul>"
+        "</div>"
+        "</section>"
+    )
+
+
+def save_evaluation_entries(
+    run_context: dict[str, Any] | None,
+    human_approved: bool,
+    human_relevance: float,
+    human_completeness: float,
+    human_oracle: float,
+    human_executability: float,
+    human_notes: str,
+    deepeval_approved: bool,
+    deepeval_score: float,
+    deepeval_model: str,
+    deepeval_findings: str,
+    deepeval_notes: str,
+) -> tuple[str, str]:
+    if not run_context or not run_context.get("run_id"):
+        return (
+            build_interaction_feedback("No saved run is available for evaluation yet.", "warning"),
+            None,
+        )
+
+    run_id = int(run_context["run_id"])
+    review = run_context.get("review", {}) or {}
+    review_score = derive_review_agent_score(review)
+    saved_count = 0
+
+    save_run_evaluation(
+        run_id=run_id,
+        evaluator_type="review_agent",
+        evaluator_name="Built-in Review Agent",
+        evaluator_model=str(run_context.get("review_model_id", "")),
+        approved=bool(review.get("approved")),
+        score=review_score,
+        dimensions={
+            "coverage_ratio": review.get("coverage_ratio", 0.0),
+            "finding_count": len(review.get("findings", []) or []),
+        },
+        findings=[str(item) for item in (review.get("findings", []) or [])],
+        notes="Snapshot of the built-in Review Agent result captured from the saved run.",
+    )
+    saved_count += 1
+
+    human_score = compute_human_evaluation_score(
+        human_relevance,
+        human_completeness,
+        human_oracle,
+        human_executability,
+    )
+    save_run_evaluation(
+        run_id=run_id,
+        evaluator_type="human",
+        evaluator_name="Human QA specialist",
+        evaluator_model="",
+        approved=human_approved,
+        score=human_score,
+        dimensions={
+            "relevance": float(human_relevance),
+            "completeness": float(human_completeness),
+            "oracle_quality": float(human_oracle),
+            "executability": float(human_executability),
+        },
+        findings=[],
+        notes=human_notes,
+    )
+    saved_count += 1
+
+    deepeval_findings_list = [line.strip() for line in (deepeval_findings or "").splitlines() if line.strip()]
+    if deepeval_findings_list or (deepeval_model or "").strip() or (deepeval_notes or "").strip() or deepeval_score > 0:
+        save_run_evaluation(
+            run_id=run_id,
+            evaluator_type="deepeval",
+            evaluator_name="DeepEval",
+            evaluator_model=(deepeval_model or "").strip(),
+            approved=deepeval_approved,
+            score=float(deepeval_score),
+            dimensions={},
+            findings=deepeval_findings_list,
+            notes=deepeval_notes,
+        )
+        saved_count += 1
+
+    return (
+        build_interaction_feedback(
+            f"Saved {saved_count} evaluation record(s) for run #{run_id}. Human score: {human_score}.",
+            "success",
+        ),
+        None,
+    )
+
+
+def export_current_run_evaluations(run_context: dict[str, Any] | None) -> tuple[str, str | None]:
+    if not run_context or not run_context.get("run_id"):
+        return (
+            build_interaction_feedback("No saved run is available to export yet.", "warning"),
+            None,
+        )
+    export_result = export_run_evaluations_csv(int(run_context["run_id"]))
+    return (
+        build_interaction_feedback(
+            f"Exported {export_result.row_count} import-ready evaluation row(s) for run #{run_context['run_id']} to {export_result.csv_path}.",
+            "success",
+        ),
+        export_result.csv_path,
     )
 
 
@@ -212,12 +477,11 @@ def _append_runtime_event_to_live_log(
 
 
 def build_error_status(message: str) -> str:
-    return (
-        "<section class='diagram-card error-card'>"
-        "<h3>Run status</h3>"
-        "<p class='result-status error-status'>Run stopped because of an error.</p>"
-        f"<p class='agent-config-text error-text'>{html.escape(message)}</p>"
-        "</section>"
+    return _build_run_summary_panel(
+        "Run summary",
+        "Run stopped because of an error.",
+        message,
+        tone="error",
     )
 
 
@@ -279,55 +543,135 @@ def build_error_report(
             + build_trace_sections(completed_traces, [config.__dict__ for config in agent_configs])
             + "</div></div>"
         )
-    return (
-        "<section class='diagram-card error-card'>"
-        "<h3>Run report</h3>"
-        "<p class='agent-config-text error-text'>"
-        f"{html.escape(message)}"
-        "</p>"
-        f"<ul class='summary-list'>{''.join(items)}</ul>"
-        "</section>"
-        + partial_results
+    return _build_run_summary_panel(
+        "Run summary",
+        "Run stopped because of an error.",
+        message,
+        f"<ul class='summary-list'>{''.join(items)}</ul>" + partial_results,
+        tone="error",
     )
 
 
+def _parse_event_timestamp(raw_value: object) -> datetime | None:
+    if not raw_value:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _format_clock_time(raw_value: object) -> str:
+    timestamp = _parse_event_timestamp(raw_value)
+    return timestamp.strftime("%H:%M:%S") if timestamp else "-"
+
+
+def _format_elapsed_ms(duration_ms: int) -> str:
+    if duration_ms < 1000:
+        return f"{duration_ms} ms"
+    seconds = duration_ms / 1000
+    return f"{seconds:.1f}s"
+
+
+def _get_active_agent_timing(runtime_events: list[dict[str, object]]) -> dict[str, object] | None:
+    active_starts: dict[tuple[object, object, object], dict[str, object]] = {}
+    for event in runtime_events:
+        key = (
+            event.get("iteration"),
+            event.get("stage_index"),
+            event.get("agent_name"),
+        )
+        event_type = str(event.get("event_type", ""))
+        if event_type == "stage_started":
+            active_starts[key] = event
+        elif event_type == "stage_completed":
+            active_starts.pop(key, None)
+
+    if not active_starts:
+        return None
+
+    latest_key, latest_event = max(
+        active_starts.items(),
+        key=lambda item: _parse_event_timestamp(item[1].get("timestamp")) or datetime.min,
+    )
+    del latest_key
+    started_at = _parse_event_timestamp(latest_event.get("timestamp"))
+    if not started_at:
+        return None
+    elapsed_ms = max(0, int((datetime.now() - started_at).total_seconds() * 1000))
+    return {
+        "agent_name": latest_event.get("agent_name", "-"),
+        "iteration": latest_event.get("iteration", "-"),
+        "stage_index": latest_event.get("stage_index", "-"),
+        "started_at": latest_event.get("timestamp"),
+        "elapsed_ms": elapsed_ms,
+    }
+
+
 def build_running_status(runtime_events: list[dict[str, object]]) -> str:
+    return build_running_summary_panel(runtime_events, None)
+
+
+def build_running_summary_panel(runtime_events: list[dict[str, object]], log_path: str | None = None) -> str:
     last_message = (
         str(runtime_events[-1].get("message", "Workflow is running."))
         if runtime_events
         else "Workflow is starting."
     )
     completed_count = sum(1 for event in runtime_events if event.get("event_type") == "stage_completed")
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Run status</h3>"
-        "<p class='result-status'>Workflow is running.</p>"
-        f"<p class='agent-config-text'>{html.escape(last_message)}</p>"
+    active_timing = _get_active_agent_timing(runtime_events)
+    timing_items = []
+    if active_timing:
+        timing_items.extend(
+            [
+                f"<li>Current agent: {html.escape(str(active_timing['agent_name']))}</li>",
+                f"<li>Started at: {html.escape(_format_clock_time(active_timing['started_at']))}</li>",
+                f"<li>Running for: {html.escape(_format_elapsed_ms(int(active_timing['elapsed_ms'])))}</li>",
+            ]
+        )
+    last_agent = str(runtime_events[-1].get("agent_name", "-")) if runtime_events else "-"
+    last_event = str(runtime_events[-1].get("event_type", "-")) if runtime_events else "-"
+    last_timestamp = _format_clock_time(runtime_events[-1].get("timestamp")) if runtime_events else "-"
+    active_timing = _get_active_agent_timing(runtime_events)
+    items = [
+        f"<li>Latest agent: {html.escape(last_agent)}</li>",
+        f"<li>Latest event: {html.escape(last_event)}</li>",
+        f"<li>Latest event time: {html.escape(last_timestamp)}</li>",
+        f"<li>Runtime events recorded: {len(runtime_events)}</li>",
+        f"<li>Live log file: {html.escape(log_path or 'not available')}</li>",
+    ]
+    if active_timing:
+        items.extend(
+            [
+                f"<li>Current agent started: {html.escape(_format_clock_time(active_timing['started_at']))}</li>",
+                f"<li>Current agent running time: {html.escape(_format_elapsed_ms(int(active_timing['elapsed_ms'])))}</li>",
+            ]
+        )
+    details_html = (
         f"<p class='agent-config-text'>Completed stages so far: {completed_count}.</p>"
-        "</section>"
+        + (f"<ul class='summary-list'>{''.join(timing_items)}</ul>" if timing_items else "")
+        + "<p class='agent-config-text'>Workflow is in progress. This panel updates as agents start, complete, or route work.</p>"
+        + f"<ul class='summary-list'>{''.join(items)}</ul>"
+    )
+    return _build_run_summary_panel(
+        "Run summary",
+        "Workflow is running.",
+        last_message,
+        details_html,
     )
 
 
 def build_running_report(runtime_events: list[dict[str, object]]) -> str:
-    return build_running_report_with_log(runtime_events, None)
+    del runtime_events
+    return ""
 
 
 def build_running_report_with_log(runtime_events: list[dict[str, object]], log_path: str | None) -> str:
-    last_agent = str(runtime_events[-1].get("agent_name", "-")) if runtime_events else "-"
-    last_event = str(runtime_events[-1].get("event_type", "-")) if runtime_events else "-"
-    items = [
-        f"<li>Latest agent: {html.escape(last_agent)}</li>",
-        f"<li>Latest event: {html.escape(last_event)}</li>",
-        f"<li>Runtime events recorded: {len(runtime_events)}</li>",
-        f"<li>Live log file: {html.escape(log_path or 'not available')}</li>",
-    ]
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Run report</h3>"
-        "<p class='agent-config-text'>Workflow is in progress. This panel updates as agents start, complete, or route work.</p>"
-        f"<ul class='summary-list'>{''.join(items)}</ul>"
-        "</section>"
-    )
+    del runtime_events, log_path
+    return ""
 
 
 def _format_memory_value(value: object) -> str:
@@ -397,7 +741,15 @@ def build_memory_panel(memory_snapshot: dict[str, object] | None) -> str:
 
     return (
         "<section class='diagram-card'>"
-        "<h3>Working memory</h3>"
+        "<details class='stage-toggle'>"
+        "<summary>"
+        "<div class='stage-head'>"
+        "<div><div class='stage-index'>Memory</div><div class='stage-role'>Working memory</div></div>"
+        "<div class='stage-meta'>Collapsed by default. Expand when you want to inspect shared and private memory.</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        "<div class='stage-body'>"
         "<p class='agent-config-text'>This panel shows the run-scoped shared memory, per-agent private notes, and the memory timeline collected so far.</p>"
         "<details open><summary>Shared memory</summary>"
         f"{shared_table}"
@@ -407,6 +759,8 @@ def build_memory_panel(memory_snapshot: dict[str, object] | None) -> str:
         "</details>"
         "<details><summary>Memory timeline</summary>"
         f"{timeline_html}"
+        "</details>"
+        "</div>"
         "</details>"
         "</section>"
     )
@@ -483,18 +837,20 @@ def process_requirements(
     openai_base_url: str,
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
-) -> Iterator[tuple[str, str, str | None, str, str, str]]:
+) -> Iterator[tuple[str, str, str | None, str, str, str, dict[str, Any] | None, str]]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
         message = "Requirements saknas. Fyll i minst ett krav innan du kör workflow."
         yield (
-            build_error_status(message),
             build_error_report(message),
+            "",
             None,
             build_idle_runtime_timeline(),
             build_idle_memory_panel(),
             build_interaction_feedback("Run blocked. Add requirements before starting the workflow.", "warning"),
+            None,
+            build_idle_evaluation_panel(),
         )
         return
     round_limit = max(1, int(max_rounds))
@@ -528,14 +884,16 @@ def process_requirements(
     _register_active_run(stop_event)
 
     yield (
-        build_running_status(runtime_events),
-        build_running_report_with_log(runtime_events, str(live_log_path)),
+        build_running_summary_panel(runtime_events, str(live_log_path)),
+        build_live_trace_overview(completed_stage_traces, [config.__dict__ for config in agent_configs]),
         gr.update(value=str(live_log_path)),
         build_idle_runtime_timeline(),
         build_idle_memory_panel(),
         build_interaction_feedback(
             "Workflow starting. Press Stop workflow to stop after the current agent pass."
         ),
+        None,
+        build_idle_evaluation_panel(),
     )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
@@ -587,12 +945,14 @@ def process_requirements(
                 _append_runtime_event_to_live_log(live_log_path, event, agent_configs)
                 progress(None, desc=str(event.get("message", "Processing workflow...")))
                 yield (
-                    build_running_status(runtime_events),
-                    build_running_report_with_log(runtime_events, str(live_log_path)),
+                    build_running_summary_panel(runtime_events, str(live_log_path)),
+                    build_live_trace_overview(completed_stage_traces, [config.__dict__ for config in agent_configs]),
                     gr.update(value=str(live_log_path)),
                     build_runtime_timeline(runtime_events, str(live_log_path)),
                     build_memory_panel(latest_memory_snapshot),
                     build_interaction_feedback("Workflow is running."),
+                    None,
+                    build_idle_evaluation_panel(),
                 )
                 emitted = True
         if worker_state["done"] and event_queue.empty():
@@ -600,8 +960,8 @@ def process_requirements(
         if stop_event.is_set() and not stop_notice_emitted:
             stop_notice_emitted = True
             yield (
-                build_running_status(runtime_events),
-                build_running_report_with_log(runtime_events, str(live_log_path)),
+                build_running_summary_panel(runtime_events, str(live_log_path)),
+                build_live_trace_overview(completed_stage_traces, [config.__dict__ for config in agent_configs]),
                 gr.update(value=str(live_log_path)),
                 build_runtime_timeline(runtime_events, str(live_log_path)),
                 build_memory_panel(latest_memory_snapshot),
@@ -609,6 +969,8 @@ def process_requirements(
                     "Stop requested. Waiting for the current agent pass to finish.",
                     "warning",
                 ),
+                None,
+                build_idle_evaluation_panel(),
             )
         if not emitted:
             time.sleep(0.1)
@@ -625,23 +987,27 @@ def process_requirements(
             ],
         )
         yield (
-            build_error_status(message),
             build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            "",
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped.", "warning"),
+            None,
+            build_idle_evaluation_panel(),
         )
         return
     if isinstance(error, LLMRuntimeError):
         message = format_user_error(str(error))
         yield (
-            build_error_status(message),
             build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            "",
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped because of an LLM/backend error.", "warning"),
+            None,
+            build_idle_evaluation_panel(),
         )
         return
     if isinstance(error, AgentTimeoutError):
@@ -655,12 +1021,14 @@ def process_requirements(
             ],
         )
         yield (
-            build_error_status(message),
             build_error_report(message, runtime_events, agent_configs, str(live_log_path), completed_stage_traces),
+            "",
             gr.update(value=str(live_log_path)),
             build_runtime_timeline(runtime_events, str(live_log_path)),
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped because an agent hit its timeout.", "warning"),
+            None,
+            build_idle_evaluation_panel(),
         )
         return
     if error is not None:
@@ -701,14 +1069,20 @@ def process_requirements(
     ]
     if llm_note:
         status_items.append(f"<li>{html.escape(llm_note.strip())}</li>")
-    status = (
-        "<section class='diagram-card'>"
-        "<h3>Run status</h3>"
-        f"<p class='result-status'>Saved as run #{payload['run_id']}.</p>"
-        "<ul class='summary-list'>"
-        + "".join(status_items)
-        + "</ul>"
-        "</section>"
+    review_runtime = _find_agent_runtime_config("Review Agent", agent_configs)
+    evaluation_context = {
+        "run_id": payload["run_id"],
+        "title": payload["title"],
+        "stored_at": payload["stored_at"],
+        "test_designs": payload["test_designs"],
+        "review": payload["review"],
+        "review_model_id": review_runtime.model_id if review_runtime and review_runtime.model_id else "",
+    }
+    status = _build_run_summary_panel(
+        "Run summary",
+        f"Saved as run #{payload['run_id']}.",
+        "Workflow finished and the run was stored successfully.",
+        "<ul class='summary-list'>" + "".join(status_items) + "</ul>",
     )
     yield (
         status,
@@ -717,6 +1091,8 @@ def process_requirements(
         build_runtime_timeline(runtime_events, str(live_log_path)),
         build_memory_panel((payload.get("run_session") or {}).get("working_memory")),
         build_interaction_feedback(f"Workflow finished. Run #{payload['run_id']} was saved.", "success"),
+        evaluation_context,
+        build_evaluation_panel(evaluation_context),
     )
 
 
@@ -774,11 +1150,59 @@ def build_runtime_timeline(runtime_events: list[dict[str, object]], log_path: st
     if not runtime_events:
         return build_idle_runtime_timeline()
 
+    active_timing = _get_active_agent_timing(runtime_events)
+    active_lookup: dict[tuple[object, object, object], int] = {}
+    started_lookup: dict[tuple[object, object, object], object] = {}
+    for event in runtime_events:
+        if str(event.get("event_type", "")) == "stage_started":
+            started_lookup[
+                (
+                    event.get("iteration"),
+                    event.get("stage_index"),
+                    event.get("agent_name"),
+                )
+            ] = event.get("timestamp")
+    if active_timing:
+        active_lookup[
+            (
+                active_timing["iteration"],
+                active_timing["stage_index"],
+                active_timing["agent_name"],
+            )
+        ] = int(active_timing["elapsed_ms"])
+
     rows = []
     for event in runtime_events:
         duration_ms = int(event.get("duration_ms", 0) or 0)
-        duration_label = f"{duration_ms} ms" if duration_ms > 0 else "-"
+        elapsed_label = "-"
+        if str(event.get("event_type", "")) == "stage_completed":
+            elapsed_label = _format_elapsed_ms(duration_ms)
+        elif str(event.get("event_type", "")) == "stage_started":
+            active_duration = active_lookup.get(
+                (
+                    event.get("iteration"),
+                    event.get("stage_index"),
+                    event.get("agent_name"),
+                )
+            )
+            if active_duration is not None:
+                elapsed_label = _format_elapsed_ms(active_duration)
         model_label = str(event.get("model_id", "-"))
+        event_key = (
+            event.get("iteration"),
+            event.get("stage_index"),
+            event.get("agent_name"),
+        )
+        started_value = (
+            started_lookup.get(event_key)
+            if str(event.get("event_type", "")) == "stage_completed"
+            else event.get("timestamp")
+        )
+        finished_value = (
+            event.get("timestamp")
+            if str(event.get("event_type", "")) == "stage_completed"
+            else event.get("finished_at")
+        )
         rows.append(
             "<tr>"
             f"<td>{html.escape(str(event.get('iteration', '')))}</td>"
@@ -786,75 +1210,29 @@ def build_runtime_timeline(runtime_events: list[dict[str, object]], log_path: st
             f"<td>{html.escape(str(event.get('agent_name', '')))}</td>"
             f"<td>{html.escape(model_label)}</td>"
             f"<td>{html.escape(str(event.get('event_type', '')))}</td>"
-            f"<td>{html.escape(duration_label)}</td>"
+            f"<td>{html.escape(_format_clock_time(started_value))}</td>"
+            f"<td>{html.escape(_format_clock_time(finished_value))}</td>"
+            f"<td>{html.escape(elapsed_label)}</td>"
             f"<td>{html.escape(str(event.get('message', '')))}</td>"
             "</tr>"
         )
     return (
         "<section class='diagram-card'>"
-        "<h3>Runtime activity</h3>"
-        "<p class='agent-config-text'>This panel shows which agent was active, when routing happened, and how long completed agent passes took.</p>"
-        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Model</th><th>Event</th><th>Time</th><th>Message</th></tr></thead><tbody>"
+        "<details class='stage-toggle' open>"
+        "<summary>"
+        "<div class='stage-head'>"
+        "<div><div class='stage-index'>Runtime</div><div class='stage-role'>Runtime activity</div></div>"
+        "<div class='stage-meta'>Expand or collapse live runtime details.</div>"
+        "<div class='stage-chevron'></div>"
+        "</div>"
+        "</summary>"
+        "<div class='stage-body'>"
+        "<p class='agent-config-text'>This panel shows which agent was active, when each agent pass started and finished, and how long the current or completed pass has run.</p>"
+        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Stage</th><th>Agent</th><th>Model</th><th>Event</th><th>Started</th><th>Finished</th><th>Elapsed</th><th>Message</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
-        "</section>"
-    )
-
-
-def build_debug_panel(payload: dict) -> str:
-    stage_traces = payload.get("stage_traces", []) or []
-    contract_rows = []
-    orchestrator_rows = []
-
-    for trace in stage_traces:
-        if trace.get("agent_name") == "Requirements Analyst":
-            contract_messages = [
-                item
-                for item in trace.get("reasoning_trace", [])
-                if "requirements.v1 contract" in str(item).lower()
-                or "was dropped because" in str(item).lower()
-            ]
-            if contract_messages:
-                contract_rows.append(
-                    "<tr>"
-                    f"<td>{html.escape(str(trace.get('iteration', '')))}</td>"
-                    f"<td>{html.escape(str(trace.get('status', '')))}</td>"
-                    f"<td>{html.escape('; '.join(contract_messages[:3]))}</td>"
-                    "</tr>"
-                )
-        if trace.get("agent_name") == "Orchestrator Agent":
-            lead = (trace.get("output_summary") or ["No decision recorded."])[0]
-            orchestrator_rows.append(
-                "<tr>"
-                f"<td>{html.escape(str(trace.get('iteration', '')))}</td>"
-                f"<td>{html.escape(str(trace.get('status', '')))}</td>"
-                f"<td>{html.escape(str(lead))}</td>"
-                "</tr>"
-            )
-
-    contract_table = (
-        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Status</th><th>Contract validation</th></tr></thead><tbody>"
-        + "".join(contract_rows)
-        + "</tbody></table></div>"
-        if contract_rows
-        else "<p class='agent-config-text'>No requirement-contract violations were recorded in this run.</p>"
-    )
-    orchestrator_table = (
-        "<div class='table-scroll'><table><thead><tr><th>Cycle</th><th>Status</th><th>Decision</th></tr></thead><tbody>"
-        + "".join(orchestrator_rows)
-        + "</tbody></table></div>"
-        if orchestrator_rows
-        else "<p class='agent-config-text'>No orchestrator decisions were recorded in this run.</p>"
-    )
-
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Debug panel</h3>"
-        "<p class='agent-config-text'>This panel focuses on the standardized agent contract checks and the orchestrator decisions that moved, backtracked, or stopped the run.</p>"
-        "<h3>Requirement contract</h3>"
-        f"{contract_table}"
-        "<h3>Orchestrator decisions</h3>"
-        f"{orchestrator_table}"
+        "</div>"
+        "</details>"
         "</section>"
     )
 
@@ -1240,6 +1618,53 @@ CUSTOM_CSS = """
       color: #130d08 !important;
       fill: #130d08 !important;
     }
+    .evaluation-panel,
+    .evaluation-panel > div,
+    .evaluation-panel section,
+    .evaluation-panel .block,
+    .evaluation-panel .gr-group,
+    .evaluation-panel .form,
+    .evaluation-panel .wrap,
+    .evaluation-panel label,
+    .evaluation-panel p,
+    .evaluation-panel span,
+    .evaluation-panel div,
+    .evaluation-panel textarea,
+    .evaluation-panel input,
+    .evaluation-panel select,
+    .evaluation-panel option,
+    .evaluation-panel .label-wrap,
+    .evaluation-panel .label-wrap span,
+    .evaluation-panel .label-wrap p,
+    .evaluation-panel .icon-wrap,
+    .evaluation-panel [data-testid="block-label"],
+    .evaluation-panel [data-testid="block-info"],
+    .evaluation-panel [role="checkbox"],
+    .evaluation-panel [role="slider"],
+    .evaluation-panel .wrap .wrap,
+    .evaluation-panel .svelte-1ipelgc,
+    .evaluation-panel .svelte-1gfkn6j {
+      color: #000 !important;
+      fill: #000 !important;
+    }
+    .evaluation-panel textarea,
+    .evaluation-panel input,
+    .evaluation-panel select,
+    .evaluation-panel .input-container,
+    .evaluation-panel .scroll-hide {
+      background: rgba(255, 255, 255, 0.99) !important;
+      color: #000 !important;
+      border-color: rgba(29, 20, 13, 0.22) !important;
+    }
+    .evaluation-panel textarea::placeholder,
+    .evaluation-panel input::placeholder {
+      color: #4a4038 !important;
+    }
+    .evaluation-panel .controls-accordion button,
+    .evaluation-panel .controls-accordion summary,
+    .evaluation-panel .controls-accordion [role="button"] {
+      color: #000 !important;
+    }
     .config-accordion > div,
     .config-accordion section,
     .config-accordion details {
@@ -1505,6 +1930,34 @@ CUSTOM_CSS = """
     .diagram-card th {
       background: rgba(203, 145, 50, 0.18);
       font-weight: 700;
+    }
+    .result-panel-output,
+    .result-panel-output > div,
+    .result-panel-output .html-container,
+    .result-panel-output .prose,
+    .result-panel-output .prose * {
+      opacity: 1 !important;
+      filter: none !important;
+      transform: none !important;
+      color: #000 !important;
+    }
+    .result-panel-output .pending,
+    .result-panel-output [data-loading="true"],
+    .result-panel-output [class*="pending"],
+    .result-panel-output [class*="loading"] {
+      opacity: 1 !important;
+      filter: none !important;
+      transform: none !important;
+      animation: none !important;
+    }
+    .result-panel-output .spinner,
+    .result-panel-output [class*="spinner"],
+    .result-panel-output svg[class*="spin"],
+    .result-panel-output [class*="loading"] svg,
+    .result-panel-output [class*="pending"] svg {
+      display: none !important;
+      animation: none !important;
+      transform: none !important;
     }
     .memory-value {
       color: #000 !important;
@@ -1930,29 +2383,72 @@ def build_demo() -> gr.Blocks:
                     value=build_idle_status(),
                     show_label=False,
                     container=False,
+                    elem_classes=["result-panel-output"],
                 )
                 result_output = gr.HTML(
                     value=build_idle_report(),
                     show_label=False,
                     container=False,
+                    elem_classes=["result-panel-output"],
                 )
                 runtime_output = gr.HTML(
                     value=build_idle_runtime_timeline(),
                     show_label=False,
                     container=False,
+                    elem_classes=["result-panel-output"],
                 )
                 memory_output = gr.HTML(
                     value=build_idle_memory_panel(),
                     show_label=False,
                     container=False,
+                    elem_classes=["result-panel-output"],
                 )
                 log_file_output = gr.File(
                     label="Download run log",
                     value=None,
                     interactive=False,
+                    elem_classes=["result-panel-output"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
                 stop_button = gr.Button("Stop workflow")
+            with gr.Group(elem_classes=["panel-card", "evaluation-panel"]):
+                gr.Markdown("## Evaluation")
+                evaluation_run_state = gr.State(value=None)
+                evaluation_output = gr.HTML(
+                    value=build_idle_evaluation_panel(),
+                    show_label=False,
+                    container=False,
+                    elem_classes=["result-panel-output"],
+                )
+                gr.HTML(
+                    "<p class='agent-config-text'>Use the human rubric to score the generated test cases on a 0-5 scale per dimension. The overall human score is normalized to 0-100. DeepEval values can be captured here now and automated later against the same schema.</p>"
+                )
+                with gr.Accordion("Human QA evaluation", open=True, elem_classes=["controls-accordion"]):
+                    human_approved_input = gr.Checkbox(label="Approved by human QA expert", value=False)
+                    human_relevance_input = gr.Slider(label="Relevance to requirements (0-5)", minimum=0, maximum=5, step=0.5, value=3)
+                    human_completeness_input = gr.Slider(label="Coverage and completeness (0-5)", minimum=0, maximum=5, step=0.5, value=3)
+                    human_oracle_input = gr.Slider(label="Oracle and expected-result quality (0-5)", minimum=0, maximum=5, step=0.5, value=3)
+                    human_executability_input = gr.Slider(label="Executability and clarity (0-5)", minimum=0, maximum=5, step=0.5, value=3)
+                    human_notes_input = gr.Textbox(label="Human QA notes", lines=4, placeholder="Why are the test cases good or weak?")
+                with gr.Accordion("DeepEval result capture", open=False, elem_classes=["controls-accordion"]):
+                    deepeval_approved_input = gr.Checkbox(label="Approved by DeepEval", value=False)
+                    deepeval_score_input = gr.Slider(label="DeepEval score (0-100)", minimum=0, maximum=100, step=1, value=0)
+                    deepeval_model_input = gr.Textbox(label="DeepEval model / evaluator name", placeholder="Example: gpt-4.1-mini via DeepEval")
+                    deepeval_findings_input = gr.Textbox(label="DeepEval findings", lines=4, placeholder="One finding per line")
+                    deepeval_notes_input = gr.Textbox(label="DeepEval notes", lines=3, placeholder="Optional notes about metrics or prompt setup")
+                with gr.Row():
+                    save_evaluation_button = gr.Button("Save evaluation")
+                    export_evaluations_button = gr.Button("Export evaluations CSV")
+                evaluation_feedback_output = gr.HTML(
+                    value=build_interaction_feedback("No evaluation has been saved yet."),
+                    elem_classes=["interaction-feedback-shell"],
+                )
+                evaluation_export_output = gr.File(
+                    label="Download evaluations CSV",
+                    value=None,
+                    interactive=False,
+                    elem_classes=["result-panel-output"],
+                )
 
         run_button.click(
             fn=process_requirements,
@@ -1966,12 +2462,23 @@ def build_demo() -> gr.Blocks:
                 openai_base_url_input,
                 *agent_config_inputs,
             ],
-            outputs=[status_output, result_output, log_file_output, runtime_output, memory_output, interaction_feedback_output],
+            outputs=[
+                status_output,
+                result_output,
+                log_file_output,
+                runtime_output,
+                memory_output,
+                interaction_feedback_output,
+                evaluation_run_state,
+                evaluation_output,
+            ],
+            show_progress="hidden",
         )
         stop_button.click(
             fn=request_stop_current_run,
             inputs=[],
             outputs=[interaction_feedback_output],
+            show_progress="hidden",
         )
         apply_global_settings_button.click(
             fn=apply_global_agent_settings,
@@ -1983,28 +2490,56 @@ def build_demo() -> gr.Blocks:
                 global_timeout_input,
             ],
             outputs=[*agent_bulk_outputs, interaction_feedback_output],
+            show_progress="hidden",
         )
         scenario_picker.change(
             fn=load_sample_scenario,
             inputs=[scenario_picker, title_input, requirements_input],
             outputs=[title_input, requirements_input],
+            show_progress="hidden",
         )
         title_input.input(
             fn=mark_custom_scenario,
             inputs=[title_input],
             outputs=[scenario_picker],
+            show_progress="hidden",
         )
         requirements_input.input(
             fn=mark_custom_scenario,
             inputs=[requirements_input],
             outputs=[scenario_picker],
+            show_progress="hidden",
+        )
+        save_evaluation_button.click(
+            fn=save_evaluation_entries,
+            inputs=[
+                evaluation_run_state,
+                human_approved_input,
+                human_relevance_input,
+                human_completeness_input,
+                human_oracle_input,
+                human_executability_input,
+                human_notes_input,
+                deepeval_approved_input,
+                deepeval_score_input,
+                deepeval_model_input,
+                deepeval_findings_input,
+                deepeval_notes_input,
+            ],
+            outputs=[evaluation_feedback_output, evaluation_export_output],
+            show_progress="hidden",
+        )
+        export_evaluations_button.click(
+            fn=export_current_run_evaluations,
+            inputs=[evaluation_run_state],
+            outputs=[evaluation_feedback_output, evaluation_export_output],
+            show_progress="hidden",
         )
 
     return demo
 
 
 def build_workflow_report(payload: dict) -> str:
-    review = payload["review"]
     summary_html = build_summary_overview(payload)
     config_html = build_agent_config_overview(
         payload.get("run_controls", {}),
@@ -2012,8 +2547,6 @@ def build_workflow_report(payload: dict) -> str:
     )
     test_case_overview = build_test_case_overview(payload)
     trace_overview = build_trace_overview(payload)
-    debug_panel = build_debug_panel(payload)
-
     trace_sections = build_trace_sections(
         payload["stage_traces"],
         payload.get("agent_configs", []),
@@ -2023,12 +2556,10 @@ def build_workflow_report(payload: dict) -> str:
         "<div class='report-shell'>"
         f"{summary_html}"
         f"{config_html}"
-        f"{test_case_overview}"
         f"{trace_overview}"
-        f"{debug_panel}"
-        "<div class='stage-grid'>"
-        + trace_sections
-        + "</div></div>"
+        f"{test_case_overview}"
+        f"{trace_sections}"
+        "</div>"
     )
 
 
@@ -2064,12 +2595,12 @@ def build_summary_overview(payload: dict) -> str:
     if improvement_actions:
         bullets.append(f"Primary requested improvement: {improvement_actions[0]}")
     items = "".join(f"<li>{html.escape(item)}</li>" for item in bullets)
-    return (
-        "<section class='diagram-card summary-card-wide'>"
-        "<h3>Run summary</h3>"
-        f"<p class='summary-lead'>{html.escape(lead)}</p>"
-        f"<ul class='summary-list'>{items}</ul>"
-        "</section>"
+    return _build_collapsible_report_section(
+        "Run summary",
+        "Stored results, approval outcome, and final run totals.",
+        f"<p class='summary-lead'>{html.escape(lead)}</p><ul class='summary-list'>{items}</ul>",
+        section_index="Summary",
+        open_by_default=False,
     )
 
 
@@ -2086,25 +2617,27 @@ def build_trace_overview(payload: dict) -> str:
             f"<td>{html.escape(test_case['test_type'])}</td>"
             "</tr>"
         )
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Requirement to test case mapping</h3>"
+    return _build_collapsible_report_section(
+        "Requirement to test case mapping",
+        "Expand to inspect how requirements were covered by one or more designed test cases.",
         "<p class='agent-config-text'>In this app, the summary label 'Test cases' refers to the designed test cases created by the Test Design Agent. Each case is linked directly to a requirement ID and reviewed without a separate generation stage, and one requirement can map to several test cases.</p>"
         "<div class='table-scroll'><table><thead><tr><th>Test case</th><th>Requirement</th><th>Requirement text</th><th>Title</th><th>Type</th></tr></thead><tbody>"
         + "".join(rows)
-        + "</tbody></table></div>"
-        "</section>"
+        + "</tbody></table></div>",
+        section_index="Mapping",
+        open_by_default=False,
     )
 
 
 def build_test_case_overview(payload: dict) -> str:
     test_designs = payload.get("test_designs", [])
     if not test_designs:
-        return (
-            "<section class='diagram-card'>"
-            "<h3>Planned test cases</h3>"
-            "<p class='agent-config-text'>No planned test cases were produced in this run.</p>"
-            "</section>"
+        return _build_collapsible_report_section(
+            "Planned test cases",
+            "No designed test cases were produced in this run.",
+            "<p class='agent-config-text'>No planned test cases were produced in this run.</p>",
+            section_index="Test cases",
+            open_by_default=False,
         )
 
     cards = []
@@ -2127,10 +2660,19 @@ def build_test_case_overview(payload: dict) -> str:
         )
         cards.append(
             "<section class='stage-card'>"
+            "<details class='stage-toggle'>"
+            "<summary>"
+            "<div class='stage-head'>"
+            "<div>"
             f"<div class='stage-index'>{html.escape(str(test_case.get('test_case_id', 'Unknown test case')))}</div>"
             f"<div class='stage-role'>{html.escape(str(test_case.get('title', 'Untitled test case')))}</div>"
-            f"<p class='agent-config-text'><strong>Requirement:</strong> {html.escape(str(test_case.get('requirement_id', 'Not linked')))}</p>"
-            f"<p class='agent-config-text'><strong>Type:</strong> {html.escape(str(test_case.get('test_type', 'Not set')))}</p>"
+            "</div>"
+            f"<div class='stage-meta'><strong>Requirement:</strong> {html.escape(str(test_case.get('requirement_id', 'Not linked')))}</div>"
+            f"<div class='stage-meta'><strong>Type:</strong> {html.escape(str(test_case.get('test_type', 'Not set')))}</div>"
+            "<div class='stage-chevron'></div>"
+            "</div>"
+            "</summary>"
+            "<div class='stage-body'>"
             "<div class='io-stack'>"
             "<div class='io-section'>"
             "<div class='log-title'>Steps</div>"
@@ -2146,16 +2688,19 @@ def build_test_case_overview(payload: dict) -> str:
             "</div>"
             f"{risk_block}"
             "</div>"
+            "</div>"
+            "</details>"
             "</section>"
         )
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Planned test cases</h3>"
+    return _build_collapsible_report_section(
+        "Planned test cases",
+        "Expand to inspect the designed test cases, then open each test case for full details.",
         "<p class='agent-config-text'>This section shows the actual test cases produced by the Test Design Agent, including steps, expected results, and oracle. Requirements can expand into multiple focused test cases.</p>"
-        "</section>"
         "<div class='stage-grid'>"
         + "".join(cards)
-        + "</div>"
+        + "</div>",
+        section_index="Test cases",
+        open_by_default=False,
     )
 
 
@@ -2170,12 +2715,13 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
         "</tbody></table>"
     )
     if not agent_configs:
-        return (
-            "<section class='diagram-card'>"
-            "<h3>Run configuration</h3>"
+        return _build_collapsible_report_section(
+            "Run configuration",
+            "Expand to inspect workflow limits and feedback budgets.",
             "<p class='agent-config-text'>This run stores global control settings for future agent-to-agent feedback and rerun limits.</p>"
-            f"{controls_table}"
-            "</section>"
+            f"{controls_table}",
+            section_index="Config",
+            open_by_default=False,
         )
     rows = []
     for config in agent_configs:
@@ -2192,18 +2738,25 @@ def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -
             f"<td>{html.escape(directives)}</td>"
             "</tr>"
         )
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Run configuration</h3>"
+    run_config_html = _build_collapsible_report_section(
+        "Run configuration",
+        "Expand to inspect workflow limits and feedback budgets.",
         "<p class='agent-config-text'>This run stores both the global control settings and the per-agent runtime setup. The feedback limits matter once model-backed agents can send targeted repair messages to each other.</p>"
-        f"{controls_table}"
-        "<h3>Agent runtime configuration</h3>"
-        "<p class='agent-config-text'>This run stores per-agent execution settings and the resolved live model details for every LLM-backed agent.</p>"
-        "<table><thead><tr><th>Agent</th><th>Execution mode</th><th>Timeout (s)</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table>"
-        "</section>"
+        f"{controls_table}",
+        section_index="Config",
+        open_by_default=False,
     )
+    agent_runtime_html = _build_collapsible_report_section(
+        "Agent runtime configuration",
+        "Expand to inspect per-agent mode, timeout, resolved model, and directives.",
+        "<p class='agent-config-text'>This run stores per-agent execution settings and the resolved live model details for every LLM-backed agent.</p>"
+        "<div class='table-scroll'><table><thead><tr><th>Agent</th><th>Execution mode</th><th>Timeout (s)</th><th>Resolved model</th><th>Directives</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>",
+        section_index="Runtime",
+        open_by_default=False,
+    )
+    return run_config_html + agent_runtime_html
 
 
 def normalize_agent_name(agent_name: str) -> str:
@@ -2227,16 +2780,39 @@ def group_stage_traces_by_iteration(stage_traces: list[dict]) -> dict[int, list[
     return grouped
 
 
+def build_live_trace_overview(stage_traces: list[dict], agent_configs: list[dict]) -> str:
+    if not stage_traces:
+        return ""
+    return _build_trace_section_panel(stage_traces, agent_configs, panel_title="Backtracking activity", open_by_default=True)
+
+
 def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) -> str:
+    return _build_trace_section_panel(stage_traces, agent_configs, panel_title="Backtracking rounds", open_by_default=False)
+
+
+def _build_trace_section_panel(
+    stage_traces: list[dict],
+    agent_configs: list[dict],
+    *,
+    panel_title: str,
+    open_by_default: bool,
+) -> str:
+    if not stage_traces:
+        return _build_collapsible_report_section(
+            panel_title,
+            "No stage traces were recorded.",
+            "<p class='agent-config-text'>No agent traces were recorded for this run.</p>",
+            section_index="Trace",
+            open_by_default=open_by_default,
+        )
     sections = []
     run_index = 1
     runtime_lookup = build_agent_runtime_lookup(agent_configs)
     for iteration, traces in group_stage_traces_by_iteration(stage_traces).items():
         sections.append(
-            "<section class='diagram-card'>"
-            f"<h3>Backtracking round {iteration}</h3>"
+            "<details class='stage-details'>"
+            f"<summary>Backtracking round {html.escape(str(iteration))}</summary>"
             "<p class='agent-config-text'>Below is the full sequence of agent passes for this backtracking round, with explicit input, output, and routing context.</p>"
-            "</section>"
         )
         for trace in traces:
             runtime_config = runtime_lookup.get(normalize_agent_name(trace["agent_name"]), {})
@@ -2260,7 +2836,14 @@ def build_trace_sections(stage_traces: list[dict], agent_configs: list[dict]) ->
                 )
             )
             run_index += 1
-    return "".join(sections)
+        sections.append("</details>")
+    return _build_collapsible_report_section(
+        panel_title,
+        "Expand to inspect all rounds, then open a round to inspect its agent passes.",
+        "".join(sections),
+        section_index="Trace",
+        open_by_default=open_by_default,
+    )
 
 
 def build_stage_card(

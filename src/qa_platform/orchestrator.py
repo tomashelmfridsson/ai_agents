@@ -4,6 +4,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 import copy
+from datetime import datetime
 import time
 
 from .models import AgentRuntimeConfig, PipelineResult, RunControlConfig, RunSession, StageTrace
@@ -140,7 +141,10 @@ class OrchestratorAgent:
             agent_name="Orchestrator Agent",
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("orchestrator").stage_index,
-            message="Orchestrator selected Requirements Analyst as the first agent.",
+            message=(
+                "Orchestrator selected Requirements Analyst as the first agent because "
+                "the raw scenario must be turned into structured requirements before downstream work can start."
+            ),
             trace=initial_trace.__dict__,
             run_session=run_session,
         )
@@ -163,7 +167,10 @@ class OrchestratorAgent:
             agent_name="Requirements Analyst",
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("requirements").stage_index,
-            message="Running Requirements Analyst.",
+            message=(
+                "Running Requirements Analyst because the workflow needs structured requirement items, "
+                "acceptance criteria, and assumptions before test design can continue."
+            ),
             run_session=run_session,
         )
         started_at = time.perf_counter()
@@ -195,7 +202,10 @@ class OrchestratorAgent:
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("requirements").stage_index,
             duration_ms=duration_ms,
-            message=f"Requirements Analyst completed in {duration_ms} ms.",
+            message=(
+                f"Requirements Analyst completed in {duration_ms} ms and produced "
+                f"{len(state.requirements)} structured requirement item(s)."
+            ),
             trace=requirements_trace.__dict__,
             run_session=run_session,
         )
@@ -273,7 +283,10 @@ class OrchestratorAgent:
             agent_name="Test Design Agent",
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("design").stage_index,
-            message="Running Test Design Agent.",
+            message=(
+                "Running Test Design Agent because the structured requirements are ready "
+                "and must now be expanded into planned test coverage."
+            ),
             run_session=run_session,
         )
         started_at = time.perf_counter()
@@ -300,7 +313,10 @@ class OrchestratorAgent:
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("design").stage_index,
             duration_ms=duration_ms,
-            message=f"Test Design Agent completed in {duration_ms} ms.",
+            message=(
+                f"Test Design Agent completed in {duration_ms} ms and produced "
+                f"{len(state.designs)} planned test case(s)."
+            ),
             trace=design_trace.__dict__,
             run_session=run_session,
         )
@@ -326,7 +342,10 @@ class OrchestratorAgent:
                 agent_name="Orchestrator Agent",
                 iteration=state.route_round,
                 stage_index=4,
-                message="Orchestrator routed targeted feedback from Test Design Agent to Requirements Analyst.",
+                message=(
+                    "Orchestrator routed targeted feedback from Test Design Agent to Requirements Analyst because "
+                    f"{self._summarize_feedback_reason(design_backtrack_feedback)}"
+                ),
                 run_session=run_session,
             )
             state.stage_traces.append(
@@ -370,7 +389,10 @@ class OrchestratorAgent:
             agent_name="Review Agent",
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("review").stage_index,
-            message="Running Review Agent.",
+            message=(
+                "Running Review Agent because the current requirements and planned test cases "
+                "must be checked for coverage quality and routing decisions."
+            ),
             run_session=run_session,
         )
         started_at = time.perf_counter()
@@ -397,7 +419,10 @@ class OrchestratorAgent:
             iteration=state.route_round,
             stage_index=self.workflow_graph.get_node("review").stage_index,
             duration_ms=duration_ms,
-            message=f"Review Agent completed in {duration_ms} ms.",
+            message=(
+                f"Review Agent completed in {duration_ms} ms with approved={state.review.approved}, "
+                f"coverage_ratio={state.review.coverage_ratio}, and {len(state.review.findings)} finding(s)."
+            ),
             trace=review_trace.__dict__,
             run_session=run_session,
         )
@@ -408,7 +433,10 @@ class OrchestratorAgent:
                 agent_name="Orchestrator Agent",
                 iteration=state.route_round,
                 stage_index=4,
-                message="Orchestrator stopped the run because review approved the result.",
+                message=(
+                    "Orchestrator stopped the run because the review approved the current result "
+                    f"with coverage_ratio={state.review.coverage_ratio}."
+                ),
                 run_session=run_session,
             )
             state.stage_traces.append(
@@ -451,7 +479,8 @@ class OrchestratorAgent:
                 stage_index=4,
                 message=(
                     f"Orchestrator routed targeted feedback from {backtrack_route['from_agent']} "
-                    f"to {backtrack_route['to_agent']}."
+                    f"to {backtrack_route['to_agent']} because "
+                    f"{self._summarize_feedback_reason(backtrack_route['feedback_messages'])}"
                 ),
                 run_session=run_session,
             )
@@ -613,6 +642,15 @@ class OrchestratorAgent:
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
             duration_ms=duration_ms,
         )
+
+    def _summarize_feedback_reason(self, feedback_messages: list[str]) -> str:
+        cleaned = [message.strip().rstrip(".") for message in feedback_messages if message.strip()]
+        if not cleaned:
+            return "the upstream review requested another targeted repair pass."
+        first_message = cleaned[0]
+        if len(cleaned) == 1:
+            return first_message[0].lower() + first_message[1:] + "."
+        return first_message[0].lower() + first_message[1:] + f", plus {len(cleaned) - 1} more feedback item(s)."
 
     def _build_design_trace(
         self,
@@ -1203,6 +1241,7 @@ class OrchestratorAgent:
             "stage_index": stage_index,
             "message": message,
             "duration_ms": duration_ms,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
         }
         if trace is not None:
             payload["trace"] = trace
