@@ -432,33 +432,6 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Dashboard is shown", html_output)
         self.assertIn("Authentication succeeds and the dashboard is visible.", html_output)
 
-    def test_build_evaluation_panel_shows_review_snapshot_and_score_guidance(self) -> None:
-        html_output = app_module.build_evaluation_panel(
-            {
-                "run_id": 9,
-                "title": "Demo",
-                "test_designs": [
-                    {
-                        "test_case_id": "TC-001",
-                        "requirement_id": "REQ-001",
-                        "title": "Sign in with valid credentials",
-                        "test_type": "scenario",
-                        "expected_results": ["User is authenticated", "Dashboard is shown"],
-                    }
-                ],
-                "review": {
-                    "approved": True,
-                    "coverage_ratio": 1.0,
-                    "findings": [],
-                    "improvement_actions": [],
-                },
-            }
-        )
-
-        self.assertIn("Derived Review Score", html_output)
-        self.assertIn("Human score formula", html_output)
-        self.assertIn("TC-001", html_output)
-
     def test_default_export_dir_points_to_downloads(self) -> None:
         previous_export_dir = os.environ.get("QA_EXPORT_DIR")
         os.environ.pop("QA_EXPORT_DIR", None)
@@ -802,7 +775,7 @@ class PipelineTests(unittest.TestCase):
                 "",
             )
         )
-        status_html, report_html, log_file, runtime_html, memory_html, feedback_text, evaluation_state, evaluation_html = updates[-1]
+        status_html, report_html, log_file, runtime_html, memory_html, feedback_text, run_json_file = updates[-1]
 
         self.assertEqual(len(updates), 1)
         self.assertIn("Run stopped because of an error", status_html)
@@ -813,8 +786,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Runtime activity", runtime_html)
         self.assertIn("Working memory", memory_html)
         self.assertIn("Run blocked", feedback_text)
-        self.assertIsNone(evaluation_state)
-        self.assertIn("Evaluation", evaluation_html)
+        self.assertIsNone(run_json_file)
 
     def test_process_requirements_streams_runtime_updates_before_final_result(self) -> None:
         class FakeResult:
@@ -913,8 +885,8 @@ class PipelineTests(unittest.TestCase):
                     )
 
         self.assertGreaterEqual(len(updates), 3)
-        running_status, running_report, running_file, running_runtime, running_memory, running_feedback, running_state, running_evaluation = updates[1]
-        final_status, final_report, final_file, _final_runtime, final_memory, final_feedback, final_state, final_evaluation = updates[-1]
+        running_status, running_report, running_file, running_runtime, running_memory, running_feedback, running_json_file = updates[1]
+        final_status, final_report, final_file, _final_runtime, final_memory, final_feedback, final_json_file = updates[-1]
 
         self.assertIn("Workflow is running", running_status)
         self.assertIn("Runtime events recorded: 1", running_status)
@@ -924,15 +896,13 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Working memory", running_memory)
         self.assertIn("current_stage", running_memory)
         self.assertIn("Workflow is running", running_feedback)
-        self.assertIsNone(running_state)
-        self.assertIn("Evaluation", running_evaluation)
+        self.assertIsNone(running_json_file)
         self.assertIn("Saved as run #7", final_status)
         self.assertEqual(final_report, "<section>final report</section>")
         self.assertEqual(final_file["value"], "/tmp/run.log")
         self.assertIn("Working memory", final_memory)
         self.assertIn("Workflow finished", final_feedback)
-        self.assertEqual(final_state["run_id"], 7)
-        self.assertIn("Derived Review Score", final_evaluation)
+        self.assertTrue(final_json_file["value"].endswith(".json"))
 
     def test_requirements_agent_drops_invalid_requirement_items_from_llm_output(self) -> None:
         configs = build_agent_runtime_configs(

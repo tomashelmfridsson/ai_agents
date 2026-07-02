@@ -31,6 +31,11 @@ class SavedEvaluationExport:
     row_count: int
 
 
+@dataclass
+class SavedRunExport:
+    json_path: str
+
+
 def get_db_path() -> Path:
     override = os.getenv("QA_RUNS_DB_PATH")
     return Path(override) if override else DEFAULT_DB_PATH
@@ -514,3 +519,33 @@ def export_run_evaluations_csv(run_id: int | None = None) -> SavedEvaluationExpo
             writer.writerow(row)
 
     return SavedEvaluationExport(csv_path=str(csv_path), row_count=len(exported_rows))
+
+
+def export_run_payload_json(payload: dict[str, Any], run_id: int | None = None) -> SavedRunExport:
+    export_dir = get_export_dir()
+    try:
+        export_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        export_dir = DEFAULT_EXPORT_DIR
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if run_id is not None:
+        target_name = f"run-result-{run_id}-{timestamp}.json"
+    else:
+        scenario_slug = _slugify_title(str(payload.get("title", "")))
+        target_name = f"run-result-{scenario_slug}-{timestamp}.json"
+    json_path = export_dir / target_name
+    try:
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        DEFAULT_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+        json_path = DEFAULT_EXPORT_DIR / target_name
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    return SavedRunExport(json_path=str(json_path))

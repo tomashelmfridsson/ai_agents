@@ -45,7 +45,7 @@ from qa_platform.sample_scenarios import (
     SAMPLE_SCENARIOS,
     load_sample_scenario,
 )
-from qa_platform.storage import export_run_evaluations_csv, get_log_dir, save_run, save_run_evaluation
+from qa_platform.storage import export_run_payload_json, get_log_dir, save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
@@ -193,195 +193,6 @@ def build_interaction_feedback(message: str, tone: str = "info") -> str:
         f"<strong>Status</strong><span>{html.escape(normalized_message)}</span>"
         f"<div class='interaction-feedback-time'>Updated {html.escape(timestamp)}</div>"
         "</div>"
-    )
-
-
-def build_idle_evaluation_panel() -> str:
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Evaluation</h3>"
-        "<p class='agent-config-text'>Run a workflow first. This area will then let you review the generated test cases as a human QA expert, capture a DeepEval assessment, and compare both against the built-in Review Agent result.</p>"
-        "</section>"
-    )
-
-
-def _clip_score(value: float) -> float:
-    return round(max(0.0, min(100.0, value)), 1)
-
-
-def compute_human_evaluation_score(
-    relevance_score: float,
-    completeness_score: float,
-    oracle_score: float,
-    executability_score: float,
-) -> float:
-    average = (
-        float(relevance_score)
-        + float(completeness_score)
-        + float(oracle_score)
-        + float(executability_score)
-    ) / 4.0
-    return _clip_score((average / 5.0) * 100.0)
-
-
-def derive_review_agent_score(review: dict[str, Any]) -> float:
-    coverage_ratio = float(review.get("coverage_ratio", 0.0) or 0.0)
-    findings = review.get("findings", []) or []
-    approved = bool(review.get("approved"))
-    quality_component = max(0.0, 30.0 - (len(findings) * 5.0))
-    approval_adjustment = 0.0 if approved else -10.0
-    return _clip_score((coverage_ratio * 70.0) + quality_component + approval_adjustment)
-
-
-def build_evaluation_panel(run_context: dict[str, Any] | None) -> str:
-    if not run_context:
-        return build_idle_evaluation_panel()
-
-    review = run_context.get("review", {}) if isinstance(run_context, dict) else {}
-    test_designs = run_context.get("test_designs", []) if isinstance(run_context, dict) else []
-    review_score = derive_review_agent_score(review if isinstance(review, dict) else {})
-    rows = []
-    for test_case in list(test_designs)[:8]:
-        expected = test_case.get("expected_results") or []
-        rows.append(
-            "<tr>"
-            f"<td>{html.escape(str(test_case.get('test_case_id', '-')))}</td>"
-            f"<td>{html.escape(str(test_case.get('requirement_id', '-')))}</td>"
-            f"<td>{html.escape(str(test_case.get('title', '-')))}</td>"
-            f"<td>{html.escape(str(test_case.get('test_type', '-')))}</td>"
-            f"<td>{html.escape(str(len(expected)))}</td>"
-            "</tr>"
-        )
-    findings = review.get("findings", []) if isinstance(review, dict) else []
-    finding_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in findings[:4]) or "<li>No findings recorded.</li>"
-    return (
-        "<section class='diagram-card'>"
-        "<h3>Evaluation</h3>"
-        f"<p class='agent-config-text'>Current run: <strong>{html.escape(str(run_context.get('title', 'Untitled run')))}</strong> "
-        f"(run #{html.escape(str(run_context.get('run_id', 'not saved')))}). "
-        "Use the rubric below for the human QA assessment. The built-in Review Agent result is shown as a reference snapshot. "
-        "DeepEval fields are stored in the same evaluation dataset so they can be automated later without changing the study format.</p>"
-        "<div class='summary-grid'>"
-        f"<section class='metric-card'><div class='metric-label'>Review Approved</div><div class='metric-value'>{html.escape('yes' if review.get('approved') else 'no')}</div></section>"
-        f"<section class='metric-card'><div class='metric-label'>Coverage Ratio</div><div class='metric-value'>{html.escape(str(review.get('coverage_ratio', 0)))}</div></section>"
-        f"<section class='metric-card'><div class='metric-label'>Derived Review Score</div><div class='metric-value'>{html.escape(str(review_score))}</div></section>"
-        f"<section class='metric-card'><div class='metric-label'>Planned Test Cases</div><div class='metric-value'>{html.escape(str(len(test_designs)))}</div></section>"
-        "</div>"
-        "<p class='agent-config-text'>Human score formula: average of Relevance, Completeness, Oracle quality, and Executability, each on a 0-5 scale, normalized to 0-100. "
-        "Built-in Review Agent score is a derived proxy: 70% coverage ratio plus a capped quality component reduced by findings. DeepEval score should also be stored as 0-100 so the three evaluators can be compared directly.</p>"
-        "<div class='table-scroll'><table><thead><tr><th>Test case</th><th>Requirement</th><th>Title</th><th>Type</th><th>Expected results</th></tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div>"
-        "<div class='io-section'>"
-        "<div class='log-title'>Built-in Review Agent findings</div>"
-        f"<ul class='log-list'>{finding_items}</ul>"
-        "</div>"
-        "</section>"
-    )
-
-
-def save_evaluation_entries(
-    run_context: dict[str, Any] | None,
-    human_approved: bool,
-    human_relevance: float,
-    human_completeness: float,
-    human_oracle: float,
-    human_executability: float,
-    human_notes: str,
-    deepeval_approved: bool,
-    deepeval_score: float,
-    deepeval_model: str,
-    deepeval_findings: str,
-    deepeval_notes: str,
-) -> tuple[str, str]:
-    if not run_context or not run_context.get("run_id"):
-        return (
-            build_interaction_feedback("No saved run is available for evaluation yet.", "warning"),
-            None,
-        )
-
-    run_id = int(run_context["run_id"])
-    review = run_context.get("review", {}) or {}
-    review_score = derive_review_agent_score(review)
-    saved_count = 0
-
-    save_run_evaluation(
-        run_id=run_id,
-        evaluator_type="review_agent",
-        evaluator_name="Built-in Review Agent",
-        evaluator_model=str(run_context.get("review_model_id", "")),
-        approved=bool(review.get("approved")),
-        score=review_score,
-        dimensions={
-            "coverage_ratio": review.get("coverage_ratio", 0.0),
-            "finding_count": len(review.get("findings", []) or []),
-        },
-        findings=[str(item) for item in (review.get("findings", []) or [])],
-        notes="Snapshot of the built-in Review Agent result captured from the saved run.",
-    )
-    saved_count += 1
-
-    human_score = compute_human_evaluation_score(
-        human_relevance,
-        human_completeness,
-        human_oracle,
-        human_executability,
-    )
-    save_run_evaluation(
-        run_id=run_id,
-        evaluator_type="human",
-        evaluator_name="Human QA specialist",
-        evaluator_model="",
-        approved=human_approved,
-        score=human_score,
-        dimensions={
-            "relevance": float(human_relevance),
-            "completeness": float(human_completeness),
-            "oracle_quality": float(human_oracle),
-            "executability": float(human_executability),
-        },
-        findings=[],
-        notes=human_notes,
-    )
-    saved_count += 1
-
-    deepeval_findings_list = [line.strip() for line in (deepeval_findings or "").splitlines() if line.strip()]
-    if deepeval_findings_list or (deepeval_model or "").strip() or (deepeval_notes or "").strip() or deepeval_score > 0:
-        save_run_evaluation(
-            run_id=run_id,
-            evaluator_type="deepeval",
-            evaluator_name="DeepEval",
-            evaluator_model=(deepeval_model or "").strip(),
-            approved=deepeval_approved,
-            score=float(deepeval_score),
-            dimensions={},
-            findings=deepeval_findings_list,
-            notes=deepeval_notes,
-        )
-        saved_count += 1
-
-    return (
-        build_interaction_feedback(
-            f"Saved {saved_count} evaluation record(s) for run #{run_id}. Human score: {human_score}.",
-            "success",
-        ),
-        None,
-    )
-
-
-def export_current_run_evaluations(run_context: dict[str, Any] | None) -> tuple[str, str | None]:
-    if not run_context or not run_context.get("run_id"):
-        return (
-            build_interaction_feedback("No saved run is available to export yet.", "warning"),
-            None,
-        )
-    export_result = export_run_evaluations_csv(int(run_context["run_id"]))
-    return (
-        build_interaction_feedback(
-            f"Exported {export_result.row_count} import-ready evaluation row(s) for run #{run_context['run_id']} to {export_result.csv_path}.",
-            "success",
-        ),
-        export_result.csv_path,
     )
 
 
@@ -837,7 +648,7 @@ def process_requirements(
     openai_base_url: str,
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
-) -> Iterator[tuple[str, str, str | None, str, str, str, dict[str, Any] | None, str]]:
+) -> Iterator[tuple[str, str, Any, str, str, str, Any]]:
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
@@ -850,7 +661,6 @@ def process_requirements(
             build_idle_memory_panel(),
             build_interaction_feedback("Run blocked. Add requirements before starting the workflow.", "warning"),
             None,
-            build_idle_evaluation_panel(),
         )
         return
     round_limit = max(1, int(max_rounds))
@@ -893,7 +703,6 @@ def process_requirements(
             "Workflow starting. Press Stop workflow to stop after the current agent pass."
         ),
         None,
-        build_idle_evaluation_panel(),
     )
 
     def handle_runtime_event(event: dict[str, object]) -> None:
@@ -952,7 +761,6 @@ def process_requirements(
                     build_memory_panel(latest_memory_snapshot),
                     build_interaction_feedback("Workflow is running."),
                     None,
-                    build_idle_evaluation_panel(),
                 )
                 emitted = True
         if worker_state["done"] and event_queue.empty():
@@ -970,7 +778,6 @@ def process_requirements(
                     "warning",
                 ),
                 None,
-                build_idle_evaluation_panel(),
             )
         if not emitted:
             time.sleep(0.1)
@@ -994,7 +801,6 @@ def process_requirements(
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped.", "warning"),
             None,
-            build_idle_evaluation_panel(),
         )
         return
     if isinstance(error, LLMRuntimeError):
@@ -1007,7 +813,6 @@ def process_requirements(
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped because of an LLM/backend error.", "warning"),
             None,
-            build_idle_evaluation_panel(),
         )
         return
     if isinstance(error, AgentTimeoutError):
@@ -1028,7 +833,6 @@ def process_requirements(
             build_memory_panel(latest_memory_snapshot),
             build_interaction_feedback("Workflow stopped because an agent hit its timeout.", "warning"),
             None,
-            build_idle_evaluation_panel(),
         )
         return
     if error is not None:
@@ -1069,15 +873,7 @@ def process_requirements(
     ]
     if llm_note:
         status_items.append(f"<li>{html.escape(llm_note.strip())}</li>")
-    review_runtime = _find_agent_runtime_config("Review Agent", agent_configs)
-    evaluation_context = {
-        "run_id": payload["run_id"],
-        "title": payload["title"],
-        "stored_at": payload["stored_at"],
-        "test_designs": payload["test_designs"],
-        "review": payload["review"],
-        "review_model_id": review_runtime.model_id if review_runtime and review_runtime.model_id else "",
-    }
+    run_export = export_run_payload_json(payload, int(payload["run_id"]))
     status = _build_run_summary_panel(
         "Run summary",
         f"Saved as run #{payload['run_id']}.",
@@ -1091,8 +887,7 @@ def process_requirements(
         build_runtime_timeline(runtime_events, str(live_log_path)),
         build_memory_panel((payload.get("run_session") or {}).get("working_memory")),
         build_interaction_feedback(f"Workflow finished. Run #{payload['run_id']} was saved.", "success"),
-        evaluation_context,
-        build_evaluation_panel(evaluation_context),
+        gr.update(value=run_export.json_path),
     )
 
 
@@ -1617,53 +1412,6 @@ CUSTOM_CSS = """
     .controls-accordion .icon-wrap {
       color: #130d08 !important;
       fill: #130d08 !important;
-    }
-    .evaluation-panel,
-    .evaluation-panel > div,
-    .evaluation-panel section,
-    .evaluation-panel .block,
-    .evaluation-panel .gr-group,
-    .evaluation-panel .form,
-    .evaluation-panel .wrap,
-    .evaluation-panel label,
-    .evaluation-panel p,
-    .evaluation-panel span,
-    .evaluation-panel div,
-    .evaluation-panel textarea,
-    .evaluation-panel input,
-    .evaluation-panel select,
-    .evaluation-panel option,
-    .evaluation-panel .label-wrap,
-    .evaluation-panel .label-wrap span,
-    .evaluation-panel .label-wrap p,
-    .evaluation-panel .icon-wrap,
-    .evaluation-panel [data-testid="block-label"],
-    .evaluation-panel [data-testid="block-info"],
-    .evaluation-panel [role="checkbox"],
-    .evaluation-panel [role="slider"],
-    .evaluation-panel .wrap .wrap,
-    .evaluation-panel .svelte-1ipelgc,
-    .evaluation-panel .svelte-1gfkn6j {
-      color: #000 !important;
-      fill: #000 !important;
-    }
-    .evaluation-panel textarea,
-    .evaluation-panel input,
-    .evaluation-panel select,
-    .evaluation-panel .input-container,
-    .evaluation-panel .scroll-hide {
-      background: rgba(255, 255, 255, 0.99) !important;
-      color: #000 !important;
-      border-color: rgba(29, 20, 13, 0.22) !important;
-    }
-    .evaluation-panel textarea::placeholder,
-    .evaluation-panel input::placeholder {
-      color: #4a4038 !important;
-    }
-    .evaluation-panel .controls-accordion button,
-    .evaluation-panel .controls-accordion summary,
-    .evaluation-panel .controls-accordion [role="button"] {
-      color: #000 !important;
     }
     .config-accordion > div,
     .config-accordion section,
@@ -2409,46 +2157,14 @@ def build_demo() -> gr.Blocks:
                     interactive=False,
                     elem_classes=["result-panel-output"],
                 )
-            with gr.Group(elem_classes=["panel-card"]):
-                stop_button = gr.Button("Stop workflow")
-            with gr.Group(elem_classes=["panel-card", "evaluation-panel"]):
-                gr.Markdown("## Evaluation")
-                evaluation_run_state = gr.State(value=None)
-                evaluation_output = gr.HTML(
-                    value=build_idle_evaluation_panel(),
-                    show_label=False,
-                    container=False,
-                    elem_classes=["result-panel-output"],
-                )
-                gr.HTML(
-                    "<p class='agent-config-text'>Use the human rubric to score the generated test cases on a 0-5 scale per dimension. The overall human score is normalized to 0-100. DeepEval values can be captured here now and automated later against the same schema.</p>"
-                )
-                with gr.Accordion("Human QA evaluation", open=True, elem_classes=["controls-accordion"]):
-                    human_approved_input = gr.Checkbox(label="Approved by human QA expert", value=False)
-                    human_relevance_input = gr.Slider(label="Relevance to requirements (0-5)", minimum=0, maximum=5, step=0.5, value=3)
-                    human_completeness_input = gr.Slider(label="Coverage and completeness (0-5)", minimum=0, maximum=5, step=0.5, value=3)
-                    human_oracle_input = gr.Slider(label="Oracle and expected-result quality (0-5)", minimum=0, maximum=5, step=0.5, value=3)
-                    human_executability_input = gr.Slider(label="Executability and clarity (0-5)", minimum=0, maximum=5, step=0.5, value=3)
-                    human_notes_input = gr.Textbox(label="Human QA notes", lines=4, placeholder="Why are the test cases good or weak?")
-                with gr.Accordion("DeepEval result capture", open=False, elem_classes=["controls-accordion"]):
-                    deepeval_approved_input = gr.Checkbox(label="Approved by DeepEval", value=False)
-                    deepeval_score_input = gr.Slider(label="DeepEval score (0-100)", minimum=0, maximum=100, step=1, value=0)
-                    deepeval_model_input = gr.Textbox(label="DeepEval model / evaluator name", placeholder="Example: gpt-4.1-mini via DeepEval")
-                    deepeval_findings_input = gr.Textbox(label="DeepEval findings", lines=4, placeholder="One finding per line")
-                    deepeval_notes_input = gr.Textbox(label="DeepEval notes", lines=3, placeholder="Optional notes about metrics or prompt setup")
-                with gr.Row():
-                    save_evaluation_button = gr.Button("Save evaluation")
-                    export_evaluations_button = gr.Button("Export evaluations CSV")
-                evaluation_feedback_output = gr.HTML(
-                    value=build_interaction_feedback("No evaluation has been saved yet."),
-                    elem_classes=["interaction-feedback-shell"],
-                )
-                evaluation_export_output = gr.File(
-                    label="Download evaluations CSV",
+                run_json_file_output = gr.File(
+                    label="Download run JSON for evaluation",
                     value=None,
                     interactive=False,
                     elem_classes=["result-panel-output"],
                 )
+            with gr.Group(elem_classes=["panel-card"]):
+                stop_button = gr.Button("Stop workflow")
 
         run_button.click(
             fn=process_requirements,
@@ -2469,8 +2185,7 @@ def build_demo() -> gr.Blocks:
                 runtime_output,
                 memory_output,
                 interaction_feedback_output,
-                evaluation_run_state,
-                evaluation_output,
+                run_json_file_output,
             ],
             show_progress="hidden",
         )
@@ -2510,32 +2225,6 @@ def build_demo() -> gr.Blocks:
             outputs=[scenario_picker],
             show_progress="hidden",
         )
-        save_evaluation_button.click(
-            fn=save_evaluation_entries,
-            inputs=[
-                evaluation_run_state,
-                human_approved_input,
-                human_relevance_input,
-                human_completeness_input,
-                human_oracle_input,
-                human_executability_input,
-                human_notes_input,
-                deepeval_approved_input,
-                deepeval_score_input,
-                deepeval_model_input,
-                deepeval_findings_input,
-                deepeval_notes_input,
-            ],
-            outputs=[evaluation_feedback_output, evaluation_export_output],
-            show_progress="hidden",
-        )
-        export_evaluations_button.click(
-            fn=export_current_run_evaluations,
-            inputs=[evaluation_run_state],
-            outputs=[evaluation_feedback_output, evaluation_export_output],
-            show_progress="hidden",
-        )
-
     return demo
 
 
@@ -2596,7 +2285,7 @@ def build_summary_overview(payload: dict) -> str:
         bullets.append(f"Primary requested improvement: {improvement_actions[0]}")
     items = "".join(f"<li>{html.escape(item)}</li>" for item in bullets)
     return _build_collapsible_report_section(
-        "Run summary",
+        "Result summary",
         "Stored results, approval outcome, and final run totals.",
         f"<p class='summary-lead'>{html.escape(lead)}</p><ul class='summary-list'>{items}</ul>",
         section_index="Summary",
