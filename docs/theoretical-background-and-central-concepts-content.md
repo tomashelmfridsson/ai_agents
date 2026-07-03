@@ -17,8 +17,14 @@
 - [Multi-Agent System](#multi-agent-system)
 - [Orchestrator](#orchestrator)
 - [Agent Memory](#agent-memory)
+- [Shared Working Memory](#shared-working-memory)
 - [Planning](#planning)
 - [Reflection och Review](#reflection-och-review)
+- [Review Gate](#review-gate)
+- [Selective Backtracking](#selective-backtracking)
+- [Observability](#observability)
+- [Runtime Trace](#runtime-trace)
+- [Shared Blackboard](#shared-blackboard)
 - [Tool Calling](#tool-calling)
 - [Function Calling](#function-calling)
 - [Model Context Protocol](#model-context-protocol)
@@ -47,10 +53,19 @@
 - [Code Quality](#code-quality)
 - [SonarQube](#sonarqube)
 - [Agent Framework](#agent-framework)
+- [LangChain](#langchain)
+- [LangGraph](#langgraph)
+- [Hermes Agent Framework](#hermes-agent-framework)
 - [Modellagnostisk arkitektur](#modellagnostisk-arkitektur)
 - [Lokala och molnbaserade modeller](#lokala-och-molnbaserade-modeller)
 - [Ollama](#ollama)
 - [Hugging Face](#hugging-face)
+- [Agent-as-a-Service](#agent-as-a-service)
+- [REST API](#rest-api)
+- [DeepEval](#deepeval)
+- [Traceability Matrix](#traceability-matrix)
+- [Gradio](#gradio)
+- [Streamlit](#streamlit)
 - [GitHub och GitHub Pages](#github-och-github-pages)
 - [Continuous Integration](#continuous-integration)
 - [Demonstrator](#demonstrator)
@@ -296,6 +311,12 @@ Minnet kan implementeras på olika sätt, exempelvis som JSON-filer, databaspost
 
 Agentminne är viktigt för QA eftersom testdesign ofta bygger på tidigare erfarenhet. Ett system som kan återanvända tidigare testmönster kan potentiellt skapa mer konsekventa och relevanta tester.
 
+## Shared Working Memory
+
+Shared Working Memory är ett mer specifikt begrepp än allmänt agentminne. Det syftar på ett delat arbetsminne som flera agenter kan läsa från och skriva till under samma körning.
+
+I just detta projekt är begreppet centralt eftersom den egenbyggda lösningen använder ett synligt run-scoped arbetsminne med både delad och agentprivat information. Det är alltså inte bara ett teoretiskt minnesbegrepp, utan en konkret del av hur prototypen styr kontext, återkoppling och spårbarhet mellan stegen.
+
 ## Planning
 
 Planning innebär att en agent eller orkestrator bryter ner ett mål i delsteg. I ett QA-system kan målet vara att skapa testartefakter från krav. Detta kan delas upp i kravanalys, acceptanskriterier, testdesign, testgenerering och granskning.
@@ -330,6 +351,36 @@ Review Agent har en viktig QA-roll. Den ska inte primärt skapa nya testfall, ut
 - Finns risker eller luckor?
 
 Review Agent kan därmed fungera som en kvalitetsgrind mellan agentstegen.
+
+## Review Gate
+
+Review Gate är inte nödvändigtvis ett universellt standardbegrepp, men det är användbart i detta sammanhang för att beskriva ett granskningssteg som fungerar som kvalitetsgrind innan arbetsflödet får gå vidare.
+
+I projektet syns detta dels i den egna Review Agent-logiken, dels i Hermes-spåret där verifiering och gate-beslut användes som ett tydligt kontrollsteg innan slutartefakten syntetiserades. Begreppet bör därför förstås som projektnära och arbetsflödesspecifikt.
+
+## Selective Backtracking
+
+Selective Backtracking beskriver ett arbetsflöde där systemet inte alltid startar om hela processen från början, utan endast går tillbaka till det steg som behöver förbättras.
+
+Detta är särskilt relevant i just denna prototyp, eftersom orkestratorn försöker skicka tillbaka arbetet till minsta rimliga tidigare steg, exempelvis Requirements Analyst eller Test Design, i stället för att göra en full omkörning. Begreppet är alltså viktigt här som beskrivning av projektets routingstrategi.
+
+## Observability
+
+Observability betyder här att användaren kan följa vad systemet faktiskt gör under körning, inte bara se slutresultatet. Det omfattar exempelvis insyn i agentinput, agentoutput, routingbeslut, vald modell, timeoutstatus och minnesuppdateringar.
+
+Observability är mycket centralt i detta projekt och mer konkret än i många allmänna agentdiskussioner. Här handlar det alltså inte bara om loggning i bred mening, utan om att prototypen medvetet byggts för att göra agentbeteende och körspår granskningsbara i GUI och loggar.
+
+## Runtime Trace
+
+Runtime Trace syftar på den spårkedja av händelser som uppstår under en körning, till exempel när ett steg startar, avslutas, skickas vidare eller stoppas.
+
+Begreppet är projektspecifikt relevant eftersom prototypen visar runtime activity och andra körspår i realtid. En runtime trace gör det lättare att förstå varför ett agentflöde lyckades, misslyckades eller fastnade i iterationer.
+
+## Shared Blackboard
+
+Shared Blackboard kommer från blackboard-liknande samarbetsmönster där flera agenter delar en gemensam arbetsyta. Det är nära besläktat med delat minne, men används oftare när fokus ligger på samordning mellan flera roller som skriver till samma gemensamma kontext.
+
+I detta projekt är begreppet främst relevant för Hermes-lösningen, där en root task fungerade som ett shared blackboard för swarmen. Därför bör det förklaras som ett jämförelsebegrepp knutet till det externa ramverksspåret snarare än som huvudterm för den egenbyggda lösningen.
 
 ## Tool Calling
 
@@ -691,6 +742,24 @@ Exempel på agentramverk eller agentplattformar är:
 
 Valet av agentramverk är en central del av många litteraturstudier och prototyper. Ett viktigt mål är att förstå vilka ramverk som passar bäst för QA-arbetsflöden där krav, testdesign, testgenerering och granskning behöver samordnas.
 
+## LangChain
+
+LangChain är ett biblioteksekosystem för att bygga LLM-baserade applikationer. Det erbjuder byggblock för promptar, kedjor, verktygsanrop, minne, dokumenthämtning och integration med olika modellleverantörer.
+
+LangChain är relevant eftersom det länge varit en vanlig bas för agentliknande och verktygsstödda LLM-flöden. I detta projekt är LangChain främst relevant som omgivande ekosystem till LangGraph, snarare än som huvudramverk för den egenbyggda lösningen.
+
+## LangGraph
+
+LangGraph är ett grafbaserat agentramverk inom LangChain-ekosystemet. Det används för att definiera noder, tillstånd och övergångar i agentiska arbetsflöden på ett mer explicit sätt än i enklare promptkedjor.
+
+LangGraph är relevant här eftersom det användes som ett jämförelsespår till den egenbyggda orkestratorlösningen. Styrkan ligger i tydlig modellering av grafstruktur, state management och övergångar mellan steg. Begränsningen i detta projekt var att flödet blev mer hårdkodat än i den egenbyggda lösningen med mer dynamisk routing.
+
+## Hermes Agent Framework
+
+Hermes Agent Framework är ett agentramverk som användes som ett externt jämförelsespår i projektet. Det blev särskilt relevant genom den swarm-lösning som sattes upp för att jämföra hur snabbt och tydligt ett QA-liknande fleragentflöde kunde byggas i ett annat ramverk.
+
+I projektet användes Hermes för att skapa en Kanban-liknande swarm med tydliga roller, shared blackboard och verifieringssteg. Därför är Hermes viktigt både som begrepp i litteraturstudien och som praktiskt jämförelseobjekt mot den egenbyggda lösningen och LangGraph-spåret.
+
 ## Modellagnostisk arkitektur
 
 En modellagnostisk arkitektur innebär att systemet inte är hårt bundet till en specifik LLM. Istället kan olika modeller användas beroende på uppgift, kostnad, tillgänglighet och kvalitet.
@@ -730,6 +799,47 @@ Hugging Face är relevant på två sätt:
 2. som hostingmiljö för demonstratorn
 
 Eftersom projektet redan har erfarenhet från en tidigare RAG-prototyp på Hugging Face är det ett naturligt alternativ för den första demonstratorn.
+
+I detta projekt användes Hugging Face också för att hosta `qa-agent-service` och göra agentfunktioner tillgängliga via publika endpoints. Därmed blev Hugging Face inte bara en modellplattform utan också en praktisk driftmiljö för agentnära tjänster.
+
+## Agent-as-a-Service
+
+Agent-as-a-Service kan användas som begrepp när agentfunktionalitet exponeras som en separat tjänst i stället för att all agentlogik körs direkt i samma applikation. I praktiken innebär det att klienter anropar en agentbackend via nätverk, exempelvis genom HTTP-baserade endpoints.
+
+Detta begrepp passar väl in på projektets `qa-agent-service`, där Requirements Analyst, Test Design och Review kunde exponeras som publika tjänster på Hugging Face. Även om termen inte alltid används lika konsekvent i litteraturen är den användbar här för att beskriva skillnaden mellan:
+
+- agenter som kör direkt i samma app
+- agenter som används som en separat hostad tjänst
+
+## REST API
+
+REST API är ett vanligt sätt att exponera funktionalitet över HTTP. En klient skickar förfrågningar till definierade endpoints och får tillbaka svar i exempelvis JSON-format.
+
+REST API är relevant i projektet eftersom `qa-agent-service` utvecklades från ett mer nyckelberoende Hugging Face-upplägg till publika REST-endpoints. Detta gjorde tjänsten lättare att återanvända från olika klienter och ramverk, inklusive jämförelser mot Hermes och andra integrationsspår.
+
+## DeepEval
+
+DeepEval är ett ramverk för att utvärdera LLM-baserade applikationer och agentflöden. Det används för att mäta kvalitet i genererat innehåll med hjälp av definierade kriterier och evalueringslogik, snarare än enbart manuella intryck.
+
+DeepEval är relevant här eftersom det fanns tankar på att använda det för att bedöma kvaliteten i genererade testfall. Även om den praktiska utvärderingen senare i hög grad kom att bygga på Hermes-jämförelser och manuell Senior QA-granskning är DeepEval fortfarande ett viktigt begrepp att ha med i kunskapslistan.
+
+## Traceability Matrix
+
+Traceability Matrix är ett QA-begrepp för en struktur som kopplar krav till motsvarande testfall, verifieringssteg eller andra artefakter. Syftet är att visa att varje krav kan följas till någon form av validering.
+
+Begreppet är relevant här eftersom spårbarhet mellan krav och testdesign är en av projektets kärnfrågor. I Hermes-jämförelsen producerades också en konkret traceability matrix, vilket gör att termen är praktiskt förankrad i det arbete som faktiskt genomfördes.
+
+## Gradio
+
+Gradio är ett Python-baserat ramverk för att bygga enkla webbgränssnitt för AI-applikationer och demonstratorer. Det används ofta för snabb prototyputveckling, särskilt tillsammans med Hugging Face Spaces.
+
+Gradio är centralt i projektet eftersom AI Agents-delen byggdes i Gradio. Ett viktigt skäl var att det redan fanns viss tidigare erfarenhet av verktyget, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö.
+
+## Streamlit
+
+Streamlit är ett Python-ramverk för att bygga datadrivna webbapplikationer och interaktiva gränssnitt med relativt liten mängd kod. Det används ofta för prototyper, dashboards och AI-demonstratorer.
+
+Streamlit är relevant i projektet eftersom LangGraph-spåret kom att köras i Streamlit. Skälet var att Gradio medförde praktiska begränsningar för just den delen av arbetet, vilket gjorde Streamlit till ett mer fungerande alternativ i den jämförelsen.
 
 ## GitHub och GitHub Pages
 
@@ -784,4 +894,8 @@ Detta kapitel har introducerat de centrala begrepp som projektet bygger på. Den
 En LLM är en modell som genererar text eller kod. En AI-agent använder en LLM tillsammans med instruktioner, verktyg och mål. Ett multi-agent-system består av flera specialiserade agenter som samordnas, ofta av en orkestrator.
 
 En central idé i detta område är att använda agentisk AI för att stödja QA-arbetsflöden. Fokus ligger då på att transformera krav till testdesign och testartefakter med spårbarhet, granskning och möjlighet till iteration.
+
+---
+
+Detta material har tagits fram tillsammans med Generativ AI och har därefter granskats och bearbetats i projektets dokumentationsarbete.
 ---

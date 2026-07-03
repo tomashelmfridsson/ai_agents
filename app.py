@@ -1730,6 +1730,8 @@ CUSTOM_CSS = """
       font-size: 0.9rem;
       box-shadow: 0 8px 18px rgba(50, 28, 8, 0.18);
     }
+    .doc-pill-button:hover,
+    .doc-pill-button:focus-visible,
     .doc-pill-button button:hover {
       background: linear-gradient(180deg, #9f4220, #7f2b10) !important;
       border-color: rgba(86, 27, 8, 1);
@@ -2400,35 +2402,17 @@ def build_demo() -> gr.Blocks:
                     </section>
                     """
                 )
-                gr.Button(
-                    "Project brief",
-                    link=PROJECT_BRIEF_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
-                    "Theoretical background",
-                    link=THEORETICAL_BACKGROUND_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
-                    "Literature study",
-                    link=LITERATURE_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
-                    "AI agents POC report",
-                    link=AI_AGENTS_POC_REPORT_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
-                    "QA agent requirements",
-                    link=QA_AGENT_DEVELOPING_REQUIREMENTS_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
-                    "AI developing guidelines",
-                    link=AI_DEVELOPING_GUIDELINES_URL,
-                    elem_classes=["doc-pill-button"],
+                gr.HTML(
+                    f"""
+                    <div class="doc-actions">
+                      <a class="doc-pill-button" href="{PROJECT_BRIEF_URL}" target="_blank" rel="noreferrer">Project brief</a>
+                      <a class="doc-pill-button" href="{THEORETICAL_BACKGROUND_URL}" target="_blank" rel="noreferrer">Theoretical background</a>
+                      <a class="doc-pill-button" href="{LITERATURE_URL}" target="_blank" rel="noreferrer">Literature study</a>
+                      <a class="doc-pill-button" href="{AI_AGENTS_POC_REPORT_URL}" target="_blank" rel="noreferrer">AI agents POC report</a>
+                      <a class="doc-pill-button" href="{QA_AGENT_DEVELOPING_REQUIREMENTS_URL}" target="_blank" rel="noreferrer">QA agent requirements</a>
+                      <a class="doc-pill-button" href="{AI_DEVELOPING_GUIDELINES_URL}" target="_blank" rel="noreferrer">AI developing guidelines</a>
+                    </div>
+                    """
                 )
             with gr.Group(elem_classes=["panel-card"]):
                 gr.HTML(build_pipeline_visualization_section())
