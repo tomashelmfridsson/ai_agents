@@ -21,13 +21,42 @@
             <a class="doc-link" href="https://tomashelmfridsson.github.io/ai_agents/project-brief/" target="_blank" rel="noreferrer">
               Open project brief
             </a>
+            <a class="doc-link" href="https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts/" target="_blank" rel="noreferrer">
+              Open knowledge base
+            </a>
+            <a class="doc-link" href="https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report/" target="_blank" rel="noreferrer">
+              Open AI Agents POC report
+            </a>
           </div>
         </div>
         <p class="lede">
           The broader project evaluates multiple LLMs, local versus cloud inference, and alternative
-          agentic orchestration patterns for QA. The current demo is the deterministic baseline: a
-          synchronous rule-based workflow used as a controlled reference point.
+          agentic orchestration patterns for QA. The current public solution uses Hugging Face-backed
+          model execution, while the orchestration, routing, memory handling, feedback limits, and
+          observability are implemented in this app.
         </p>
+        <p class="lede">
+          This means the app is not just a thin client for hosted agents. It keeps the project&apos;s own
+          orchestration model, and the codebase still preserves the path for running the project&apos;s own
+          in-app agents. A natural next UI step is a clear mode switch between in-app agents and
+          Hugging Face-hosted execution.
+        </p>
+        <div class="solution-alternatives">
+          <a
+            class="solution-card"
+            href="https://huggingface.co/spaces/helmfridsson/qa-agent-langgraph"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span class="solution-label">Alternative solution</span>
+            <strong>QA Agent LangGraph</strong>
+            <span>
+              Added as a comparison track for graph-based orchestration. It makes node transitions,
+              states, and flow control more explicit, which helps evaluate what LangGraph adds
+              compared with the app&apos;s own orchestrator-driven approach.
+            </span>
+          </a>
+        </div>
       </section>
 
       <section class="workflow-strip panel">
