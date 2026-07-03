@@ -453,6 +453,36 @@ def build_running_status(runtime_events: list[dict[str, object]]) -> str:
     return build_running_summary_panel(runtime_events, None)
 
 
+def _extract_latest_runtime_metrics(runtime_events: list[dict[str, object]]) -> dict[str, object]:
+    for event in reversed(runtime_events):
+        metrics = event.get("metrics")
+        if isinstance(metrics, dict):
+            return metrics
+    return {}
+
+
+def _build_feedback_usage_lines(metrics: dict[str, object]) -> list[str]:
+    if not metrics:
+        return []
+    current_round = metrics.get("current_round", "-")
+    max_rounds = metrics.get("max_rounds", "-")
+    total_feedback = metrics.get("total_feedback_messages", 0)
+    max_feedback = metrics.get("max_feedback_messages", 0)
+    max_pair_feedback = metrics.get("max_feedback_per_agent_pair", 0)
+    lines = [
+        f"<li>Current round: {html.escape(str(current_round))}/{html.escape(str(max_rounds))}</li>",
+        f"<li>Feedback handoffs used: {html.escape(str(total_feedback))}/{html.escape(str(max_feedback))}</li>",
+        f"<li>Per-pair feedback cap: {html.escape(str(max_pair_feedback))}</li>",
+    ]
+    pair_counts = metrics.get("pair_feedback_counts")
+    if isinstance(pair_counts, dict) and pair_counts:
+        formatted_counts = ", ".join(
+            f"{pair}: {count}" for pair, count in sorted(pair_counts.items(), key=lambda item: str(item[0]))
+        )
+        lines.append(f"<li>Feedback by pair: {html.escape(formatted_counts)}</li>")
+    return lines
+
+
 def build_running_summary_panel(runtime_events: list[dict[str, object]], log_path: str | None = None) -> str:
     last_message = (
         str(runtime_events[-1].get("message", "Workflow is running."))
@@ -461,6 +491,7 @@ def build_running_summary_panel(runtime_events: list[dict[str, object]], log_pat
     )
     completed_count = sum(1 for event in runtime_events if event.get("event_type") == "stage_completed")
     active_timing = _get_active_agent_timing(runtime_events)
+    metrics = _extract_latest_runtime_metrics(runtime_events)
     timing_items = []
     if active_timing:
         timing_items.extend(
@@ -488,9 +519,16 @@ def build_running_summary_panel(runtime_events: list[dict[str, object]], log_pat
                 f"<li>Current agent running time: {html.escape(_format_elapsed_ms(int(active_timing['elapsed_ms'])))}</li>",
             ]
         )
+    usage_lines = _build_feedback_usage_lines(metrics)
     details_html = (
         f"<p class='agent-config-text'>Completed stages so far: {completed_count}.</p>"
         + (f"<ul class='summary-list'>{''.join(timing_items)}</ul>" if timing_items else "")
+        + (
+            "<p class='agent-config-text'>Live workflow limits and usage.</p>"
+            f"<ul class='summary-list'>{''.join(usage_lines)}</ul>"
+            if usage_lines
+            else ""
+        )
         + "<p class='agent-config-text'>Workflow is in progress. This panel updates as agents start, complete, or route work.</p>"
         + f"<ul class='summary-list'>{''.join(items)}</ul>"
     )
@@ -1288,6 +1326,7 @@ def process_requirements(
     )
     status_items = [
         f"<li>Completed with {payload['iterations']} backtracking round(s) within a limit of {round_limit}.</li>",
+        f"<li>Feedback handoffs used: {payload.get('total_feedback_messages', 0)}/{run_controls.max_feedback_messages}.</li>",
         f"<li>Coverage ratio: {payload['review']['coverage_ratio']}.</li>",
         f"<li>Approved: {'yes' if payload['review']['approved'] else 'no'}.</li>",
         f"<li>Findings: {findings_count}. Improvement actions: {improvement_count}.</li>",
@@ -2955,6 +2994,8 @@ def build_workflow_report(payload: dict) -> str:
 def build_summary_overview(payload: dict) -> str:
     review = payload["review"]
     run_controls = payload.get("run_controls", {})
+    total_feedback_messages = payload.get("total_feedback_messages", 0)
+    pair_feedback_counts = payload.get("pair_feedback_counts", {}) or {}
     approved = "yes" if review["approved"] else "no"
     findings = review["findings"]
     improvement_actions = review["improvement_actions"]
@@ -2968,6 +3009,7 @@ def build_summary_overview(payload: dict) -> str:
     )
     bullets = [
         f"Stored run ID: {run_id}" if run_id is not None else "Stored run ID: not available",
+        f"Feedback handoffs used: {total_feedback_messages}/{run_controls.get('max_feedback_messages', 0)}",
         f"Configured max rounds: {run_controls.get('max_rounds', payload['iterations'])}",
         f"Configured max feedback messages: {run_controls.get('max_feedback_messages', 0)}",
         f"Configured max feedback per agent pair: {run_controls.get('max_feedback_per_agent_pair', 0)}",
@@ -2975,6 +3017,11 @@ def build_summary_overview(payload: dict) -> str:
         f"Improvement actions: {len(improvement_actions)}",
         f"Final approval decision: {approved}",
     ]
+    if pair_feedback_counts:
+        pair_summary = ", ".join(
+            f"{pair}: {count}" for pair, count in sorted(pair_feedback_counts.items(), key=lambda item: str(item[0]))
+        )
+        bullets.append(f"Feedback by pair: {pair_summary}")
     if storage_path:
         bullets.append(f"Run database: {storage_path}")
     if log_path:

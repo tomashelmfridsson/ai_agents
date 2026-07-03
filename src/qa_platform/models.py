@@ -125,6 +125,8 @@ class PipelineResult:
     review: ReviewReport
     iterations: int
     run_controls: RunControlConfig
+    total_feedback_messages: int = 0
+    pair_feedback_counts: dict[str, int] = field(default_factory=dict)
     agent_configs: list[AgentRuntimeConfig] = field(default_factory=list)
     stage_traces: list[StageTrace] = field(default_factory=list)
     run_session: RunSession | None = None

@@ -111,6 +111,11 @@ class OrchestratorAgent:
             review=state.review,
             iterations=state.route_round,
             run_controls=control_config,
+            total_feedback_messages=state.total_feedback_messages,
+            pair_feedback_counts={
+                f"{from_agent} -> {to_agent}": count
+                for (from_agent, to_agent), count in state.pair_feedback_counts.items()
+            },
             agent_configs=runtime_configs,
             stage_traces=state.stage_traces,
             run_session=run_session,
@@ -147,6 +152,7 @@ class OrchestratorAgent:
             ),
             trace=initial_trace.__dict__,
             run_session=run_session,
+            metrics=self._build_event_metrics(state, run_controls),
         )
         return "requirements"
 
@@ -238,6 +244,19 @@ class OrchestratorAgent:
                         total_feedback_messages=state.total_feedback_messages,
                         duration_ms=0,
                     )
+                )
+                self._emit_event(
+                    event_callback,
+                    event_type="routing",
+                    agent_name="Orchestrator Agent",
+                    iteration=state.route_round,
+                    stage_index=4,
+                    message=(
+                        "Orchestrator routed contract-repair feedback back to Requirements Analyst because "
+                        f"{self._summarize_feedback_reason(contract_feedback)}"
+                    ),
+                    run_session=run_session,
+                    metrics=self._build_event_metrics(state, run_controls),
                 )
                 state.requirements_feedback = contract_feedback
                 state.route_round += 1
@@ -347,6 +366,7 @@ class OrchestratorAgent:
                     f"{self._summarize_feedback_reason(design_backtrack_feedback)}"
                 ),
                 run_session=run_session,
+                metrics=self._build_event_metrics(state, run_controls),
             )
             state.stage_traces.append(
                 self._build_targeted_orchestrator_trace(
@@ -438,6 +458,7 @@ class OrchestratorAgent:
                     f"with coverage_ratio={state.review.coverage_ratio}."
                 ),
                 run_session=run_session,
+                metrics=self._build_event_metrics(state, run_controls),
             )
             state.stage_traces.append(
                 self._build_stop_orchestrator_trace(
@@ -483,6 +504,7 @@ class OrchestratorAgent:
                     f"{self._summarize_feedback_reason(backtrack_route['feedback_messages'])}"
                 ),
                 run_session=run_session,
+                metrics=self._build_event_metrics(state, run_controls),
             )
             state.stage_traces.append(
                 self._build_targeted_orchestrator_trace(
@@ -518,6 +540,7 @@ class OrchestratorAgent:
             return next_stage
 
         stop_reason, stop_details = self._determine_review_stop_reason(
+            review=state.review,
             backtrack_route=backtrack_route,
             run_controls=run_controls,
             route_round=state.route_round,
@@ -544,6 +567,7 @@ class OrchestratorAgent:
             stage_index=4,
             message=stop_reason,
             run_session=run_session,
+            metrics=self._build_event_metrics(state, run_controls),
         )
         return "stop"
 
@@ -859,7 +883,11 @@ class OrchestratorAgent:
         return feedback
 
     def _select_review_backtrack_route(self, requirements: list, review) -> dict | None:
-        routing_focus = set(self.reviewer.last_execution.get("routing_focus") or [])
+        routing_focus = self._normalize_routing_focus(
+            self.reviewer.last_execution.get("routing_focus") or [],
+            review.findings,
+            review.improvement_actions,
+        )
         if "test_design" in routing_focus and "requirements" not in routing_focus:
             return {
                 "from_agent": "Review Agent",
@@ -880,6 +908,8 @@ class OrchestratorAgent:
         missing_design_findings = [finding for finding in review.findings if "missing a designed test case" in finding]
 
         thin_design_findings = [finding for finding in review.findings if "has only one designed test case" in finding]
+        lowered_findings = [finding.lower() for finding in review.findings]
+        lowered_actions = [action.lower() for action in review.improvement_actions]
 
         if weak_oracle_findings or missing_design_findings or thin_design_findings:
             feedback_messages = []
@@ -913,7 +943,92 @@ class OrchestratorAgent:
                 "feedback_messages": feedback_messages,
             }
 
+        if any(
+            keyword in " ".join(lowered_findings + lowered_actions)
+            for keyword in (
+                "oracle",
+                "expected result",
+                "test design",
+                "test coverage",
+                "negative scenario",
+                "boundary",
+                "missing test",
+                "more test case",
+            )
+        ):
+            feedback_messages = review.improvement_actions[:2] or [
+                "Strengthen the planned test coverage and make expected results more explicit."
+            ]
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Test Design Agent",
+                "feedback_messages": feedback_messages,
+            }
+
+        if any(
+            keyword in " ".join(lowered_findings + lowered_actions)
+            for keyword in (
+                "assumption",
+                "ambiguous requirement",
+                "unclear requirement",
+                "acceptance criteria",
+                "clarify requirement",
+                "clarify ambiguous",
+                "reduce ambiguity",
+            )
+        ):
+            feedback_messages = review.improvement_actions[:2] or [
+                "Clarify ambiguous requirements and acceptance criteria before redesign."
+            ]
+            return {
+                "from_agent": "Review Agent",
+                "to_agent": "Requirements Analyst",
+                "feedback_messages": feedback_messages,
+            }
+
         return None
+
+    def _normalize_routing_focus(
+        self,
+        raw_focus: list[str],
+        findings: list[str],
+        improvement_actions: list[str],
+    ) -> set[str]:
+        focus: set[str] = set()
+        combined = " ".join([*raw_focus, *findings, *improvement_actions]).lower()
+        for entry in raw_focus:
+            normalized = str(entry or "").strip().lower()
+            if normalized in {"requirements", "requirement", "requirements analyst"}:
+                focus.add("requirements")
+            elif normalized in {"test_design", "test design", "designer", "test design agent"}:
+                focus.add("test_design")
+        if any(
+            keyword in combined
+            for keyword in (
+                "assumption",
+                "ambiguous requirement",
+                "unclear requirement",
+                "acceptance criteria",
+                "clarify requirement",
+                "requirements analyst",
+            )
+        ):
+            focus.add("requirements")
+        if any(
+            keyword in combined
+            for keyword in (
+                "oracle",
+                "expected result",
+                "test case",
+                "test design",
+                "test coverage",
+                "negative scenario",
+                "boundary",
+                "missing test",
+            )
+        ):
+            focus.add("test_design")
+        return focus
 
     def _build_targeted_orchestrator_trace(
         self,
@@ -1080,6 +1195,7 @@ class OrchestratorAgent:
     def _determine_review_stop_reason(
         self,
         *,
+        review=None,
         backtrack_route: dict | None,
         run_controls: RunControlConfig,
         route_round: int,
@@ -1096,11 +1212,24 @@ class OrchestratorAgent:
             )
 
         if not backtrack_route:
+            raw_focus = self.reviewer.last_execution.get("routing_focus") or []
+            findings = list(review.findings) if review else []
+            improvement_actions = list(review.improvement_actions) if review else []
+            normalized_focus = sorted(
+                self._normalize_routing_focus(raw_focus, findings, improvement_actions)
+            )
             return (
                 "Stop pipeline because no valid backtracking route was available.",
                 [
                     "The review step did not produce a usable routing target.",
                     "No targeted repair route to Requirements Analyst or Test Design Agent could be selected.",
+                    f"Raw routing focus from review: {raw_focus or ['none']}",
+                    f"Normalized routing focus: {normalized_focus or ['none']}",
+                    (
+                        f"Primary finding that could not be mapped: {findings[0]}"
+                        if findings
+                        else "Primary finding that could not be mapped: none"
+                    ),
                 ],
             )
 
@@ -1231,6 +1360,7 @@ class OrchestratorAgent:
         duration_ms: int = 0,
         trace: dict | None = None,
         run_session: RunSession | None = None,
+        metrics: dict | None = None,
     ) -> None:
         if not event_callback:
             return
@@ -1247,7 +1377,23 @@ class OrchestratorAgent:
             payload["trace"] = trace
         if run_session is not None:
             payload["memory_snapshot"] = self._snapshot_working_memory(run_session)
+        if metrics is not None:
+            payload["metrics"] = metrics
         event_callback(payload)
+
+    def _build_event_metrics(self, state: OrchestrationState, run_controls: RunControlConfig) -> dict[str, object]:
+        pair_feedback_counts = {
+            f"{from_agent} -> {to_agent}": count
+            for (from_agent, to_agent), count in state.pair_feedback_counts.items()
+        }
+        return {
+            "current_round": state.route_round,
+            "max_rounds": run_controls.max_rounds,
+            "total_feedback_messages": state.total_feedback_messages,
+            "max_feedback_messages": run_controls.max_feedback_messages,
+            "max_feedback_per_agent_pair": run_controls.max_feedback_per_agent_pair,
+            "pair_feedback_counts": pair_feedback_counts,
+        }
 
     def _snapshot_working_memory(self, run_session: RunSession) -> dict:
         working_memory = run_session.working_memory

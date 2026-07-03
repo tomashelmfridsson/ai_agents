@@ -202,6 +202,86 @@ class PipelineTests(unittest.TestCase):
             any("Final decision: Approved=False because coverage passed" in line for line in reasoning)
         )
 
+    def test_orchestrator_routes_llm_style_review_feedback_to_test_design(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=3)
+        requirements = [
+            qa_models.RequirementItem(
+                requirement_id="REQ-001",
+                original_text="The user must be able to sign in with email and password.",
+                normalized_text="The user must be able to sign in with email and password.",
+                priority="high",
+                acceptance_criteria=["Valid credentials authenticate the user."],
+                assumptions=[],
+            )
+        ]
+        review = ReviewReport(
+            approved=False,
+            coverage_ratio=0.8,
+            findings=["Coverage is incomplete and the expected results are too vague for approval."],
+            improvement_actions=["Add stronger expected results and expand missing test coverage."],
+        )
+        orchestrator.reviewer.last_execution = {"routing_focus": []}
+
+        route = orchestrator._select_review_backtrack_route(requirements, review)
+
+        self.assertIsNotNone(route)
+        assert route is not None
+        self.assertEqual(route["to_agent"], "Test Design Agent")
+        self.assertTrue(route["feedback_messages"])
+
+    def test_stop_reason_explains_why_no_route_was_available(self) -> None:
+        orchestrator = OrchestratorAgent(max_iterations=3)
+        review = ReviewReport(
+            approved=False,
+            coverage_ratio=0.8,
+            findings=["The review rejected the run without naming a repair target."],
+            improvement_actions=["Investigate the weak areas before retrying."],
+        )
+        orchestrator.reviewer.last_execution = {"routing_focus": []}
+
+        stop_reason, stop_details = orchestrator._determine_review_stop_reason(
+            review=review,
+            backtrack_route=None,
+            run_controls=RunControlConfig(
+                max_rounds=3,
+                max_feedback_messages=4,
+                max_feedback_per_agent_pair=2,
+            ),
+            route_round=1,
+            total_feedback_messages=0,
+            pair_feedback_counts={},
+        )
+
+        self.assertEqual(stop_reason, "Stop pipeline because no valid backtracking route was available.")
+        self.assertTrue(any("Raw routing focus from review" in item for item in stop_details))
+        self.assertTrue(any("Primary finding that could not be mapped" in item for item in stop_details))
+
+    def test_running_summary_panel_shows_live_feedback_usage(self) -> None:
+        html = app_module.build_running_summary_panel(
+            [
+                {
+                    "event_type": "routing",
+                    "agent_name": "Orchestrator Agent",
+                    "iteration": 2,
+                    "stage_index": 4,
+                    "message": "Routing feedback.",
+                    "timestamp": "2026-07-03T13:35:51",
+                    "metrics": {
+                        "current_round": 2,
+                        "max_rounds": 10,
+                        "total_feedback_messages": 3,
+                        "max_feedback_messages": 12,
+                        "max_feedback_per_agent_pair": 4,
+                        "pair_feedback_counts": {"Review Agent -> Test Design Agent": 2},
+                    },
+                }
+            ]
+        )
+
+        self.assertIn("Current round: 2/10", html)
+        self.assertIn("Feedback handoffs used: 3/12", html)
+        self.assertIn("Review Agent -&gt; Test Design Agent: 2", html)
+
     def test_agent_runtime_configs_capture_mode_model_and_directives(self) -> None:
         configs = build_agent_runtime_configs(
             "Structured baseline",

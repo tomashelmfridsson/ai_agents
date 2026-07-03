@@ -1021,13 +1021,33 @@ class ReviewAgent:
 
     def _infer_routing_focus(self, findings: list[str]) -> list[str]:
         focus = []
-        if any("assumptions" in finding for finding in findings):
+        combined_findings = " ".join(finding.lower() for finding in findings)
+        if any(
+            keyword in combined_findings
+            for keyword in (
+                "assumption",
+                "ambiguous requirement",
+                "unclear requirement",
+                "missing acceptance criteria",
+                "clarify requirement",
+                "requirements unclear",
+            )
+        ):
             focus.append("requirements")
         if any(
-            "weak oracle definition" in finding
-            or "missing a designed test case" in finding
-            or "has only one designed test case" in finding
-            for finding in findings
+            keyword in combined_findings
+            for keyword in (
+                "weak oracle definition",
+                "missing a designed test case",
+                "has only one designed test case",
+                "missing test case",
+                "missing test coverage",
+                "insufficient coverage",
+                "weak oracle",
+                "expected result",
+                "negative scenario",
+                "boundary",
+            )
         ):
             focus.append("test_design")
         return focus
