@@ -1694,6 +1694,9 @@ CUSTOM_CSS = """
       margin-bottom: 16px;
       padding-bottom: 8px;
     }
+    .app-tabs {
+      margin-top: 10px;
+    }
     .app-tabs [role="tab"] {
       border-radius: 999px !important;
       border: 1px solid rgba(29, 20, 13, 0.16) !important;
@@ -1950,6 +1953,20 @@ CUSTOM_CSS = """
     .workflow-step span,
     .workflow-step div {
       color: var(--app-ink) !important;
+    }
+    .panel-card > .prose,
+    .panel-card .prose {
+      margin: 0 0 10px 0 !important;
+      padding: 0 !important;
+    }
+    .panel-card > .prose h2,
+    .panel-card .prose h2 {
+      margin: 0 0 14px 0 !important;
+      padding: 0 2px !important;
+      font-size: 1.7rem !important;
+      line-height: 1.15 !important;
+      font-weight: 800 !important;
+      color: #160e09 !important;
     }
     .gradio-container textarea,
     .gradio-container input,
