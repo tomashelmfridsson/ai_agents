@@ -1,14 +1,18 @@
 import html
 import inspect
+import json
 import os
 import queue
 import subprocess
 import sys
 import threading
 import time
+import uuid
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
+from urllib import error, request
 
 import gradio as gr
 
@@ -37,7 +41,8 @@ from qa_platform.orchestrator import (
     OrchestratorAgent,
     WorkflowCancelledError,
 )
-from qa_platform.models import AgentRuntimeConfig, RunControlConfig
+from qa_platform.models import AgentRuntimeConfig, RequirementItem, ReviewReport, RunControlConfig, TestCaseDesign
+from qa_platform.registry import build_default_agent_registry
 from qa_platform.sample_scenarios import (
     DEFAULT_REQUIREMENTS,
     DEFAULT_SCENARIO,
@@ -56,6 +61,16 @@ DEFAULT_OLLAMA_MODEL_CHOICES = [
     "gemma3:4b",
     "llama3:latest",
 ]
+EXECUTION_BACKEND_CHOICES = [
+    "QA agent service",
+    "Custom agent runtime",
+]
+DEFAULT_QA_AGENT_SERVICE_BASE_URL = os.getenv(
+    "QA_AGENT_SERVICE_URL",
+    "https://helmfridsson-qa-agent-service.hf.space",
+)
+ORCHESTRATOR_CONFIG_SPEC = next(spec for spec in AGENT_CONFIG_SPECS if spec[0] == "orchestrator")
+WORKER_AGENT_CONFIG_SPECS = [spec for spec in AGENT_CONFIG_SPECS if spec[0] != "orchestrator"]
 
 
 APP_THEME = gr.themes.Soft(
@@ -592,6 +607,341 @@ def build_live_log_preview(log_path: str | None, line_count: int = 12) -> str:
     )
 
 
+def _normalize_service_base_url(base_url: str) -> str:
+    normalized = (base_url or DEFAULT_QA_AGENT_SERVICE_BASE_URL).strip().rstrip("/")
+    if not normalized:
+        normalized = DEFAULT_QA_AGENT_SERVICE_BASE_URL
+    return normalized
+
+
+def _serialize_shared_memory_for_service(run_session) -> dict[str, object]:
+    if run_session is None:
+        return {"facts": {}, "assumptions": [], "decisions": [], "timeline": []}
+    shared = run_session.working_memory.shared if getattr(run_session, "working_memory", None) else {}
+    timeline = run_session.working_memory.timeline if getattr(run_session, "working_memory", None) else []
+    return {
+        "facts": dict(shared),
+        "assumptions": [],
+        "decisions": [],
+        "timeline": [{"note": str(item)} for item in timeline],
+    }
+
+
+def _serialize_agent_private_memory_for_service(run_session, agent_key: str) -> dict[str, object]:
+    if run_session is None or not getattr(run_session, "working_memory", None):
+        return {"data": {}}
+    private_data = run_session.working_memory.agent_private.get(agent_key, {})
+    return {"data": dict(private_data) if isinstance(private_data, dict) else {}}
+
+
+def _build_service_model_config(runtime_config: AgentRuntimeConfig | None) -> dict[str, object] | None:
+    if not runtime_config or runtime_config.execution_mode != "LLM-backed":
+        return None
+    provider = (runtime_config.provider_strategy or "").strip()
+    if provider.startswith("HF "):
+        provider = "huggingface"
+    elif provider == "Ollama local":
+        provider = "ollama"
+    elif provider == "Custom OpenAI-compatible":
+        provider = "openai"
+    else:
+        provider = provider.lower() or "huggingface"
+    return {
+        "provider": provider,
+        "model_id": runtime_config.model_id,
+        "temperature": 0.2,
+        "timeout_seconds": runtime_config.timeout_seconds,
+    }
+
+
+def _invoke_qa_agent_service(
+    *,
+    base_url: str,
+    service_agent_key: str,
+    run_session,
+    iteration: int,
+    stage_index: int,
+    agent_input: dict[str, object],
+    runtime_config: AgentRuntimeConfig | None,
+    output_contract: str,
+) -> dict[str, object]:
+    payload = {
+        "run_id": f"qa-workbench-{uuid.uuid4().hex[:12]}",
+        "iteration": iteration,
+        "stage_index": stage_index,
+        "scenario": {
+            "title": getattr(run_session, "title", "QA workbench run"),
+            "source_requirements": getattr(run_session, "source_requirements", ""),
+        },
+        "agent_input": agent_input,
+        "shared_memory": _serialize_shared_memory_for_service(run_session),
+        "agent_private_memory": _serialize_agent_private_memory_for_service(run_session, service_agent_key),
+        "instructions": {
+            "additional_directives": runtime_config.directives if runtime_config else "",
+        },
+        "model_config": _build_service_model_config(runtime_config),
+        "output_contract": output_contract,
+    }
+    endpoint = f"{_normalize_service_base_url(base_url)}/agents/{service_agent_key}/invoke"
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    http_request = request.Request(
+        endpoint,
+        data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(http_request, timeout=(runtime_config.timeout_seconds if runtime_config else 150)) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise LLMRuntimeError(
+            f"QA agent service call failed for {service_agent_key} with HTTP {exc.code}. {details}"
+        ) from exc
+    except error.URLError as exc:
+        raise LLMRuntimeError(
+            f"QA agent service at {_normalize_service_base_url(base_url)} could not be reached. {exc.reason}"
+        ) from exc
+
+
+def _apply_service_memory_updates(run_session, service_agent_key: str, memory_updates: dict[str, object]) -> None:
+    if run_session is None or not memory_updates:
+        return
+    facts = memory_updates.get("facts")
+    if isinstance(facts, dict):
+        for key, value in facts.items():
+            run_session.working_memory.write_shared(str(key), value, author=service_agent_key)
+    assumptions = memory_updates.get("assumptions")
+    if isinstance(assumptions, list):
+        run_session.working_memory.write_agent(service_agent_key, "assumptions", list(assumptions))
+    decisions = memory_updates.get("decisions")
+    if isinstance(decisions, list):
+        run_session.working_memory.write_agent(service_agent_key, "decisions", list(decisions))
+    private_data = memory_updates.get("agent_private")
+    if isinstance(private_data, dict):
+        for key, value in private_data.items():
+            run_session.working_memory.write_agent(service_agent_key, str(key), value)
+    timeline = memory_updates.get("timeline")
+    if isinstance(timeline, list):
+        for item in timeline:
+            run_session.working_memory.add_note(str(item))
+
+
+def _format_service_review_finding(finding: dict[str, object]) -> str:
+    severity = str(finding.get("severity", ""))
+    target_type = str(finding.get("target_type", ""))
+    target_id = str(finding.get("target_id", ""))
+    issue = str(finding.get("issue", "")).strip()
+    recommendation = str(finding.get("recommendation", "")).strip()
+    return " | ".join(
+        part for part in [
+            f"[{severity}]" if severity else "",
+            f"{target_type}:{target_id}" if target_type or target_id else "",
+            issue,
+            f"Recommendation: {recommendation}" if recommendation else "",
+        ] if part
+    )
+
+
+class QAAgentServiceRequirementsAdapter:
+    name = "Requirements Analyst"
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.last_execution: dict[str, object] = {}
+
+    def analyze(
+        self,
+        requirements_text: str,
+        feedback_messages: list[str] | None = None,
+        runtime_config: AgentRuntimeConfig | None = None,
+        run_session=None,
+    ):
+        feedback_messages = feedback_messages or []
+        response = _invoke_qa_agent_service(
+            base_url=self.base_url,
+            service_agent_key="requirements_analyst",
+            run_session=run_session,
+            iteration=1,
+            stage_index=1,
+            agent_input={"feedback_messages": list(feedback_messages)},
+            runtime_config=runtime_config,
+            output_contract="requirements_analyst.v1",
+        )
+        if response.get("status") != "completed":
+            errors = response.get("errors") or []
+            raise LLMRuntimeError(
+                "QA agent service requirements_analyst failed: "
+                + "; ".join(str(item.get("message", "unknown error")) for item in errors)
+            )
+        _apply_service_memory_updates(run_session, "requirements_analyst", response.get("memory_updates", {}))
+        raw_output = response.get("output", {})
+        raw_requirements = raw_output.get("requirements") or []
+        items = [
+            RequirementItem(
+                requirement_id=str(item.get("requirement_id", f"REQ-{index:03d}")),
+                original_text=str(item.get("original_text", "")),
+                normalized_text=str(item.get("normalized_text", "")),
+                priority=str(item.get("priority", "medium")),
+                acceptance_criteria=[str(value) for value in item.get("acceptance_criteria", [])],
+                assumptions=[str(value) for value in item.get("assumptions", [])],
+            )
+            for index, item in enumerate(raw_requirements, start=1)
+        ]
+        if run_session is not None:
+            run_session.working_memory.write_agent(
+                "requirements_analyst",
+                "service_output",
+                raw_output,
+            )
+        self.last_execution = {
+            "mode": "qa_agent_service",
+            "reasoning_source": "qa_agent_service",
+            "notes": [str(item) for item in raw_output.get("decision_basis", [])],
+            "llm_used": True,
+            "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
+            "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
+            "contract_version": "requirements_analyst.v1",
+        }
+        return items
+
+
+class QAAgentServiceTestDesignAdapter:
+    name = "Test Design Agent"
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.last_execution: dict[str, object] = {}
+
+    def design(
+        self,
+        requirements,
+        feedback_messages: list[str] | None = None,
+        runtime_config: AgentRuntimeConfig | None = None,
+        run_session=None,
+    ):
+        feedback_messages = feedback_messages or []
+        requirements_service_output = {}
+        if run_session is not None and getattr(run_session, "working_memory", None):
+            requirements_service_output = run_session.working_memory.agent_private.get("requirements_analyst", {}).get("service_output", {})
+        response = _invoke_qa_agent_service(
+            base_url=self.base_url,
+            service_agent_key="test_designer",
+            run_session=run_session,
+            iteration=1,
+            stage_index=2,
+            agent_input={
+                "requirements": requirements_service_output.get("requirements", [asdict(item) for item in requirements]),
+                "requirements_analysis": requirements_service_output,
+                "feedback_messages": list(feedback_messages),
+            },
+            runtime_config=runtime_config,
+            output_contract="test_designer.v1",
+        )
+        if response.get("status") != "completed":
+            errors = response.get("errors") or []
+            raise LLMRuntimeError(
+                "QA agent service test_designer failed: "
+                + "; ".join(str(item.get("message", "unknown error")) for item in errors)
+            )
+        _apply_service_memory_updates(run_session, "test_designer", response.get("memory_updates", {}))
+        raw_output = response.get("output", {})
+        raw_designs = raw_output.get("test_designs") or []
+        designs = []
+        for item in raw_designs:
+            requirement_ids = [str(value) for value in item.get("requirement_ids", [])]
+            risks = [str(value) for value in item.get("risks", [])]
+            if len(requirement_ids) > 1:
+                risks = [f"Additional requirement links: {', '.join(requirement_ids[1:])}", *risks]
+            oracle = item.get("oracle") or {}
+            designs.append(
+                TestCaseDesign(
+                    test_case_id=str(item.get("test_case_id", "")),
+                    requirement_id=(requirement_ids[0] if requirement_ids else "REQ-UNKNOWN"),
+                    title=str(item.get("title", "")),
+                    test_type=str(item.get("test_type", "other")),
+                    preconditions=[str(value) for value in item.get("preconditions", [])],
+                    steps=[str(value) for value in item.get("steps", [])],
+                    expected_results=[str(value) for value in item.get("expected_results", [])],
+                    oracle=str(oracle.get("description", "")),
+                    risks=risks,
+                )
+            )
+        if run_session is not None:
+            run_session.working_memory.write_agent("test_designer", "service_output", raw_output)
+        self.last_execution = {
+            "mode": "qa_agent_service",
+            "reasoning_source": "qa_agent_service",
+            "notes": [str(item) for item in raw_output.get("decision_basis", [])],
+            "llm_used": True,
+            "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
+            "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
+            "contract_version": "test_designer.v1",
+        }
+        return designs
+
+
+class QAAgentServiceReviewAdapter:
+    name = "Review Agent"
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.last_execution: dict[str, object] = {}
+
+    def review(
+        self,
+        requirements,
+        designs,
+        runtime_config: AgentRuntimeConfig | None = None,
+        run_session=None,
+    ):
+        requirements_service_output = {}
+        design_service_output = {}
+        if run_session is not None and getattr(run_session, "working_memory", None):
+            requirements_service_output = run_session.working_memory.agent_private.get("requirements_analyst", {}).get("service_output", {})
+            design_service_output = run_session.working_memory.agent_private.get("test_designer", {}).get("service_output", {})
+        response = _invoke_qa_agent_service(
+            base_url=self.base_url,
+            service_agent_key="reviewer",
+            run_session=run_session,
+            iteration=1,
+            stage_index=3,
+            agent_input={
+                "requirements": requirements_service_output.get("requirements", [asdict(item) for item in requirements]),
+                "requirements_analysis": requirements_service_output,
+                "test_designs": design_service_output.get("test_designs", []),
+                "test_design": design_service_output,
+            },
+            runtime_config=runtime_config,
+            output_contract="reviewer.v1",
+        )
+        if response.get("status") != "completed":
+            errors = response.get("errors") or []
+            raise LLMRuntimeError(
+                "QA agent service reviewer failed: "
+                + "; ".join(str(item.get("message", "unknown error")) for item in errors)
+            )
+        _apply_service_memory_updates(run_session, "reviewer", response.get("memory_updates", {}))
+        raw_output = response.get("output", {})
+        raw_review = raw_output.get("review") or {}
+        review = ReviewReport(
+            approved=bool(raw_review.get("approved", False)),
+            coverage_ratio=float(raw_review.get("coverage_ratio", 0.0)),
+            findings=[_format_service_review_finding(item) for item in raw_review.get("findings", [])],
+            improvement_actions=[str(item) for item in raw_review.get("improvement_actions", [])],
+        )
+        self.last_execution = {
+            "mode": "qa_agent_service",
+            "reasoning_source": "qa_agent_service",
+            "notes": [str(item) for item in raw_output.get("decision_basis", [])],
+            "llm_used": True,
+            "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
+            "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
+            "contract_version": "reviewer.v1",
+        }
+        return review
+
+
 def apply_global_agent_settings(
     execution_mode: str,
     provider_strategy: str,
@@ -638,6 +988,46 @@ def apply_global_agent_settings(
     return updates
 
 
+def build_backend_agent_runtime_configs(
+    execution_backend: str,
+    qa_agent_service_base_url: str,
+    *agent_values: str,
+) -> list[AgentRuntimeConfig]:
+    agent_configs = build_agent_runtime_configs(*agent_values)
+    if execution_backend != "QA agent service":
+        return agent_configs
+    normalized_url = _normalize_service_base_url(qa_agent_service_base_url)
+    service_backed = []
+    for config in agent_configs:
+        if config.agent_key == "orchestrator":
+            service_backed.append(config)
+            continue
+        service_backed.append(
+            AgentRuntimeConfig(
+                agent_key=config.agent_key,
+                agent_name=config.agent_name,
+                execution_mode="QA agent service",
+                timeout_seconds=config.timeout_seconds,
+                provider_strategy="qa-agent-service",
+                model_family="",
+                model_override="",
+                model_id=f"Managed by qa-agent-service at {normalized_url}",
+                directives=config.directives,
+            )
+        )
+    return service_backed
+
+
+def build_orchestrator_for_backend(execution_backend: str, qa_agent_service_base_url: str) -> OrchestratorAgent:
+    if execution_backend != "QA agent service":
+        return OrchestratorAgent()
+    registry = build_default_agent_registry()
+    registry.set_agent("requirements_analyst", QAAgentServiceRequirementsAdapter(qa_agent_service_base_url))
+    registry.set_agent("test_design", QAAgentServiceTestDesignAdapter(qa_agent_service_base_url))
+    registry.set_agent("review", QAAgentServiceReviewAdapter(qa_agent_service_base_url))
+    return OrchestratorAgent(registry=registry)
+
+
 def process_requirements(
     title: str,
     requirements: str,
@@ -649,6 +1039,13 @@ def process_requirements(
     *agent_values: str,
     progress=gr.Progress(track_tqdm=False),
 ) -> Iterator[tuple[str, str, Any, str, str, str, Any]]:
+    execution_backend = "Custom agent runtime"
+    qa_agent_service_base_url = DEFAULT_QA_AGENT_SERVICE_BASE_URL
+    parsed_agent_values = list(agent_values)
+    if parsed_agent_values and parsed_agent_values[0] in EXECUTION_BACKEND_CHOICES:
+        execution_backend = str(parsed_agent_values.pop(0))
+        if parsed_agent_values:
+            qa_agent_service_base_url = str(parsed_agent_values.pop(0))
     normalized_title = (title or "Untitled demo").strip()
     normalized_requirements = (requirements or "").strip()
     if not normalized_requirements:
@@ -673,7 +1070,11 @@ def process_requirements(
     custom_openai_base_url = (openai_base_url or "").strip()
     if custom_openai_base_url:
         os.environ["OPENAI_BASE_URL"] = custom_openai_base_url
-    agent_configs = build_agent_runtime_configs(*agent_values)
+    agent_configs = build_backend_agent_runtime_configs(
+        execution_backend,
+        qa_agent_service_base_url,
+        *parsed_agent_values,
+    )
     live_log_path = _build_live_log_path(normalized_title)
     _write_live_log_header(
         live_log_path,
@@ -710,7 +1111,10 @@ def process_requirements(
 
     def run_workflow() -> None:
         try:
-            worker_state["result"] = OrchestratorAgent(max_iterations=round_limit).process(
+            worker_state["result"] = build_orchestrator_for_backend(
+                execution_backend,
+                qa_agent_service_base_url,
+            ).process(
                 title=normalized_title,
                 requirements_text=normalized_requirements,
                 agent_configs=agent_configs,
@@ -842,6 +1246,12 @@ def process_requirements(
     if result is None:
         raise RuntimeError("Workflow finished without result or error.")
     payload = result.to_dict()
+    payload["execution_backend"] = execution_backend
+    payload["qa_agent_service_base_url"] = (
+        _normalize_service_base_url(qa_agent_service_base_url)
+        if execution_backend == "QA agent service"
+        else ""
+    )
     saved_run = save_run(payload)
     payload["run_id"] = saved_run.run_id
     payload["stored_at"] = saved_run.stored_at
@@ -1095,7 +1505,7 @@ def update_model_dropdown(provider_strategy: str, current_value: str, model_over
     )
 
 
-def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict, dict]:
+def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, dict, dict, dict, dict]:
     is_llm = execution_mode == "LLM-backed"
     return (
         gr.update(visible=is_llm),
@@ -1103,12 +1513,29 @@ def toggle_llm_configuration_fields(execution_mode: str) -> tuple[dict, dict, di
         gr.update(visible=is_llm),
         gr.update(visible=is_llm),
         gr.update(visible=is_llm),
+        gr.update(visible=True),
+    )
+
+
+def toggle_execution_backend_sections(execution_backend: str) -> tuple[dict, dict, dict]:
+    service_selected = execution_backend == "QA agent service"
+    return (
+        gr.update(visible=service_selected),
+        gr.update(visible=not service_selected),
+        gr.update(visible=not service_selected),
     )
 
 
 def build_pipeline_visualization_section() -> str:
     return """
     <section class='diagram-card'>
+      <div class='solution-callout'>
+        <div class='solution-callout-label'>Alternative solution</div>
+        <a href='https://huggingface.co/spaces/helmfridsson/qa-agent-langgraph' target='_blank' rel='noreferrer'>
+          QA Agent LangGraph
+        </a>
+        <p>Used as a comparison track for graph-based orchestration where node transitions, state handling, and flow control are more explicit than in the orchestrator-led setup in this app.</p>
+      </div>
       <h3>Pipeline visualization</h3>
       <div class='diagram-flow'>
         <div class='diagram-node'><strong>Input</strong><span>Scenario title and raw requirement statements.</span></div>
@@ -1260,6 +1687,51 @@ CUSTOM_CSS = """
       flex-wrap: wrap;
       gap: 10px;
       justify-content: flex-end;
+    }
+    .app-tabs [role="tablist"] {
+      gap: 8px;
+      border-bottom: 1px solid rgba(29, 20, 13, 0.14);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+    }
+    .app-tabs [role="tab"] {
+      border-radius: 999px !important;
+      border: 1px solid rgba(29, 20, 13, 0.16) !important;
+      background: rgba(255, 250, 243, 0.98) !important;
+      color: var(--app-ink) !important;
+      font-weight: 700 !important;
+      padding: 8px 14px !important;
+    }
+    .app-tabs [role="tab"][aria-selected="true"] {
+      background: linear-gradient(135deg, rgba(143, 53, 24, 0.14), rgba(203, 145, 50, 0.18)) !important;
+      border-color: rgba(143, 53, 24, 0.28) !important;
+    }
+    .solution-callout {
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(29, 20, 13, 0.16);
+      background: linear-gradient(180deg, rgba(255, 251, 246, 0.98), rgba(243, 232, 219, 0.98));
+    }
+    .solution-callout-label {
+      margin-bottom: 6px;
+      color: var(--app-accent) !important;
+      font-size: 0.76rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+    .solution-callout a {
+      color: #160e09 !important;
+      font-size: 1.05rem;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .solution-callout p {
+      margin: 8px 0 0;
+      color: var(--app-muted) !important;
+      line-height: 1.55;
+      font-weight: 500;
     }
     .workflow-strip {
       display: grid;
@@ -1726,6 +2198,23 @@ CUSTOM_CSS = """
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .export-file,
+    .export-file > div,
+    .export-file label,
+    .export-file [data-testid="file"],
+    .export-file .wrap,
+    .export-file .block {
+      background: transparent !important;
+      color: var(--app-ink) !important;
+    }
+    .export-file button,
+    .export-file a,
+    .export-file .file-preview,
+    .export-file .file-preview-holder {
+      background: rgba(255, 251, 246, 0.98) !important;
+      color: var(--app-ink) !important;
+      border-color: var(--app-line) !important;
+    }
     .table-scroll {
       width: 100%;
       overflow-x: auto;
@@ -1866,305 +2355,471 @@ def build_demo() -> gr.Blocks:
                 gr.HTML(build_pipeline_visualization_section())
             with gr.Group(elem_classes=["panel-card", "configuration-panel"]):
                 gr.Markdown("## Configuration")
-                with gr.Accordion("Run controls", open=False, elem_classes=["controls-accordion"]):
-                    max_iterations_input = gr.Slider(
-                        label="Maximum rounds",
-                        minimum=1,
-                        maximum=20,
-                        step=1,
-                        value=10,
-                    )
-                    max_feedback_messages_input = gr.Slider(
-                        label="Maximum feedback messages",
-                        minimum=0,
-                        maximum=24,
-                        step=1,
-                        value=12,
-                    )
-                    max_feedback_per_pair_input = gr.Slider(
-                        label="Maximum feedback messages per agent pair",
-                        minimum=0,
-                        maximum=8,
-                        step=1,
-                        value=4,
-                    )
-                    gr.HTML(
-                        """
-                        <div class="baseline-note">
-                          <strong>Run controls</strong> define how far the workflow is allowed to iterate before it stops.
-                          <br><br>
-                          <strong>Maximum rounds</strong> is the total number of workflow rounds the orchestrator may run, including reruns after feedback.
-                          <br>
-                          <strong>Maximum feedback messages</strong> is the total number of correction messages agents may send during one run.
-                          <br>
-                          <strong>Maximum feedback messages per agent pair</strong> limits repeated back-and-forth between the same two agents.
-                          <br><br>
-                          Use lower values for fast, controlled runs. Use higher values when you want the agents to spend more time repairing weak intermediate results.
-                        </div>
-                        """
-                    )
-                with gr.Accordion("Local backends", open=False, elem_classes=["controls-accordion"]):
-                    ollama_base_url_input = gr.Textbox(
-                        label="Ollama base URL",
-                        value=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-                    )
-                    openai_base_url_input = gr.Textbox(
-                        label="Custom OpenAI-compatible base URL",
-                        value=os.getenv("OPENAI_BASE_URL", ""),
-                        placeholder="http://host:port/v1",
-                    )
-                    gr.HTML(
-                        """
-                        <div class="baseline-note">
-                          <strong>Local Ollama</strong> reads installed models from your local Ollama environment.
-                          The list under <em>Model</em> should therefore match `ollama list`.
-                          If you want to enter an exact model name manually, use <em>Model override</em>, for example `qwen3:8b`.
-                        </div>
-                        """
-                    )
-                with gr.Accordion("Global agent LLM settings", open=False, elem_classes=["controls-accordion"]):
-                    gr.HTML(
-                        """
-                        <div class="baseline-note">
-                          Apply one common LLM configuration across all agents, then fine-tune only the agents that need exceptions.
-                        </div>
-                        """
-                    )
-                    global_execution_mode_input = gr.Dropdown(
-                        label="Execution mode for all agents",
-                        choices=EXECUTION_MODE_CHOICES,
-                        value=EXECUTION_MODE_CHOICES[0],
-                    )
-                    global_provider_strategy_input = gr.Dropdown(
-                        label="Provider strategy for all agents",
-                        choices=PROVIDER_STRATEGY_CHOICES,
-                        value="HF cheapest/free credits",
-                    )
-                    global_model_input = gr.Dropdown(
-                        label="Model for all agents",
-                        choices=get_model_choices("HF cheapest/free credits"),
-                        value=get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
-                        allow_custom_value=True,
-                    )
-                    global_llm_summary = gr.Markdown(
-                        value=format_llm_config_summary(
-                            "HF cheapest/free credits",
-                            get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
-                            "",
-                        ),
-                        elem_classes=["llm-summary"],
-                    )
-                    global_model_override_input = gr.Textbox(
-                        label="Model override for all agents (optional)",
-                        value="",
-                        placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b",
-                    )
-                    global_timeout_input = gr.Slider(
-                        label="Timeout for all agents (seconds)",
-                        minimum=30,
-                        maximum=300,
-                        step=15,
-                        value=150,
-                    )
-                    apply_global_settings_button = gr.Button("Apply to all agents")
-                    global_provider_strategy_input.change(
-                        fn=update_model_dropdown,
-                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
-                        outputs=[global_model_input, global_llm_summary],
-                    )
-                    global_model_input.change(
-                        fn=format_llm_config_summary,
-                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
-                        outputs=[global_llm_summary],
-                    )
-                    global_model_override_input.change(
-                        fn=format_llm_config_summary,
-                        inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
-                        outputs=[global_llm_summary],
-                    )
-                gr.HTML("<div class='config-subhead'>Per-agent model setup</div>")
                 agent_config_inputs = []
                 agent_bulk_outputs = []
-                with gr.Group(elem_classes=["agent-config-grid"]):
-                    for agent_key, agent_name, description, default_directives in AGENT_CONFIG_SPECS:
-                        with gr.Accordion(
-                            agent_name,
-                            open=False,
-                            elem_classes=["agent-accordion"],
-                        ):
-                            with gr.Group(elem_classes=["workflow-step"]):
-                                gr.HTML(
-                                    f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
-                                )
-                                execution_mode_input = gr.Dropdown(
-                                    label="Execution mode",
-                                    choices=EXECUTION_MODE_CHOICES,
-                                    value=EXECUTION_MODE_CHOICES[0],
-                                )
-                                execution_mode_help = gr.Markdown(
-                                    value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
-                                    elem_classes=["execution-mode-help"],
-                                )
-                                initial_provider = AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0])
-                                initial_model = get_initial_model_value(
-                                    initial_provider,
-                                    AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
-                                )
-                                llm_summary = gr.Markdown(
-                                    value=format_llm_config_summary(
-                                        initial_provider,
-                                        initial_model,
-                                        AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
-                                    ),
-                                    elem_classes=["llm-summary"],
-                                    visible=True,
-                                )
-                                provider_strategy_input = gr.Dropdown(
-                                    label="Provider strategy",
-                                    choices=PROVIDER_STRATEGY_CHOICES,
-                                    value=initial_provider,
-                                    visible=True,
-                                )
-                                model_family_input = gr.Dropdown(
-                                    label="Model",
-                                    choices=get_model_choices(initial_provider),
-                                    value=initial_model,
-                                    visible=True,
-                                    allow_custom_value=True,
-                                )
-                                model_override_input = gr.Textbox(
-                                    label="Model override (optional)",
-                                    value=AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
-                                    placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b, openai/gpt-oss-120b",
-                                    visible=True,
-                                )
-                                timeout_input = gr.Slider(
-                                    label="Agent timeout (seconds)",
-                                    minimum=30,
-                                    maximum=300,
-                                    step=15,
-                                    value=AGENT_TIMEOUT_DEFAULTS.get(agent_key, AGENT_TIMEOUT_SECONDS),
-                                    visible=True,
-                                )
-                                directives_input = gr.Textbox(
-                                    label="Directives",
-                                    value=default_directives,
-                                    lines=3,
-                                    visible=True,
-                                )
-                                provider_strategy_input.change(
-                                    fn=update_model_dropdown,
-                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
-                                    outputs=[model_family_input, llm_summary],
-                                )
-                                model_family_input.change(
-                                    fn=format_llm_config_summary,
-                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
-                                    outputs=[llm_summary],
-                                )
-                                model_override_input.change(
-                                    fn=format_llm_config_summary,
-                                    inputs=[provider_strategy_input, model_family_input, model_override_input],
-                                    outputs=[llm_summary],
-                                )
-                                execution_mode_input.change(
-                                    fn=format_execution_mode_help,
-                                    inputs=[execution_mode_input],
-                                    outputs=[execution_mode_help],
-                                )
-                                execution_mode_input.change(
-                                    fn=toggle_llm_configuration_fields,
-                                    inputs=[execution_mode_input],
-                                    outputs=[
-                                        llm_summary,
-                                        provider_strategy_input,
-                                        model_family_input,
-                                        model_override_input,
-                                        timeout_input,
-                                        directives_input,
-                                    ],
-                                )
-                                agent_config_inputs.extend(
-                                    [
-                                        execution_mode_input,
-                                        provider_strategy_input,
-                                        model_family_input,
-                                        model_override_input,
-                                        timeout_input,
-                                        directives_input,
-                                    ]
-                                )
-                                agent_bulk_outputs.extend(
-                                    [
-                                        execution_mode_input,
-                                        provider_strategy_input,
-                                        model_family_input,
-                                        model_override_input,
-                                        timeout_input,
-                                        execution_mode_help,
-                                        llm_summary,
-                                        directives_input,
-                                    ]
-                                )
-            with gr.Group(elem_classes=["panel-card"]):
-                gr.Markdown("## Scenario")
-                scenario_picker = gr.Dropdown(
-                    label="Preset scenario",
-                    choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
-                    value=DEFAULT_SCENARIO,
-                )
-                title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
-                requirements_input = gr.Textbox(
-                    label="Requirements",
-                    value=DEFAULT_REQUIREMENTS,
-                    lines=12,
-                )
-                run_button = gr.Button("Run workflow", variant="primary")
-                interaction_feedback_output = gr.HTML(
-                    value=build_interaction_feedback("Ready."),
-                    elem_classes=["interaction-feedback-shell"],
-                )
+                with gr.Tabs(elem_classes=["app-tabs", "config-tabs"]):
+                    with gr.Tab("Execution mode"):
+                        gr.HTML(
+                            """
+                            <div class="baseline-note">
+                              <strong>QA agent service</strong> is the default backend. In that mode the orchestrator and run controls stay in this app, while Requirements Analyst, Test Design, and Review execute through the separate service.
+                              <br><br>
+                              Switch to <strong>Custom agent runtime</strong> when you want full per-agent control over Hugging Face, Ollama, or another OpenAI-compatible backend directly from this GUI.
+                            </div>
+                            """
+                        )
+                        execution_backend_input = gr.Radio(
+                            label="Agent execution backend",
+                            choices=EXECUTION_BACKEND_CHOICES,
+                            value=EXECUTION_BACKEND_CHOICES[0],
+                        )
+                        with gr.Group(visible=True) as service_backend_group:
+                            qa_agent_service_base_url_input = gr.Textbox(
+                                label="QA agent service base URL",
+                                value=DEFAULT_QA_AGENT_SERVICE_BASE_URL,
+                                placeholder="http://127.0.0.1:8009 or https://.../api/v1",
+                            )
+                            gr.HTML(
+                                """
+                                <div class="baseline-note">
+                              This backend invokes `requirements_analyst`, `test_designer`, and `reviewer` one step at a time through the service REST API. Open the published Space here:
+                              <a href="https://huggingface.co/spaces/helmfridsson/qa-agent-service" target="_blank" rel="noreferrer">qa-agent-service</a>.
+                              The service keeps its own default model configuration unless you explicitly allow caller-side model overrides there.
+                                </div>
+                                """
+                            )
+                        with gr.Group(visible=False) as custom_runtime_group:
+                            ollama_base_url_input = gr.Textbox(
+                                label="Ollama base URL",
+                                value=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                            )
+                            openai_base_url_input = gr.Textbox(
+                                label="Custom OpenAI-compatible base URL",
+                                value=os.getenv("OPENAI_BASE_URL", ""),
+                                placeholder="http://host:port/v1",
+                            )
+                            gr.HTML(
+                                """
+                                <div class="baseline-note">
+                                  <strong>Local Ollama</strong> reads installed models from your local Ollama environment.
+                                  The list under <em>Model</em> should therefore match `ollama list`.
+                                  If you want to enter an exact model name manually, use <em>Model override</em>, for example `qwen3:8b`.
+                                </div>
+                                """
+                            )
+                    with gr.Tab("Run controls"):
+                        max_iterations_input = gr.Slider(
+                            label="Maximum rounds",
+                            minimum=1,
+                            maximum=20,
+                            step=1,
+                            value=10,
+                        )
+                        max_feedback_messages_input = gr.Slider(
+                            label="Maximum feedback messages",
+                            minimum=0,
+                            maximum=24,
+                            step=1,
+                            value=12,
+                        )
+                        max_feedback_per_pair_input = gr.Slider(
+                            label="Maximum feedback messages per agent pair",
+                            minimum=0,
+                            maximum=8,
+                            step=1,
+                            value=4,
+                        )
+                        gr.HTML(
+                            """
+                            <div class="baseline-note">
+                              <strong>Run controls</strong> define how far the workflow is allowed to iterate before it stops.
+                              <br><br>
+                              <strong>Maximum rounds</strong> is the total number of workflow rounds the orchestrator may run, including reruns after feedback.
+                              <br>
+                              <strong>Maximum feedback messages</strong> is the total number of correction messages agents may send during one run.
+                              <br>
+                              <strong>Maximum feedback messages per agent pair</strong> limits repeated back-and-forth between the same two agents.
+                            </div>
+                            """
+                        )
+                    with gr.Tab("Orchestrator"):
+                        gr.HTML(
+                            """
+                            <div class="baseline-note">
+                              The orchestrator always stays in this app. Configure its model, timeout, and directives here regardless of whether downstream agents run directly in this app or through `qa-agent-service`.
+                            </div>
+                            """
+                        )
+                        with gr.Group(elem_classes=["workflow-step", "agent-config-card"]):
+                            orchestrator_key, orchestrator_name, orchestrator_description, orchestrator_directives = ORCHESTRATOR_CONFIG_SPEC
+                            gr.HTML(
+                                f"<div class='agent-description'><strong>{html.escape(orchestrator_name)}</strong><span>{html.escape(orchestrator_description)}</span></div>"
+                            )
+                            orchestrator_execution_mode_input = gr.Dropdown(
+                                label="Execution mode",
+                                choices=EXECUTION_MODE_CHOICES,
+                                value=EXECUTION_MODE_CHOICES[0],
+                            )
+                            orchestrator_execution_mode_help = gr.Markdown(
+                                value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
+                                elem_classes=["execution-mode-help"],
+                            )
+                            orchestrator_provider = AGENT_PROVIDER_DEFAULTS.get(orchestrator_key, PROVIDER_STRATEGY_CHOICES[0])
+                            orchestrator_model = get_initial_model_value(
+                                orchestrator_provider,
+                                AGENT_MODEL_FAMILY_DEFAULTS.get(orchestrator_key, MODEL_FAMILY_CHOICES[0]),
+                            )
+                            orchestrator_llm_summary = gr.Markdown(
+                                value=format_llm_config_summary(
+                                    orchestrator_provider,
+                                    orchestrator_model,
+                                    AGENT_MODEL_OVERRIDE_DEFAULTS.get(orchestrator_key, ""),
+                                ),
+                                elem_classes=["llm-summary"],
+                                visible=True,
+                            )
+                            orchestrator_provider_strategy_input = gr.Dropdown(
+                                label="Provider strategy",
+                                choices=PROVIDER_STRATEGY_CHOICES,
+                                value=orchestrator_provider,
+                                visible=True,
+                            )
+                            orchestrator_model_family_input = gr.Dropdown(
+                                label="Model",
+                                choices=get_model_choices(orchestrator_provider),
+                                value=orchestrator_model,
+                                visible=True,
+                                allow_custom_value=True,
+                            )
+                            orchestrator_model_override_input = gr.Textbox(
+                                label="Model override (optional)",
+                                value=AGENT_MODEL_OVERRIDE_DEFAULTS.get(orchestrator_key, ""),
+                                placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b, openai/gpt-oss-120b",
+                                visible=True,
+                            )
+                            orchestrator_timeout_input = gr.Slider(
+                                label="Agent timeout (seconds)",
+                                minimum=30,
+                                maximum=300,
+                                step=15,
+                                value=AGENT_TIMEOUT_DEFAULTS.get(orchestrator_key, AGENT_TIMEOUT_SECONDS),
+                                visible=True,
+                            )
+                            orchestrator_directives_input = gr.Textbox(
+                                label="Directives",
+                                value=orchestrator_directives,
+                                lines=4,
+                                visible=True,
+                            )
+                            orchestrator_provider_strategy_input.change(
+                                fn=update_model_dropdown,
+                                inputs=[
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                ],
+                                outputs=[orchestrator_model_family_input, orchestrator_llm_summary],
+                            )
+                            orchestrator_model_family_input.change(
+                                fn=format_llm_config_summary,
+                                inputs=[
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                ],
+                                outputs=[orchestrator_llm_summary],
+                            )
+                            orchestrator_model_override_input.change(
+                                fn=format_llm_config_summary,
+                                inputs=[
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                ],
+                                outputs=[orchestrator_llm_summary],
+                            )
+                            orchestrator_execution_mode_input.change(
+                                fn=format_execution_mode_help,
+                                inputs=[orchestrator_execution_mode_input],
+                                outputs=[orchestrator_execution_mode_help],
+                            )
+                            orchestrator_execution_mode_input.change(
+                                fn=toggle_llm_configuration_fields,
+                                inputs=[orchestrator_execution_mode_input],
+                                outputs=[
+                                    orchestrator_llm_summary,
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                    orchestrator_timeout_input,
+                                    orchestrator_directives_input,
+                                ],
+                            )
+                            agent_config_inputs.extend(
+                                [
+                                    orchestrator_execution_mode_input,
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                    orchestrator_timeout_input,
+                                    orchestrator_directives_input,
+                                ]
+                            )
+                            agent_bulk_outputs.extend(
+                                [
+                                    orchestrator_execution_mode_input,
+                                    orchestrator_provider_strategy_input,
+                                    orchestrator_model_family_input,
+                                    orchestrator_model_override_input,
+                                    orchestrator_timeout_input,
+                                    orchestrator_execution_mode_help,
+                                    orchestrator_llm_summary,
+                                    orchestrator_directives_input,
+                                ]
+                            )
+                    with gr.Tab("Custom agents"):
+                        with gr.Group(visible=False) as custom_agents_group:
+                            gr.HTML(
+                                """
+                                <div class="baseline-note">
+                                  Apply one common LLM configuration across all agents, then fine-tune only the agents that need exceptions. The orchestrator still has its own tab so you can override it again afterward if needed.
+                                </div>
+                                """
+                            )
+                            global_execution_mode_input = gr.Dropdown(
+                                label="Execution mode for all agents",
+                                choices=EXECUTION_MODE_CHOICES,
+                                value=EXECUTION_MODE_CHOICES[0],
+                            )
+                            global_provider_strategy_input = gr.Dropdown(
+                                label="Provider strategy for all agents",
+                                choices=PROVIDER_STRATEGY_CHOICES,
+                                value="HF cheapest/free credits",
+                            )
+                            global_model_input = gr.Dropdown(
+                                label="Model for all agents",
+                                choices=get_model_choices("HF cheapest/free credits"),
+                                value=get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
+                                allow_custom_value=True,
+                            )
+                            global_llm_summary = gr.Markdown(
+                                value=format_llm_config_summary(
+                                    "HF cheapest/free credits",
+                                    get_initial_model_value("HF cheapest/free credits", "gpt-oss-20b"),
+                                    "",
+                                ),
+                                elem_classes=["llm-summary"],
+                            )
+                            global_model_override_input = gr.Textbox(
+                                label="Model override for all agents (optional)",
+                                value="",
+                                placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b",
+                            )
+                            global_timeout_input = gr.Slider(
+                                label="Timeout for all agents (seconds)",
+                                minimum=30,
+                                maximum=300,
+                                step=15,
+                                value=150,
+                            )
+                            apply_global_settings_button = gr.Button("Apply to all agents")
+                            global_provider_strategy_input.change(
+                                fn=update_model_dropdown,
+                                inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                                outputs=[global_model_input, global_llm_summary],
+                            )
+                            global_model_input.change(
+                                fn=format_llm_config_summary,
+                                inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                                outputs=[global_llm_summary],
+                            )
+                            global_model_override_input.change(
+                                fn=format_llm_config_summary,
+                                inputs=[global_provider_strategy_input, global_model_input, global_model_override_input],
+                                outputs=[global_llm_summary],
+                            )
+                            gr.HTML("<div class='config-subhead'>Detailed agent model setup</div>")
+                            with gr.Tabs(elem_classes=["app-tabs", "agent-tabs"]):
+                                for agent_key, agent_name, description, default_directives in WORKER_AGENT_CONFIG_SPECS:
+                                    with gr.Tab(agent_name.replace(" Agent", "")):
+                                        with gr.Group(elem_classes=["workflow-step", "agent-config-card"]):
+                                            gr.HTML(
+                                                f"<div class='agent-description'><strong>{html.escape(agent_name)}</strong><span>{html.escape(description)}</span></div>"
+                                            )
+                                            execution_mode_input = gr.Dropdown(
+                                                label="Execution mode",
+                                                choices=EXECUTION_MODE_CHOICES,
+                                                value=EXECUTION_MODE_CHOICES[0],
+                                            )
+                                            execution_mode_help = gr.Markdown(
+                                                value=format_execution_mode_help(EXECUTION_MODE_CHOICES[0]),
+                                                elem_classes=["execution-mode-help"],
+                                            )
+                                            initial_provider = AGENT_PROVIDER_DEFAULTS.get(agent_key, PROVIDER_STRATEGY_CHOICES[0])
+                                            initial_model = get_initial_model_value(
+                                                initial_provider,
+                                                AGENT_MODEL_FAMILY_DEFAULTS.get(agent_key, MODEL_FAMILY_CHOICES[0]),
+                                            )
+                                            llm_summary = gr.Markdown(
+                                                value=format_llm_config_summary(
+                                                    initial_provider,
+                                                    initial_model,
+                                                    AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
+                                                ),
+                                                elem_classes=["llm-summary"],
+                                                visible=True,
+                                            )
+                                            provider_strategy_input = gr.Dropdown(
+                                                label="Provider strategy",
+                                                choices=PROVIDER_STRATEGY_CHOICES,
+                                                value=initial_provider,
+                                                visible=True,
+                                            )
+                                            model_family_input = gr.Dropdown(
+                                                label="Model",
+                                                choices=get_model_choices(initial_provider),
+                                                value=initial_model,
+                                                visible=True,
+                                                allow_custom_value=True,
+                                            )
+                                            model_override_input = gr.Textbox(
+                                                label="Model override (optional)",
+                                                value=AGENT_MODEL_OVERRIDE_DEFAULTS.get(agent_key, ""),
+                                                placeholder="Examples: qwen3:8b, llama3:latest, deepseek-r1:8b, openai/gpt-oss-120b",
+                                                visible=True,
+                                            )
+                                            timeout_input = gr.Slider(
+                                                label="Agent timeout (seconds)",
+                                                minimum=30,
+                                                maximum=300,
+                                                step=15,
+                                                value=AGENT_TIMEOUT_DEFAULTS.get(agent_key, AGENT_TIMEOUT_SECONDS),
+                                                visible=True,
+                                            )
+                                            directives_input = gr.Textbox(
+                                                label="Directives",
+                                                value=default_directives,
+                                                lines=3,
+                                                visible=True,
+                                            )
+                                            provider_strategy_input.change(
+                                                fn=update_model_dropdown,
+                                                inputs=[provider_strategy_input, model_family_input, model_override_input],
+                                                outputs=[model_family_input, llm_summary],
+                                            )
+                                            model_family_input.change(
+                                                fn=format_llm_config_summary,
+                                                inputs=[provider_strategy_input, model_family_input, model_override_input],
+                                                outputs=[llm_summary],
+                                            )
+                                            model_override_input.change(
+                                                fn=format_llm_config_summary,
+                                                inputs=[provider_strategy_input, model_family_input, model_override_input],
+                                                outputs=[llm_summary],
+                                            )
+                                            execution_mode_input.change(
+                                                fn=format_execution_mode_help,
+                                                inputs=[execution_mode_input],
+                                                outputs=[execution_mode_help],
+                                            )
+                                            execution_mode_input.change(
+                                                fn=toggle_llm_configuration_fields,
+                                                inputs=[execution_mode_input],
+                                                outputs=[
+                                                    llm_summary,
+                                                    provider_strategy_input,
+                                                    model_family_input,
+                                                    model_override_input,
+                                                    timeout_input,
+                                                    directives_input,
+                                                ],
+                                            )
+                                            agent_config_inputs.extend(
+                                                [
+                                                    execution_mode_input,
+                                                    provider_strategy_input,
+                                                    model_family_input,
+                                                    model_override_input,
+                                                    timeout_input,
+                                                    directives_input,
+                                                ]
+                                            )
+                                            agent_bulk_outputs.extend(
+                                                [
+                                                    execution_mode_input,
+                                                    provider_strategy_input,
+                                                    model_family_input,
+                                                    model_override_input,
+                                                    timeout_input,
+                                                    execution_mode_help,
+                                                    llm_summary,
+                                                    directives_input,
+                                                ]
+                                            )
+                    with gr.Tab("Scenario"):
+                        scenario_picker = gr.Dropdown(
+                            label="Preset scenario",
+                            choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
+                            value=DEFAULT_SCENARIO,
+                        )
+                        title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
+                        requirements_input = gr.Textbox(
+                            label="Requirements",
+                            value=DEFAULT_REQUIREMENTS,
+                            lines=12,
+                        )
+                        with gr.Row():
+                            run_button = gr.Button("Run workflow", variant="primary")
+                            stop_button = gr.Button("Stop workflow")
+                        interaction_feedback_output = gr.HTML(
+                            value=build_interaction_feedback("Ready."),
+                            elem_classes=["interaction-feedback-shell"],
+                        )
 
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Result")
-                status_output = gr.HTML(
-                    value=build_idle_status(),
-                    show_label=False,
-                    container=False,
-                    elem_classes=["result-panel-output"],
-                )
-                result_output = gr.HTML(
-                    value=build_idle_report(),
-                    show_label=False,
-                    container=False,
-                    elem_classes=["result-panel-output"],
-                )
-                runtime_output = gr.HTML(
-                    value=build_idle_runtime_timeline(),
-                    show_label=False,
-                    container=False,
-                    elem_classes=["result-panel-output"],
-                )
-                memory_output = gr.HTML(
-                    value=build_idle_memory_panel(),
-                    show_label=False,
-                    container=False,
-                    elem_classes=["result-panel-output"],
-                )
-                log_file_output = gr.File(
-                    label="Download run log",
-                    value=None,
-                    interactive=False,
-                    elem_classes=["result-panel-output"],
-                )
-                run_json_file_output = gr.File(
-                    label="Download run JSON for evaluation",
-                    value=None,
-                    interactive=False,
-                    elem_classes=["result-panel-output"],
-                )
-            with gr.Group(elem_classes=["panel-card"]):
-                stop_button = gr.Button("Stop workflow")
+                with gr.Tabs(elem_classes=["app-tabs", "result-tabs"]):
+                    with gr.Tab("Summary"):
+                        status_output = gr.HTML(
+                            value=build_idle_status(),
+                            show_label=False,
+                            container=False,
+                            elem_classes=["result-panel-output"],
+                        )
+                    with gr.Tab("Report"):
+                        result_output = gr.HTML(
+                            value=build_idle_report(),
+                            show_label=False,
+                            container=False,
+                            elem_classes=["result-panel-output"],
+                        )
+                    with gr.Tab("Runtime"):
+                        runtime_output = gr.HTML(
+                            value=build_idle_runtime_timeline(),
+                            show_label=False,
+                            container=False,
+                            elem_classes=["result-panel-output"],
+                        )
+                    with gr.Tab("Memory"):
+                        memory_output = gr.HTML(
+                            value=build_idle_memory_panel(),
+                            show_label=False,
+                            container=False,
+                            elem_classes=["result-panel-output"],
+                        )
+                    with gr.Tab("Exports"):
+                        log_file_output = gr.File(
+                            label="Download run log",
+                            value=None,
+                            interactive=False,
+                            elem_classes=["result-panel-output", "export-file"],
+                        )
+                        run_json_file_output = gr.File(
+                            label="Download run JSON for evaluation",
+                            value=None,
+                            interactive=False,
+                            elem_classes=["result-panel-output", "export-file"],
+                        )
 
         run_button.click(
             fn=process_requirements,
@@ -2176,6 +2831,8 @@ def build_demo() -> gr.Blocks:
                 max_feedback_per_pair_input,
                 ollama_base_url_input,
                 openai_base_url_input,
+                execution_backend_input,
+                qa_agent_service_base_url_input,
                 *agent_config_inputs,
             ],
             outputs=[
@@ -2187,6 +2844,12 @@ def build_demo() -> gr.Blocks:
                 interaction_feedback_output,
                 run_json_file_output,
             ],
+            show_progress="hidden",
+        )
+        execution_backend_input.change(
+            fn=toggle_execution_backend_sections,
+            inputs=[execution_backend_input],
+            outputs=[service_backend_group, custom_runtime_group, custom_agents_group],
             show_progress="hidden",
         )
         stop_button.click(
@@ -2230,8 +2893,11 @@ def build_demo() -> gr.Blocks:
 
 def build_workflow_report(payload: dict) -> str:
     summary_html = build_summary_overview(payload)
+    run_controls = dict(payload.get("run_controls", {}))
+    run_controls["execution_backend"] = payload.get("execution_backend", "")
+    run_controls["qa_agent_service_base_url"] = payload.get("qa_agent_service_base_url", "")
     config_html = build_agent_config_overview(
-        payload.get("run_controls", {}),
+        run_controls,
         payload.get("agent_configs", []),
     )
     test_case_overview = build_test_case_overview(payload)
@@ -2396,8 +3062,21 @@ def build_test_case_overview(payload: dict) -> str:
 def build_agent_config_overview(run_controls: dict, agent_configs: list[dict]) -> str:
     if not run_controls and not agent_configs:
         return ""
+    backend_rows = ""
+    execution_backend = run_controls.get("execution_backend") or "Not recorded"
+    backend_rows += (
+        f"<tr><td>Execution backend</td><td>{html.escape(str(execution_backend))}</td>"
+        "<td>Determines whether worker agents ran through qa-agent-service or directly in this app.</td></tr>"
+    )
+    service_url = run_controls.get("qa_agent_service_base_url") or ""
+    if service_url:
+        backend_rows += (
+            f"<tr><td>QA agent service base URL</td><td>{html.escape(str(service_url))}</td>"
+            "<td>Base URL used for the service-backed worker agents in this run.</td></tr>"
+        )
     controls_table = (
         "<table><thead><tr><th>Setting</th><th>Value</th><th>Meaning</th></tr></thead><tbody>"
+        f"{backend_rows}"
         f"<tr><td>Maximum rounds</td><td>{html.escape(str(run_controls.get('max_rounds', 'Not set')))}</td><td>Upper limit for full pipeline passes.</td></tr>"
         f"<tr><td>Maximum feedback messages</td><td>{html.escape(str(run_controls.get('max_feedback_messages', 'Not set')))}</td><td>Upper limit for direct agent-to-agent correction messages during LLM-backed orchestration.</td></tr>"
         f"<tr><td>Maximum feedback per agent pair</td><td>{html.escape(str(run_controls.get('max_feedback_per_agent_pair', 'Not set')))}</td><td>Caps repeated back-and-forth between the same two agents.</td></tr>"
