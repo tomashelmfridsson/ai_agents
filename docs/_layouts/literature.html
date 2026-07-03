@@ -40,6 +40,33 @@
         margin-bottom: 24px;
       }
 
+      .doc-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 18px 0 0;
+      }
+
+      .doc-nav a {
+        display: inline-flex;
+        align-items: center;
+        padding: 9px 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 251, 245, 0.72);
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 0.94rem;
+        font-weight: 700;
+      }
+
+      .doc-nav a:hover,
+      .doc-nav a:focus-visible {
+        border-color: rgba(143, 53, 24, 0.42);
+        background: rgba(143, 53, 24, 0.08);
+        color: var(--accent);
+      }
+
       .eyebrow {
         margin: 0 0 10px;
         color: var(--accent);
@@ -158,6 +185,14 @@
     <main>
       <header class="masthead">
         <p class="eyebrow">Dokumentation</p>
+        <nav class="doc-nav" aria-label="Dokumentsidor">
+          <a href="/ai_agents/docs/project-brief/">Projektbrief</a>
+          <a href="/ai_agents/docs/theoretical-background-and-central-concepts/">Teoretisk bakgrund och centrala begrepp</a>
+          <a href="/ai_agents/docs/literature-study/">Litteraturstudie</a>
+          <a href="/ai_agents/docs/ai-agents-poc-report/">AI Agents POC Rapport</a>
+          <a href="/ai_agents/docs/ai-developing-guidelines/">AI Developing Guidelines</a>
+          <a href="/ai_agents/docs/qa-agent-developing-requirements/">QA Agent Developing Requirements</a>
+        </nav>
       </header>
       <article>
         {{ content }}

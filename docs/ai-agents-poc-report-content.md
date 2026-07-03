@@ -34,6 +34,8 @@ Den nuvarande AI Agents-lösningen ska beskrivas tydligt som en hybrid:
 - orkestreringshanteringen i appen är egenutvecklad
 - appen innehåller fortfarande den egna agentlogiken och den egna körmodellen som grund för experiment och jämförelser
 
+Själva AI Agents-delen byggdes i Gradio. Ett viktigt skäl var att det redan fanns viss tidigare kännedom om Gradio, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö. LangGraph-delen kom däremot att köras i Streamlit. Skälet var inte att Streamlit nödvändigtvis var förstahandsvalet i sig, utan att Gradio medförde flera praktiska begränsningar i just den delen av arbetet, vilket gjorde Streamlit till ett mer fungerande alternativ för LangGraph-spåret.
+
 Det viktiga här är att Hugging Face inte ersätter projektets arkitektur. Det är fortfarande vår egen app som styr konfiguration, routing, minne, feedbackbegränsningar, observability och presentation av resultat. Hugging Face används som exekverings- och publiceringsmiljö för modeller och agentnära tjänster, medan den agentiska styrningen är projektets egen.
 
 Vi vill också att det ska framgå att kodbasen fortfarande bevarar möjligheten att köra agenterna i den egna appen. Därför bör nästa UI-steg vara ett tydligt lägesval, exempelvis en knapp eller toggle, där användaren kan välja mellan:
@@ -44,6 +46,8 @@ Vi vill också att det ska framgå att kodbasen fortfarande bevarar möjligheten
 ## HF-publicering, endpoints och MCP
 
 Som en del av utvecklingen publicerades agenterna på Hugging Face så att de blev tillgängliga via publika endpoints och MCP-relaterade integrationsmönster. Detta gjorde att arkitekturen kunde flyttas från enbart lokal experimentkörning till en mer öppen och integrerbar lösning där agenterna kunde användas utanför den lokala appmiljön.
+
+Tidigt i arbetet var tanken att `qa-agent-service` främst skulle användas via Hugging Face-nycklar. När Hermes Agent senare skulle användas som jämförelse- och integrationsspår blev det dock tydligare att en bättre lösning var att göra tjänstens REST- och MCP-endpoints publika. På så sätt blev agentservicen enklare att återanvända mellan olika klienter och ramverk, i stället för att vara kopplad till ett mer slutet nyckelberoende upplägg.
 
 Detta var en viktig övergång eftersom det gjorde det möjligt att kombinera:
 
