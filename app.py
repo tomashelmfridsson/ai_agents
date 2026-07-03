@@ -53,6 +53,7 @@ from qa_platform.sample_scenarios import (
 from qa_platform.storage import export_run_payload_json, get_db_path, get_export_dir, get_log_dir, save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
+THEORETICAL_BACKGROUND_URL = "https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts/"
 AI_AGENTS_POC_REPORT_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
 QA_AGENT_DEVELOPING_REQUIREMENTS_URL = "https://tomashelmfridsson.github.io/ai_agents/qa-agent-developing-requirements/"
@@ -2402,6 +2403,11 @@ def build_demo() -> gr.Blocks:
                 gr.Button(
                     "Project brief",
                     link=PROJECT_BRIEF_URL,
+                    elem_classes=["doc-pill-button"],
+                )
+                gr.Button(
+                    "Theoretical background",
+                    link=THEORETICAL_BACKGROUND_URL,
                     elem_classes=["doc-pill-button"],
                 )
                 gr.Button(
