@@ -50,9 +50,10 @@ from qa_platform.sample_scenarios import (
     SAMPLE_SCENARIOS,
     load_sample_scenario,
 )
-from qa_platform.storage import export_run_payload_json, get_log_dir, save_run
+from qa_platform.storage import export_run_payload_json, get_db_path, get_export_dir, get_log_dir, save_run
 LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study/"
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
+AI_AGENTS_POC_REPORT_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
 QA_AGENT_DEVELOPING_REQUIREMENTS_URL = "https://tomashelmfridsson.github.io/ai_agents/qa-agent-developing-requirements/"
 DEFAULT_OLLAMA_MODEL_CHOICES = [
@@ -85,6 +86,17 @@ _ACTIVE_RUN_STOP_EVENT: threading.Event | None = None
 def _blocks_support_launch_theming() -> bool:
     launch_signature = inspect.signature(gr.Blocks.launch)
     return "theme" in launch_signature.parameters and "css" in launch_signature.parameters
+
+
+def _build_allowed_file_paths() -> list[str]:
+    allowed_roots = {
+        ROOT,
+        get_log_dir(),
+        get_db_path().parent,
+        get_export_dir(),
+        ROOT / "data" / "exports",
+    }
+    return sorted(str(path.resolve()) for path in allowed_roots)
 
 
 def _build_run_summary_panel(
@@ -2349,23 +2361,28 @@ def build_demo() -> gr.Blocks:
                     """
                 )
                 gr.Button(
-                    "Literature study",
-                    link=LITERATURE_URL,
-                    elem_classes=["doc-pill-button"],
-                )
-                gr.Button(
                     "Project brief",
                     link=PROJECT_BRIEF_URL,
                     elem_classes=["doc-pill-button"],
                 )
                 gr.Button(
-                    "AI developing guidelines",
-                    link=AI_DEVELOPING_GUIDELINES_URL,
+                    "Literature study",
+                    link=LITERATURE_URL,
+                    elem_classes=["doc-pill-button"],
+                )
+                gr.Button(
+                    "AI agents POC report",
+                    link=AI_AGENTS_POC_REPORT_URL,
                     elem_classes=["doc-pill-button"],
                 )
                 gr.Button(
                     "QA agent requirements",
                     link=QA_AGENT_DEVELOPING_REQUIREMENTS_URL,
+                    elem_classes=["doc-pill-button"],
+                )
+                gr.Button(
+                    "AI developing guidelines",
+                    link=AI_DEVELOPING_GUIDELINES_URL,
                     elem_classes=["doc-pill-button"],
                 )
             with gr.Group(elem_classes=["panel-card"]):
@@ -3348,6 +3365,7 @@ if __name__ == "__main__":
     launch_kwargs = {
         "server_name": "0.0.0.0",
         "server_port": int(os.getenv("PORT", "7860")),
+        "allowed_paths": _build_allowed_file_paths(),
     }
     if _blocks_support_launch_theming():
         launch_kwargs["theme"] = APP_THEME

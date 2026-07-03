@@ -1175,13 +1175,13 @@ class OrchestratorAgent:
                 *(
                     [
                         f"Use the configured orchestration mode under {runtime_config.model_id} together with the local feedback-budget guards.",
-                        "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
+                        "Stop when the Review Agent returns approved=true, or when no further targeted backtracking route is allowed or available.",
                         "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
                     ]
                     if llm_active
                     else [
                         "Read the current review status together with the remaining feedback budget.",
-                        "Stop when the result is approved, or when no further targeted backtracking route is allowed or available.",
+                        "Stop when the Review Agent returns approved=true, or when no further targeted backtracking route is allowed or available.",
                         "Do not restart the whole pipeline here because this orchestrator now prefers selective routing.",
                     ]
                 ),
@@ -1191,9 +1191,9 @@ class OrchestratorAgent:
             ),
             decision_explanation=(
                 (
-                    f"Configured execution mode is LLM-backed with {runtime_config.model_id}, but the final stop rule is still enforced locally against the configured limits."
+                    f"Configured execution mode is LLM-backed with {runtime_config.model_id}, but the final stop rule is still enforced locally against the configured limits and the Review Agent's approved=true signal."
                     if llm_active and runtime_config
-                    else "The run stops when approval is reached or when no more valid agent-to-agent backtracking step can be taken under the configured limits."
+                    else "The run stops when the Review Agent returns approved=true or when no more valid agent-to-agent backtracking step can be taken under the configured limits."
                 )
             ),
             reasoning_source="llm_assisted_routing" if llm_active else "structured_trace",

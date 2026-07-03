@@ -29,6 +29,7 @@ from qa_platform.sample_scenarios import DEFAULT_TITLE, load_sample_scenario
 from qa_platform.storage import export_run_evaluations_csv, get_export_dir, save_run, save_run_evaluation
 import app as app_module
 from app import process_requirements
+from qa_platform.storage import get_db_path, get_log_dir
 
 
 class PipelineTests(unittest.TestCase):
@@ -91,6 +92,14 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(orchestrator.registry.get_spec("review").stage_key, "review")
         self.assertEqual(orchestrator.requirements_analyst.name, "Requirements Analyst")
 
+    def test_orchestrator_directives_target_review_approval(self) -> None:
+        orchestrator = OrchestratorAgent()
+
+        directives = orchestrator.registry.get_spec("orchestrator").default_directives
+
+        self.assertIn("approved=true from the Review Agent", directives)
+        self.assertIn("Review Agent returns approved=true", directives)
+
     def test_review_flags_vague_requirements(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)
         result = orchestrator.process(
@@ -151,6 +160,13 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(title, "")
         self.assertEqual(requirements, "")
+
+    def test_gradio_launch_whitelists_saved_artifact_paths(self) -> None:
+        allowed_paths = app_module._build_allowed_file_paths()
+
+        self.assertIn(str(get_log_dir().resolve()), allowed_paths)
+        self.assertIn(str(get_db_path().parent.resolve()), allowed_paths)
+        self.assertIn(str(get_export_dir().resolve()), allowed_paths)
 
     def test_requirements_trace_explains_derivation_for_req_001(self) -> None:
         orchestrator = OrchestratorAgent(max_iterations=1)

@@ -24,6 +24,8 @@ För att stödja detta behövdes tre centrala mekanismer:
 
 Detta ledde fram till en lösning där orkestratorn blev den styrande komponenten. Routing kunde då avgöras utifrån resultat, brister, feedback och stopvillkor i stället för från en helt statisk stegordning.
 
+En viktig förfining i denna orkestrering är att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som `quality sufficient`. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt verifieringsmål, skarpare routingbeslut och bättre spårbarhet i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
+
 ## Nuvarande AI Agents-sida och arkitektur
 
 Den nuvarande AI Agents-lösningen ska beskrivas tydligt som en hybrid:

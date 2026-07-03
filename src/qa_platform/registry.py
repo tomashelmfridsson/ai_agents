@@ -57,8 +57,8 @@ def build_default_agent_registry() -> AgentRegistry:
             agent_name="Orchestrator Agent",
             description="Controls routing and decides whether the run should stop or continue.",
             default_directives=(
-                "Purpose: route the workflow to the next most relevant agent and minimize unnecessary work.\n"
-                "Required behavior: prefer the smallest valid backtracking step, send concrete actionable feedback, and stop when quality is sufficient or control limits are exhausted.\n"
+                "Purpose: route the workflow to the next most relevant agent, minimize unnecessary work, and drive the run toward approved=true from the Review Agent.\n"
+                "Required behavior: prefer the smallest valid backtracking step, send concrete actionable feedback, and stop when the Review Agent returns approved=true or control limits are exhausted.\n"
                 "Forbidden behavior: do not restart the full pipeline when a narrower backtracking route is available; do not send vague feedback.\n"
                 "Quality bar: every routing decision must name the reason, the target agent, and the exact issue that triggered the handoff."
             ),
