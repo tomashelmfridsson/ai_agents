@@ -1,53 +1,54 @@
-# AI Agents POC Rapport
+# AI-agent POC-rapport
 
 ## Syfte
 
-Detta dokument fungerar som projektets samlade Rapport öcer Litteratur studie och Bygge av en QA agentic prototyp Proof of Concept (POC). Syftet med POC:en är i första hand att skapa en praktisk förståelse för hur agenter och agentiska lösningar fungerar, särskilt i ett QA-perspektiv. Fokus ligger därför på att undersöka hur specialiserade agentroller, orkestrering, routing, minne, återkopplingsloopar och granskning kan användas för kravbaserad testdesign och testgenerering, samt att beskriva vilka agentiska egenskaper som redan har demonstrerats och vilka områden som fortfarande återstår att utvärdera.
+Detta dokument fungerar som projektets samlade rapport över litteraturstudien och utvecklingen av en QA-orienterad agentisk Proof of Concept (POC). Syftet med POC:en är i första hand att skapa en praktisk förståelse för hur [AI-agenter](../theoretical-background-and-central-concepts/#ai-agent) och [agentiska lösningar](../theoretical-background-and-central-concepts/#agentic-ai) fungerar, särskilt ur ett [Software Quality Assurance](../theoretical-background-and-central-concepts/#software-quality-assurance)-perspektiv.
+
+Fokus ligger därför på att undersöka hur specialiserade agentroller, [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), routing, [minne](../theoretical-background-and-central-concepts/#agent-memory), återkopplingsloopar och granskning kan användas för kravbaserad [testdesign](../theoretical-background-and-central-concepts/#test-design) och testgenerering. Rapporten beskriver också vilka agentiska egenskaper som redan har demonstrerats och vilka områden som fortfarande återstår att utvärdera.
 
 ## Projektets utvecklingsresa
 
-Arbetet började med att förstå hur AI-agenter fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk orkestrering, minne, routing, återkopplingsslingor och granskning i multi-agentmiljöer. Målet var inte enbart att använda ett färdigt ramverk, utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system. Detta finns beskrivet i Litteraturstudien.
+Arbetet började med att förstå hur [AI-agenter](../theoretical-background-and-central-concepts/#ai-agent) fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), [minne](../theoretical-background-and-central-concepts/#agent-memory), routing, återkopplingsslingor och granskning i [multi-agentmiljöer](../theoretical-background-and-central-concepts/#multi-agent-system). Målet var inte enbart att använda ett färdigt [agentramverk](../theoretical-background-and-central-concepts/#agent-framework), utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system. Detta finns beskrivet i litteraturstudien.
 
-Därefter försökte vi bygga en egen agentisk lösning från grunden. Men inna dess behövde vi bygga agenter. Vi byggde tre agenter, en för att anaöysera et brett krav med titel  och förfina det till användbara krav. Nästa agent skrev sedan testdesign och testfall utifrån dessa krav. Men litteraturstudien sa att detta aldrig blir tillräckligt utan det allra bästa är att ha en exekveringsfas och i detta fall skulel det vara testfallen. Nu hade vi inget System Under Test (SUT) så istället skapades en oberoende granskningsagent som hade som uppgift att approva testfallen utifrån kraven. Dessa Agenter skapade med vibe kodning AI assisterad kodning, och kördes först lokalt men är nu publicerade publikt på Huggingface med en dockerlösning. Varje Agent var egentligen en LLM med en prompt med ett direktiv som beskrev den uppgift och vilken leverabel den skulle generera.
+Därefter försökte vi bygga en egen agentisk lösning från grunden. Innan detta var möjligt behövde vi först bygga själva agenterna. Vi tog fram tre agenter: en agent för att analysera ett övergripande krav och förfina det till användbara krav, en agent för att skapa [testdesign](../theoretical-background-and-central-concepts/#test-design) och testfall utifrån dessa krav, samt en oberoende granskningsagent.
 
-När vi nu hade agenter klara var det dags att börja skapa en multiagent lösning. Först skapades en skevenstionss lösning där vi Designade Krav, skapade testfall och sedan granskade.
-Dessa tidiga experiment kördes med lokala LLM:er, framför allt Llama-baserade modeller via lokal inferens. Detta gav praktisk förståelse för hur långt man kunde komma med egen sekventiell orkestrering, men också vilka begränsningar som uppstod i kvalitet, stabilitet och exekveringstid.
+Litteraturstudien pekade tydligt på att en lösning utan någon form av exekverings- eller granskningsfas sällan blir tillräcklig. Eftersom vi inte hade något System Under Test (SUT) valde vi därför att låta en oberoende granskningsagent bedöma testfallen mot kraven. Dessa agenter togs fram med AI-assisterad kodning, kördes först lokalt och publicerades senare publikt på [Hugging Face](../theoretical-background-and-central-concepts/#hugging-face) genom en Docker-baserad lösning. Varje agent var i praktiken en [LLM](../theoretical-background-and-central-concepts/#large-language-models) med en [prompt](../theoretical-background-and-central-concepts/#prompt-engineering) och ett direktiv som beskrev uppgiften och vilken [artefakt](../theoretical-background-and-central-concepts/#artefakt) som skulle produceras.
 
-Nästa steg blev att gå över till Hugging Face-baserad körning för de live-LLM:er som användes i arbetsflödet. Därigenom kunde vi få tillgång till starkare och mer flexibla modeller, samtidigt som vi behöll kontrollen över vår egen agentlogik och vår egen experimentmiljö.
+När de enskilda agenterna var klara blev nästa steg att skapa en fleragentlösning. Den första versionen var sekventiell: krav analyserades, testfall skapades och resultatet granskades därefter. Dessa tidiga experiment kördes med lokala [LLM:er](../theoretical-background-and-central-concepts/#large-language-models), framför allt Llama-baserade modeller via lokal inferens. Det gav praktisk förståelse för hur långt man kunde komma med egen sekventiell [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), men också vilka begränsningar som uppstod i kvalitet, stabilitet och [exekveringstid](../theoretical-background-and-central-concepts/#exekveringstid).
+
+Nästa steg blev att gå över till Hugging Face-baserad körning för de live-LLM:er som användes i arbetsflödet. Därigenom fick vi tillgång till starkare och mer flexibla modeller, samtidigt som vi behöll kontrollen över vår egen agentlogik och experimentmiljö.
 
 ## Från sekventiellt flöde till agentisk routing
 
-En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen requirements -> design -> review som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten. Då infördes En Orkestrering med smartare hantering.
+En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen `requirements -> design -> review` som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten. Det ledde till en mer flexibel orkestrering.
 
-För att stödja detta behövdes tre centrala mekanismer för att hantera att för myclet bru reducerade agenternas förmåga och fick för mycket irrelevant information:
+För att stödja detta behövdes tre centrala mekanismer:
 
-- privat agentminne för lokala anteckningar och mellanresultat
-- delat minne för gemensam kontext mellan agenterna
-- icke-fix routing där nästa steg bestäms dynamiskt i stället för hårdkodas fullt ut som till sist blev det en LLM baserad Orkestrering.
+- privat [agentminne](../theoretical-background-and-central-concepts/#agent-memory) för lokala anteckningar och mellanresultat
+- [delat minne](../theoretical-background-and-central-concepts/#shared-working-memory) för gemensam kontext mellan agenterna
+- dynamisk routing där nästa steg bestäms utifrån resultat och inte enbart genom hårdkodad stegordning
 
-Detta ledde fram till en lösning där orkestratorn blev den styrande komponenten. Routing kunde då avgöras utifrån resultat, brister, feedback och stopvillkor i stället för från en helt statisk stegordning.
-Men fortfarande var det hårdkodat vilka steg som fick hoppas mellan. tex om Testdesign agenten tyckte kraven var undermåliga kunde den skicka tillbaka till krav agenten att gör om följande krav eller om gransknings agenten inte kunde approva så kunde den skicka tillbaka till Tewtdesign att förbättra testfallen för ett eller flera krav.
+Detta ledde fram till en lösning där orkestratorn blev den styrande komponenten. Routing kunde då avgöras utifrån resultat, brister, feedback och stopvillkor i stället för utifrån en helt statisk stegordning. Samtidigt var vissa övergångar fortfarande begränsade. Om Test Design Agent till exempel bedömde att kraven var svaga kunde arbetet skickas tillbaka till Requirements Analyst Agent, och om granskningsagenten inte kunde godkänna resultatet kunde arbetet skickas tillbaka till Test Design Agent för förbättring.
 
-En viktig upptäckt som blev en förfining i denna orkestrering är att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som försöktes med i början `quality sufficient`, Good enough!. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt verifieringsmål, skarpare routingbeslut och bättre spårbarhet i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
+En viktig förfining i denna orkestrering var att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som `quality sufficient`. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt [verifieringsmål](../theoretical-background-and-central-concepts/#verification-and-validation), skarpare routingbeslut och bättre [spårbarhet](../theoretical-background-and-central-concepts/#requirement-traceability) i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
 
-För att få ännu bättre Orkestrering byggdes därefter en LLM baserad Orkestrator. Detta gav en hel del förbättringar framförallt då vi innan kunde se problem med loopar mellan agenter precis som även många forskningsrapporter ifrån litteraturstudierna påvisade och väldigt token krävande att agenterna pga de hårtkodade orkestreringsdefinitionerna kom i loopande disskusioner med varandra. Vi fick helt enkelt införa maximala antal cyckler att ta om samt hur många feedback en agent fick säga till en annan agent.
+För att få ännu bättre orkestrering byggdes därefter en [LLM](../theoretical-background-and-central-concepts/#large-language-models)-baserad [orkestrator](../theoretical-background-and-central-concepts/#orchestrator). Detta gav flera förbättringar, framför allt eftersom vi tidigare såg problem med loopar mellan agenter, något som även flera forskningsrapporter i litteraturstudien lyfter. De hårdkodade orkestreringsdefinitionerna ledde ibland till loopande diskussioner mellan agenterna och hög tokenförbrukning. Vi behövde därför införa maxgränser för antal cykler och för hur många återkopplingsmeddelanden en agent fick skicka till en annan.
 
-## Nuvarande AI Agents-sida och arkitektur
+## Nuvarande AI-agent-sida och arkitektur
 
-Den nuvarande AI Agents-lösningen ska beskrivas i olika delar:
+Den nuvarande AI-agentlösningen kan beskrivas i tre delar:
 
-- den publika agent lösningen använder Hugging Face-hostade modeller och agentnära körning via MCP och även REST.
-- orkestreringshanteringen i appen är egenutvecklad och innehåller en LLM baserad orkestreringsAgent
-- Det är ett GUI byggt i Gradio som hostas på huggingface som man kan använda. Appen innehåller denna HF orkestrerings tjänsten men man kan också välja att köra egna agent modeller med egna direktiv.
+- den publika agentlösningen använder [Hugging Face](../theoretical-background-and-central-concepts/#hugging-face)-hostade modeller och agentnära körning via [MCP](../theoretical-background-and-central-concepts/#model-context-protocol) och [REST](../theoretical-background-and-central-concepts/#rest-api)
+- orkestreringshanteringen i appen är egenutvecklad och innehåller en [LLM](../theoretical-background-and-central-concepts/#large-language-models)-baserad orkestratoragent
+- lösningen har ett GUI byggt i [Gradio](../theoretical-background-and-central-concepts/#gradio), där man både kan använda den hostade orkestreringstjänsten och välja egna agentmodeller med egna direktiv
 
-Själva AI Agents-delen byggdes alltså i Gradio. Ett viktigt skäl var att det redan fanns viss tidigare kännedom om Gradio, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö. Nästa expreiment med LangGraph som orkestrator kom däremot att köras i Streamlit. Skälet var inte att Streamlit nödvändigtvis var förstahandsvalet i sig, utan att Gradio medförde flera praktiska begränsningar i just den delen av arbetet, vilket gjorde Streamlit till ett mer fungerande alternativ för LangGraph-spåret.
-
+Själva AI-agentdelen byggdes alltså i [Gradio](../theoretical-background-and-central-concepts/#gradio). Ett viktigt skäl var att det redan fanns viss tidigare erfarenhet av Gradio, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö. Nästa experiment, med [LangGraph](../theoretical-background-and-central-concepts/#langgraph) som orkestrator, kördes däremot i [Streamlit](../theoretical-background-and-central-concepts/#streamlit). Skälet var inte att Streamlit nödvändigtvis var förstahandsvalet i sig, utan att Gradio medförde flera praktiska begränsningar i just den delen av arbetet.
 
 ## HF-publicering, endpoints och MCP
 
-Som en del av utvecklingen publicerades alltså agenterna på Hugging Face så att de blev tillgängliga via publika endpoints och MCP-relaterade integrationsmönster. Detta gjorde att arkitekturen kunde flyttas från enbart lokal experimentkörning till en mer öppen och integrerbar lösning där agenterna kunde användas utanför den lokala appmiljön.
+Som en del av utvecklingen publicerades agenterna på [Hugging Face](../theoretical-background-and-central-concepts/#hugging-face) så att de blev tillgängliga via publika endpoints och [MCP](../theoretical-background-and-central-concepts/#model-context-protocol)-relaterade integrationsmönster. Detta gjorde att arkitekturen kunde flyttas från enbart lokal experimentkörning till en mer öppen och integrerbar lösning där agenterna kunde användas utanför den lokala appmiljön.
 
-Tidigt i arbetet var tanken att `qa-agent-service` som blev arbetsnamnet för agentlösningen, 3 sparata agenter som kunde anropas via REST och MCP, främst skulle användas via Hugging Face-nycklar. När Hermes Agent senare skulle användas som jämförelse- och integrationsspår blev det dock tydligare att en bättre lösning var att göra tjänstens REST- och MCP-endpoints publika. På så sätt blev agentservicen enklare att återanvända mellan olika klienter och ramverk, i stället för att vara kopplad till ett mer slutet nyckelberoende upplägg. Detta gjordes med en Dockerlösning.
+Tidigt i arbetet var tanken att `qa-agent-service`, som blev arbetsnamnet för agentlösningen, skulle bestå av tre separata agenter som kunde anropas via [REST](../theoretical-background-and-central-concepts/#rest-api) och [MCP](../theoretical-background-and-central-concepts/#model-context-protocol), främst via Hugging Face-nycklar. När [Hermes Agent Framework](../theoretical-background-and-central-concepts/#hermes-agent-framework) senare började användas som jämförelse- och integrationsspår blev det tydligt att en bättre lösning var att göra tjänstens REST- och MCP-endpoints publika. På så sätt blev agentservicen enklare att återanvända mellan olika klienter och ramverk, i stället för att vara kopplad till ett mer slutet nyckelberoende upplägg. Detta gjordes med en Dockerlösning.
 
 Detta var en viktig övergång eftersom det gjorde det möjligt att kombinera:
 
@@ -57,7 +58,7 @@ Detta var en viktig övergång eftersom det gjorde det möjligt att kombinera:
 
 ## LangGraph som nästa steg
 
-Efter detta byggdes också en LangGraph-baserad lösning. LangGraph kan beskrivas som ett kodbibliotek inom LangChain-ekosystemet för grafbaserad agentisk orkestrering. Det gav ett sätt att uttrycka agentnoder, övergångar och kontrollflöden på ett mer formaliserat sätt.
+Efter detta byggdes också en [LangGraph](../theoretical-background-and-central-concepts/#langgraph)-baserad lösning. LangGraph kan beskrivas som ett kodbibliotek inom [LangChain](../theoretical-background-and-central-concepts/#langchain)-ekosystemet för grafbaserad agentisk orkestrering. Det gav ett sätt att uttrycka agentnoder, övergångar och kontrollflöden på ett mer formaliserat sätt.
 
 Den lösningen blev i viss mån lik en MBT-inspirerad struktur, där noder, övergångar och tillstånd blev tydliga. Samtidigt visade arbetet att LangGraph inte på egen hand gav samma enkla agentiska frihet som den egenbyggda lösningen. Jämfört med vår egen arkitektur blev LangGraph-lösningen mer hårdkodad, medan vår egen lösning i högre grad kunde använda en LLM-baserad orkestrator för att styra routingen dynamiskt.
 
@@ -66,9 +67,9 @@ Den lösningen blev i viss mån lik en MBT-inspirerad struktur, där noder, öve
 
 ## Observability, direktiv och minnesinsyn
 
-En central designprincip genom hela arbetet var att användaren skulle kunna se vad som skickades in till varje agent, vad som kom ut från varje agent och hur agenten resonerade. Därför byggdes lösningen med tydlig observability i fokus. Men så jättestor vikt har inte lagt på GUI delarna utan detta får betraktas som sekundart i denna POC.
+En central designprincip genom hela arbetet var att användaren skulle kunna se vad som skickades in till varje agent, vad som kom ut från varje agent och hur agenten resonerade. Därför byggdes lösningen med tydlig [observability](../theoretical-background-and-central-concepts/#observability) i fokus. GUI-delen ska dock fortfarande betraktas som sekundär i denna POC.
 
-Varje agent fick direktiv som beskrev hur den skulle resonera, vilken roll den hade och vilken kvalitetsnivå som förväntades. Samtidigt exponerades både shared memory och agent-private memory i gränssnittet så att det gick att följa inte bara slutresultatet utan även den interna arbetskontexten under körning.
+Varje agent fick direktiv som beskrev hur den skulle resonera, vilken roll den hade och vilken kvalitetsnivå som förväntades. Samtidigt exponerades både [delat minne](../theoretical-background-and-central-concepts/#shared-working-memory) och [agentprivat minne](../theoretical-background-and-central-concepts/#agent-memory) i gränssnittet, så att det gick att följa inte bara slutresultatet utan även den interna arbetskontexten under körning.
 
 Detta var viktigt av två skäl:
 
@@ -77,13 +78,11 @@ Detta var viktigt av två skäl:
 
 ## Agentdirektiv
 
-I den nuvarande `qa-agent-service` ligger agentbeteendet deklarativt i agentregistret och byggs sedan in i prompten tillsammans med scenario, agentinput, shared memory, agent-private memory, modellkonfiguration, output-kontrakt och strikta JSON-regler. 
+I den nuvarande `qa-agent-service` ligger agentbeteendet deklarativt i agentregistret och byggs sedan in i [prompten](../theoretical-background-and-central-concepts/#prompt-engineering) tillsammans med scenario, agentinput, [delat minne](../theoretical-background-and-central-concepts/#shared-working-memory), [agentprivat minne](../theoretical-background-and-central-concepts/#agent-memory), modellkonfiguration, output-kontrakt och strikta JSON-regler.
 
-Dessa direktiv förfinades på vägen hela tiden och tanken kom om det skulle vara möjligt att justera dem under en körning. Det finnns forskningslitteratur som tar upp detta ämne men också vilka svårighetsgrader
-t.ex. Standard Operational Procedures (SOP) nämner att agenternas instruktioner bör vara stabila och väldefinierade, annars kan inte bara token kostnaderna skena utan också bias och felen hallucinationerna ökar och späs på av nästa agent.
+Dessa direktiv förfinades löpande under arbetet. En viktig fråga var om de skulle kunna justeras under en körning. Forskningslitteraturen tar upp detta, men pekar också på svårigheterna. Exempelvis lyfter Standard Operational Procedures (SOP) att agentinstruktioner bör vara stabila och väldefinierade. Annars riskerar inte bara tokenkostnaderna att öka, utan också bias, fel och hallucinationer att förstärkas mellan agenter.
 
-I den aktuella HF QA agent service-konfigurationen körs samtliga tre agenter normalt med `Qwen/Qwen2.5-7B-Instruct`, med temperatur `0.2` för Requirements Analyst och Test Designer samt `0.1` för Review Agent.
-detta främst för att den var gratis, snabb och tillräckligt bra, men långt ifrån bäst när vi sedan testgörde mot GPT 5.5 med hjälp av Hermes Agent framework.
+I den aktuella HF QA agent service-konfigurationen körs samtliga tre agenter normalt med `Qwen/Qwen2.5-7B-Instruct`, med temperatur `0.2` för Requirements Analyst och Test Designer samt `0.1` för Review Agent. Det valet gjordes främst eftersom modellen var gratis, snabb och tillräckligt bra, men den var långt ifrån bäst när vi senare testade mot GPT-5.5 med hjälp av [Hermes Agent Framework](../theoretical-background-and-central-concepts/#hermes-agent-framework).
 
 ### Requirements Analyst Agent
 
@@ -181,8 +180,7 @@ Detta blev centralt i arkitekturen eftersom målet var att Review Agent i slutä
 
 En viktig del av arbetet blev därför frågan om hur output från Test Design Agent faktiskt ska utvärderas. Det räcker inte att agenten producerar många testfall; den avgörande frågan är hur relevanta, testbara, spårbara och granskningsbara dessa testfall är. På samma sätt uppstod frågan om hur starkt review-steget egentligen är: hur bra är Review Agent på att skilja mellan ytliga och verkligt robusta testdesigner?
 
-Denna utvärderingsfråga är en av de mest centrala slutsatserna hittills. Systemet kan producera artefakter, men det är betydligt svårare att med hög tillförlitlighet avgöra när kvaliteten verkligen är tillräcklig.
-I både den interna och i Langgraph lösningarna är testfallen nedladdningsbara för att eutvärderas, tanken var att använda t.ex. DeepEval som är ett program för detta men även min seniora QA expertis efter många år i rollen som QA expert.
+Denna utvärderingsfråga är en av de mest centrala slutsatserna hittills. Systemet kan producera artefakter, men det är betydligt svårare att med hög tillförlitlighet avgöra när kvaliteten verkligen är tillräcklig. I både den interna lösningen och LangGraph-lösningen är testfallen nedladdningsbara för vidare utvärdering. Tanken var att använda exempelvis [DeepEval](../theoretical-background-and-central-concepts/#deepeval), men också senior QA-erfarenhet från praktiskt arbete i rollen som QA-expert.
 
 ## Standardscenarier för jämförelse
 
@@ -199,7 +197,7 @@ Dessa används som återkommande testfall i de olika lösningarna för att kunna
 
 ## Hermes som nästa undersökningsspår
 
-Nästa steg i arbetet blev att undersöka om Hermes Agent Framework kunde tillföra något som saknades i de tidigare lösningarna. Det gör Hermes relevant både som jämförelseobjekt och som möjlig inspirationskälla för hur agentstruktur, kommunikation och styrning kan organiseras framåt.
+Nästa steg i arbetet blev att undersöka om [Hermes Agent Framework](../theoretical-background-and-central-concepts/#hermes-agent-framework) kunde tillföra något som saknades i de tidigare lösningarna. Det gör Hermes relevant både som jämförelseobjekt och som möjlig inspirationskälla för hur agentstruktur, kommunikation och styrning kan organiseras framåt.
 
 ## Hermes-resultat som jämförelsepunkt
 
@@ -207,12 +205,14 @@ Ett viktigt delresultat var att Hermes Agent kunde skapa en fungerande testcase-
 
 Den Hermes-lösning som togs fram var en Kanban Swarm med följande struktur:
 
-- en root task som fungerade som shared blackboard
+- en root task som fungerade som [shared blackboard](../theoretical-background-and-central-concepts/#shared-blackboard)
 - en Requirements Analyst
 - en Test Designer
 - en QA Risk Reviewer
 - en Verifier
-- en Synthesizer
+- en [Synthesizer](../theoretical-background-and-central-concepts/#synthesizer)
+
+Det är viktigt att förtydliga att både **[shared blackboard](../theoretical-background-and-central-concepts/#shared-blackboard)** och **[Synthesizer](../theoretical-background-and-central-concepts/#synthesizer)** här tillhör Hermes Agent-lösningen. De är alltså inte delar av den egenbyggda HF QA agent service-lösningen eller den interna orkestratorarkitekturen i appen.
 
 Flödet var i praktiken:
 
@@ -222,6 +222,8 @@ Flödet var i praktiken:
 - verifier gate
 - synthesizer
 - slutlig testdesign
+
+Även detta flöde beskriver Hermes-spåret specifikt. I den egenbyggda lösningen används i stället en egen orkestrator, delat minne, agentprivat minne och routing mellan Requirements Analyst, Test Design och Review Agent.
 
 Detta är viktigt eftersom Hermes därmed visade att det går att skapa en ganska komplett testcase-generator med tydlig rollseparation, verifieringssteg och syntes av slutartefakt på ett relativt direkt sätt.
 
@@ -240,12 +242,12 @@ Verifier-steget rapporterade dessutom ett passerat gate-resultat och en omfattan
 
 ## Viktig jämförelsebegränsning
 
-Samtidigt måste jämförelsen beskrivas ärligt: Hermes-lösningen kördes med en betydligt starkare modellmiljö, i ditt fall GPT-5.5, medan den nuvarande HF QA agent service-lösningen i stor utsträckning har byggt på mindre modeller som Qwen eller Qwen2.5-7B-Instruct.
+Samtidigt måste jämförelsen beskrivas ärligt: Hermes-lösningen kördes med en betydligt starkare modellmiljö, i detta fall GPT-5.5, medan den nuvarande HF QA agent service-lösningen i stor utsträckning har byggt på mindre modeller som Qwen eller Qwen2.5-7B-Instruct.
 
 Det betyder att en direkt kvalitetsjämförelse mellan resultaten inte utan vidare är rättvis. Skillnader i output kan bero på minst tre saker:
 
 - skillnader i ramverk och orkestreringsmodell
-- skillnader i promptning, verifiering och artifact-struktur
+- skillnader i promptning, verifiering och artefaktstruktur
 - skillnader i ren modellkapacitet
 
 Det är därför viktigt att rapporten inte framställer Hermes-resultatet som bättre enbart för att slutartefakten blev starkare. En del av styrkan kan mycket väl bero på att GPT-5.5 är en betydligt starkare modell än den mindre Qwen-varianten i HF-lösningen.
@@ -256,7 +258,7 @@ Trots denna begränsning visar Hermes-körningen flera saker som är värdefulla
 
 - det är enkelt att få fram en användbar testcase-generator i Hermes
 - rolluppdelningen blir tydlig och lätt att beskriva
-- blackboard- och verifier-gate-mönstret fungerar väl för QA-liknande artefaktflöden
+- blackboard-, verifier-gate- och synthesizer-mönstret i Hermes fungerar väl för QA-liknande artefaktflöden
 - Hermes ger ett konkret jämförelseobjekt för hur snabbt man kan nå ett användbart resultat med ett externt agentramverk
 
 Detta är därför inte bara ett alternativt experiment, utan också ett argument för att extern ramverksjämförelse är relevant: vissa ramverk kan ge snabbare väg till fungerande agentflöden, medan den egenbyggda lösningen i stället ger större kontroll över routing, minne, observability och framtida utbyggnad.
@@ -274,7 +276,7 @@ När Hermes jämförs med den egna HF QA agent service-lösningen bör fokus dä
 - observerbarhet
 - modellkapacitet
 
-I Hermes-fallet var orkestreringen tydligt uttryckt genom Kanban tasks och shared blackboard. I HF-lösningen ligger motsvarande styrka mer i den egenbyggda orkestratorn, det delade minnet, agent-private memory, feedbackbegränsningarna och den tydliga runtime-insynen i appen.
+I Hermes-fallet var orkestreringen tydligt uttryckt genom Kanban tasks, [shared blackboard](../theoretical-background-and-central-concepts/#shared-blackboard) och en avslutande [synthesizer](../theoretical-background-and-central-concepts/#synthesizer)-roll. I HF-lösningen ligger motsvarande styrka mer i den egenbyggda orkestratorn, det delade minnet, agentprivat minne, feedbackbegränsningarna och den tydliga runtime-insynen i appen.
 
 ### Jämförelse mellan tre lösningar
 
@@ -284,11 +286,11 @@ I jämförelsen är det viktigt att skilja på själva agentramverket och den un
 |---|---|---|---|
 | Agentbackend | HF QA agent service | HF QA agent service | Hermes/Kanban swarm med GPT-5.5 i den körning som testades |
 | Modellstyrka | Främst Qwen / Qwen2.5-7B-Instruct i nuvarande jämförelse | Främst Qwen / Qwen2.5-7B-Instruct i nuvarande jämförelse | GPT-5.5 |
-| Orkestrering | Egenbyggd orkestrator i appen | Grafbaserad orkestrering i LangGraph | Kanban tasks och shared blackboard |
+| Orkestrering | Egenbyggd orkestrator i appen | Grafbaserad orkestrering i LangGraph | Kanban tasks, shared blackboard och synthesizer i Hermes-swarmspåret |
 | Rollseparation | Tydlig och styrd av egen arkitektur | Tydlig, men mer formellt definierad via grafnoder | Mycket tydlig och snabb att etablera |
 | Routing | Dynamisk routing via orkestrator och selektiv backtracking | Mer grafstyrd och mer explicit definierad i flödet | Mer workflow-styrd via swarm-struktur |
-| Minne | Shared memory, agent-private memory och memory timeline | Beror på graf- och state-implementationen, men stödjer tydligt state-flöde | Blackboard-liknande delning mellan tasks |
-| Verifiering | Review Agent och stopvillkor, men `approve = true` har varit svårt att nå konsekvent | Kan bygga in review- och verifieringssteg, men mer explicit i flödesdefinitionen | Tydlig verifier gate före synthesizer |
+| Minne | Delat minne, agentprivat minne och memory timeline | Beror på graf- och state-implementationen, men stödjer tydligt state-flöde | Blackboard-liknande delning mellan tasks |
+| Verifiering | Review Agent och stopvillkor, men `approve = true` har varit svårt att nå konsekvent | Kan bygga in review- och verifieringssteg, men mer explicit i flödesdefinitionen | Tydlig verifier gate före Hermes Synthesizer |
 | Observability | Stark GUI-insyn i input, output, resonemang, minne och runtime events | Bra spårbarhet i graf och nodflöden, men mindre integrerad än vår egen GUI-lösning | Kanban/task-spår och artefakter |
 | Styrka | Stark forskningsplattform för routing, minne, observability och utvärdering | Stark för explicit grafstruktur, nodstyrning och MBT-liknande modellering | Snabb väg till komplett testcase-generator |
 | Begränsning | Resultatet påverkas av mindre modeller och svårigheten att nå stabil `approve = true` | Kan bli mer hårdkodad och mindre fri i dynamisk agentisk routing | Styrkan påverkas sannolikt av den större modellen |
@@ -306,17 +308,17 @@ En korrekt tolkning är därför att Hermes visade hög praktisk produktivitet o
 
 ## Aktuell statusbedömning mot projektmålet
 
-Den nuvarande QA Agent POC:n har nu nått en nivå där den ger en praktisk förståelse för flera centrala agentbegrepp som tidigare endast fanns som teori i projektbriefen. POC:n visar i körbar form hur ett fleragentsystem kan organiseras kring specialiserade roller, styras av en orkestrator och kombineras med både strukturerad baslinjekörning och LLM-backed körning.
+Den nuvarande QA-agent-POC:n har nu nått en nivå där den ger en praktisk förståelse för flera centrala agentbegrepp som tidigare endast fanns som teori i projektbriefen. POC:n visar i körbar form hur ett fleragentsystem kan organiseras kring specialiserade roller, styras av en orkestrator och kombineras med både strukturerad baslinjekörning och LLM-backed körning.
 
 Det som nu tydligt är uppnått är:
 
 - specialiserade agentroller med tydligt ansvar
-- orchestrator-first routing
+- orkestratorstyrd routing
 - selektiv backtracking i stället för endast full rerun
-- shared working memory och agent private memory
+- delat arbetsminne och agentprivat minne
 - per-agent modell-, provider-, timeout- och direktivkonfiguration
-- runtime visibility genom GUI, runtime activity och live log
-- partial-result preservation on failure
+- runtime-insyn genom GUI, runtime activity och live log
+- bevarande av delresultat vid fel
 - stöd för både lokal Ollama-körning och externa modellstrategier
 
 Detta innebär att projektet i hög grad har uppnått målet att förstå vad agentiska system är på en praktisk nivå, särskilt inom ett QA-orienterat arbetsflöde. Systemet visar inte bara att flera agenter kan existera samtidigt, utan också hur routing, återkoppling, minne, observability och styrbar exekvering påverkar resultatet.
@@ -327,7 +329,6 @@ Samtidigt återstår viktiga steg innan lösningen kan beskrivas som ett mer gen
 - tool-runtime och MCP-baserad integration är ännu inte en central del av arkitekturen
 - persistence och checkpointing är inte generiska på ramverksnivå
 - jämförelsen mot externa agentramverk är ännu inte genomförd empiriskt i samma detalj som den interna POC:n
-- resultaten av testcase genereringarna av scenarios för de olika lösningarna har inte granskats i detalj så vi vet inte hur bra lösningen är.
+- resultaten av testcase-genereringarna för scenarierna i de olika lösningarna har ännu inte granskats i detalj
 
-Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas. Men det vore väldigt intressant att prova detta i praktiken hos ett företag.
-
+Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas. Det vore också mycket intressant att prova detta i praktiken hos ett företag.

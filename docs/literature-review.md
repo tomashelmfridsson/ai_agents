@@ -1,4 +1,4 @@
-# Litteraturstudie om AI-agenter för Software Quality Assurance
+## Litteraturstudie om AI-agenter för Software Quality Assurance
 
 > **Status:** Under utveckling (Version 0.3)  
 > **Språk:** Svenska  
@@ -6,7 +6,7 @@
 
 ---
 
-# Om dokumentet
+## Om dokumentet
 
 Detta dokument utgör litteraturstudien för projektet **AI-agenter för Software Quality Assurance**.
 
@@ -14,7 +14,7 @@ Syftet med litteraturstudien är att skapa en grundläggande förståelse för A
 
 ---
 
-# Användning av AI
+## Användning av AI
 
 Denna litteraturstudie utvecklas i samarbete mellan författaren och generativ AI.
 
@@ -30,7 +30,7 @@ Samtliga sammanfattningar och slutsatser granskas och verifieras innan de inklud
 
 ---
 
-# Innehåll
+## Innehåll
 
 1. Introduktion
 2. Metod
@@ -40,7 +40,7 @@ Samtliga sammanfattningar och slutsatser granskas och verifieras innan de inklud
 
 ---
 
-# 1. Introduktion
+## 1. Introduktion
 
 Utvecklingen av generativ AI och stora språkmodeller (Large Language Models, LLM) har under de senaste åren förändrat hur mjukvaruutveckling bedrivs. Från att initialt ha använts som intelligenta kodassistenter har forskningen successivt utvecklats mot agentiska AI-system där flera specialiserade AI-agenter samarbetar för att lösa komplexa uppgifter genom hela mjukvaruutvecklingsprocessen.
 
@@ -50,7 +50,7 @@ Syftet med denna litteraturstudie är därför att skapa en översikt över aktu
 
 ---
 
-# 2. Metod
+## 2. Metod
 
 Denna studie är en riktad litteraturstudie.
 
@@ -66,13 +66,13 @@ Tyngdpunkten ligger på publikationer från **2023–2026**, då utvecklingen in
 
 ---
 
-# 3. Genomgång av forskningsartiklar
+## 3. Genomgång av forskningsartiklar
 
 Följande forskningsartiklar utgör grunden för litteraturstudien.
 
 ---
 
-# Översiktsartiklar
+## Översiktsartiklar
 
 Dessa artiklar utgör grunden för litteraturstudien och bör läsas först.
 
@@ -86,7 +86,7 @@ Dessa artiklar utgör grunden för litteraturstudien och bör läsas först.
 
 ---
 
-# Forskningsartiklar
+## Forskningsartiklar
 
 Dessa artiklar ger en djupare förståelse för olika agentarkitekturer och moderna arbetssätt.
 
@@ -98,7 +98,7 @@ Dessa artiklar ger en djupare förståelse för olika agentarkitekturer och mode
 
 ---
 
-# Sammanfattning
+## Sammanfattning
 
 Denna läslista består av totalt **åtta utvalda forskningsartiklar**.
 
@@ -227,7 +227,7 @@ Den viktigaste lärdomen från MetaGPT är att kommunikationen mellan agenter ä
 
 *Sammanfattning skrivs efter genomgång.*
 
-# 4. Reflektioner från litteraturstudien
+## 4. Reflektioner från litteraturstudien
 
 Efter genomgång av de utvalda forskningsartiklarna sammanfattas de viktigaste slutsatserna kring:
 
@@ -242,7 +242,7 @@ Resultatet från litteraturstudien används som kunskapsunderlag inför projekte
 
 ---
 
-# 5. Referenser
+## 5. Referenser
 
 
 1. **Large Language Model-Based Agents for Software Engineering: A Survey (2024)**  

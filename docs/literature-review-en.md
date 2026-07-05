@@ -1,4 +1,4 @@
-# Literature study on AI agents for Software Quality Assurance
+## Literature study on AI agents for Software Quality Assurance
 
 > **Status:** In progress (Version 0.3)  
 > **Language:** English  
@@ -6,7 +6,7 @@
 
 ---
 
-# About the document
+## About the document
 
 This document is the literature study for the project **AI agents for Software Quality Assurance**.
 
@@ -14,7 +14,7 @@ The purpose of the literature study is to build a foundational understanding of 
 
 ---
 
-# Use of AI
+## Use of AI
 
 This literature study is developed in collaboration between the author and generative AI.
 
@@ -30,7 +30,7 @@ All summaries and conclusions are reviewed and verified before they are included
 
 ---
 
-# Contents
+## Contents
 
 1. Introduction
 2. Method
@@ -50,7 +50,7 @@ The purpose of this literature study is therefore to create an overview of curre
 
 ---
 
-# 2. Method
+## 2. Method
 
 This study is a targeted literature study.
 
@@ -66,13 +66,13 @@ The emphasis is on publications from **2023-2026**, since development in Agentic
 
 ---
 
-# 3. Review of research papers
+## 3. Review of research papers
 
 The following research papers form the basis of this literature study.
 
 ---
 
-# Survey papers
+## Survey papers
 
 These papers form the foundation of the literature study and should be read first.
 
@@ -86,7 +86,7 @@ These papers form the foundation of the literature study and should be read firs
 
 ---
 
-# Research papers
+## Research papers
 
 These papers provide a deeper understanding of different agent architectures and modern working methods.
 
@@ -98,7 +98,7 @@ These papers provide a deeper understanding of different agent architectures and
 
 ---
 
-# Summary
+## Summary
 
 This reading list contains a total of **eight selected research papers**.
 
@@ -226,7 +226,7 @@ The most important lesson from MetaGPT is that communication between agents is a
 
 *Summary will be written after review.*
 
-# 4. Reflections from the literature study
+## 4. Reflections from the literature study
 
 After reviewing the selected research papers, the most important conclusions will be summarized around:
 
@@ -241,7 +241,7 @@ The result from the literature study is used as knowledge support for the projec
 
 ---
 
-# 5. References
+## 5. References
 
 
 1. **Large Language Model-Based Agents for Software Engineering: A Survey (2024)**  

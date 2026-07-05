@@ -2,20 +2,20 @@
 
 ## Studiens teman
 
-- AI Agents
+- AI-agenter
 - Multi-Agent Systems
 - Agentic Software Engineering
-- Agent Orchestration
-- AI-assisted Quality Assurance
-- Verification and Validation
+- Agentorkestrering
+- AI-assisterad kvalitetssäkring
+- Verifiering och validering
 - Test-Driven Development
 
-## Analysfrågor att besvara under Studien.
+## Analysfrågor att besvara under studien
 
-### AI Agents
+### AI-agenter
 
 - Hur definieras en agent i aktuell litteratur?
-- Vilka egenskaper återkommer: autonomi, planering, verktygsanvändning, minne, reflexion?
+- Vilka egenskaper återkommer: autonomi, planering, verktygsanvändning, minne och reflektion?
 - Hur skiljer sig enkla agentloopar från orkestrerade multi-agentmiljöer?
 
 ### Multi-Agent Systems
@@ -28,15 +28,15 @@
 
 - Vilka delar av utvecklingslivscykeln stöds bäst av agenter?
 - Hur mäts kvalitet, spårbarhet och produktivitet?
-- Vilka arkitekturval underlättar styrbarhet och auditability?
+- Vilka arkitekturval underlättar styrbarhet och granskningsbarhet?
 
-### AI-assisted Quality Assurance
+### AI-assisterad kvalitetssäkring
 
 - Hur används AI för kravanalys, testdesign och testgenerering?
 - Finns empiriskt stöd för förbättrad kravtäckning eller minskad ledtid?
 - Hur hanteras testorakel, testdata och selektorer?
 
-### Verification and Validation
+### Verifiering och validering
 
 - Hur knyts V&V till agentiska arbetsflöden?
 - Vilka granskningsmekanismer krävs för att begränsa hallucineringar och svag spårbarhet?
@@ -54,10 +54,10 @@ Bedöm varje plattform utifrån följande kriterier:
 |---|---|
 | Orkestrering | Hur uttrycks flöden, iterationer och routing? |
 | Rollspecialisering | Hur enkelt är det att modellera flera agentroller? |
-| State management | Hur lagras mellanresultat, minne och spårbarhet? |
+| Tillståndshantering | Hur lagras mellanresultat, minne och spårbarhet? |
 | Verktygsintegration | Hur väl stöds externa verktyg, RAG och testkörning? |
-| Observability | Finns loggning, tracing och debug-stöd? |
-| Lokal modellstöd | Hur lätt kopplas Ollama eller lokal inferens in? |
+| Observerbarhet | Finns loggning, tracing och debug-stöd? |
+| Lokalt modellstöd | Hur lätt kopplas Ollama eller lokal inferens in? |
 | Molnstöd | Hur väl stöds kommersiella modell-API:er? |
 | QA-lämplighet | Hur väl passar plattformen kravanalys och testdesign? |
 
@@ -92,10 +92,10 @@ Analysera:
 - skalbarhet och integrationsstöd
 - risker kring sekretess och leverantörsberoende
 
-## AI Agents POC Rapport
+## AI-agent POC-rapport
 
 Statusbedömningen mot projektmålet har brutits ut till en egen rapport:
 
-- [AI Agents POC Rapport](../ai-agents-poc-report/)
+- [AI-agent POC-rapport](../ai-agents-poc-report/)
 
-Denna rapport fungerar som underlag för slutrapporten och samlar nulägesbild, uppnådda egenskaper, begränsningar och nästa steg för den aktuella QA Agent POC:n.
+Denna rapport fungerar som underlag för slutrapporten och samlar nulägesbild, uppnådda egenskaper, begränsningar och nästa steg för den aktuella QA-agent-POC:n.

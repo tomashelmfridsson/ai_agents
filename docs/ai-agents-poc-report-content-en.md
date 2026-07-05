@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document serves as the project's consolidated report on the literature study and the construction of a QA agentic proof-of-concept (POC). The primary purpose of the POC is to build a practical understanding of how agents and agentic solutions work, especially from a QA perspective. The focus is therefore on exploring how specialized agent roles, orchestration, routing, memory, feedback loops, and review can be used for requirement-based test design and test generation, and on describing which agentic capabilities have already been demonstrated and which areas still remain to be evaluated.
+This document serves as the project's consolidated report on the literature study and the construction of a QA agentic proof-of-concept (POC). The primary purpose of the POC is to build a practical understanding of how [AI agents](../theoretical-background-and-central-concepts-en/#ai-agent) and [agentic solutions](../theoretical-background-and-central-concepts-en/#agentic-ai) work, especially from a [QA](../theoretical-background-and-central-concepts-en/#software-quality-assurance) perspective. The focus is therefore on exploring how specialized agent roles, [orchestration](../theoretical-background-and-central-concepts-en/#orchestrator), routing, [memory](../theoretical-background-and-central-concepts-en/#agent-memory), feedback loops, and review can be used for requirement-based [test design](../theoretical-background-and-central-concepts-en/#test-design) and test generation, and on describing which agentic capabilities have already been demonstrated and which areas still remain to be evaluated.
 
 ## The project's development journey
 
-The work started by understanding how AI agents function in theory and in practice. The first phase therefore focused on reading about the concept of agents, agentic orchestration, memory, routing, feedback loops, and review in multi-agent environments. The goal was not only to use a ready-made framework, but first to understand what is actually required to build an agentic QA system. This is described in the literature study.
+The work started by understanding how [AI agents](../theoretical-background-and-central-concepts-en/#ai-agent) function in theory and in practice. The first phase therefore focused on reading about the concept of agents, [agentic orchestration](../theoretical-background-and-central-concepts-en/#orchestrator), [memory](../theoretical-background-and-central-concepts-en/#agent-memory), routing, feedback loops, and review in [multi-agent environments](../theoretical-background-and-central-concepts-en/#multi-agent-system). The goal was not only to use a ready-made [agent framework](../theoretical-background-and-central-concepts-en/#agent-framework), but first to understand what is actually required to build an agentic QA system. This is described in the literature study.
 
 After that, we tried to build our own agentic solution from scratch. Before we could do that, we needed actual agents. We built three agents: one to analyze a broad requirement with a title and refine it into usable requirements; a second agent that wrote test designs and test cases from those requirements; and then, because the literature study suggested that this would still not be sufficient without an execution phase, we introduced an independent review agent. Since we had no System Under Test (SUT), this review agent was given the task of approving or rejecting the test cases against the requirements. These agents were created with AI-assisted coding and were first run locally, but are now published publicly on Hugging Face using a Docker-based solution. Each agent was essentially an LLM with a prompt containing a directive describing the task and the deliverable it should generate.
 
@@ -208,6 +208,8 @@ The Hermes solution that was created was a Kanban Swarm with the following struc
 - a Verifier
 - a Synthesizer
 
+It is important to clarify that both the **shared blackboard** and the **Synthesizer** here belong to the Hermes Agent solution. They are not parts of the custom HF QA agent service solution or the app's internal orchestrator architecture.
+
 The practical flow was:
 
 - requirements in
@@ -216,6 +218,8 @@ The practical flow was:
 - verifier gate
 - synthesizer
 - final test design
+
+This flow also describes the Hermes track specifically. The custom-built solution instead uses its own orchestrator, shared memory, agent-private memory, and routing between the Requirements Analyst, Test Design, and Review Agent.
 
 This matters because Hermes therefore showed that it is possible to build a fairly complete test-case generator with clear role separation, a verification step, and synthesis of the final artifact in a relatively direct way.
 
@@ -250,7 +254,7 @@ Despite this limitation, the Hermes run shows several things that are valuable f
 
 - it is easy to get a useful test-case generator working in Hermes
 - role separation becomes clear and easy to explain
-- the blackboard and verifier-gate pattern works well for QA-like artifact flows
+- the blackboard, verifier-gate, and synthesizer pattern in Hermes works well for QA-like artifact flows
 - Hermes provides a concrete comparison point for how quickly a useful result can be reached with an external agent framework
 
 This is therefore not only an alternative experiment, but also an argument for why external framework comparison is relevant: some frameworks can provide a faster path to functioning agent flows, while the custom-built solution provides greater control over routing, memory, observability, and future extensibility.
@@ -268,7 +272,7 @@ When Hermes is compared with the custom HF QA agent service solution, the focus 
 - observability
 - model capacity
 
-In Hermes, orchestration was clearly expressed through Kanban tasks and a shared blackboard. In the HF solution, the corresponding strengths lie more in the custom-built orchestrator, shared memory, agent-private memory, feedback limits, and the clear runtime visibility inside the app.
+In Hermes, orchestration was clearly expressed through Kanban tasks, a shared blackboard, and a final synthesizer role. In the HF solution, the corresponding strengths lie more in the custom-built orchestrator, shared memory, agent-private memory, feedback limits, and the clear runtime visibility inside the app.
 
 ### Comparison between three solutions
 
@@ -278,11 +282,11 @@ In the comparison, it is important to distinguish between the agent framework it
 |---|---|---|---|
 | Agent backend | HF QA agent service | HF QA agent service | Hermes/Kanban swarm with GPT-5.5 in the tested run |
 | Model strength | Mainly Qwen / Qwen2.5-7B-Instruct in the current comparison | Mainly Qwen / Qwen2.5-7B-Instruct in the current comparison | GPT-5.5 |
-| Orchestration | Custom-built orchestrator in the app | Graph-based orchestration in LangGraph | Kanban tasks and shared blackboard |
+| Orchestration | Custom-built orchestrator in the app | Graph-based orchestration in LangGraph | Kanban tasks, shared blackboard, and synthesizer in the Hermes swarm track |
 | Role separation | Clear and governed by custom architecture | Clear, but more formally defined through graph nodes | Very clear and quick to establish |
 | Routing | Dynamic routing through the orchestrator and selective backtracking | More graph-driven and more explicitly defined in the flow | More workflow-driven through the swarm structure |
 | Memory | Shared memory, agent-private memory, and memory timeline | Depends on graph and state implementation, but supports explicit state flow | Blackboard-like sharing between tasks |
-| Verification | Review Agent and stop conditions, but `approve = true` has been difficult to reach consistently | Review and verification steps can be built in, but more explicitly in the flow definition | Clear verifier gate before synthesizer |
+| Verification | Review Agent and stop conditions, but `approve = true` has been difficult to reach consistently | Review and verification steps can be built in, but more explicitly in the flow definition | Clear verifier gate before the Hermes Synthesizer |
 | Observability | Strong GUI visibility into input, output, reasoning, memory, and runtime events | Good traceability in graph and node flow, but less integrated than our own GUI solution | Kanban/task trace and artifacts |
 | Strength | Strong research platform for routing, memory, observability, and evaluation | Strong for explicit graph structure, node control, and MBT-like modeling | Fast route to a complete test-case generator |
 | Limitation | Result quality is affected by smaller models and the difficulty of reaching stable `approve = true` | Can become more hardcoded and less free in dynamic agentic routing | Strength is likely affected by the larger model |

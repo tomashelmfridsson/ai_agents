@@ -1,6 +1,6 @@
 ---
 layout: literature
-title: AI Agents POC Rapport
+title: AI-agent POC-rapport
 permalink: /ai-agents-poc-report/
 ---
 

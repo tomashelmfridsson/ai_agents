@@ -25,6 +25,7 @@
 - [Observability](#observability)
 - [Runtime Trace](#runtime-trace)
 - [Shared Blackboard](#shared-blackboard)
+- [Synthesizer](#synthesizer)
 - [Tool Calling](#tool-calling)
 - [Function Calling](#function-calling)
 - [Model Context Protocol](#model-context-protocol)
@@ -381,6 +382,12 @@ The concept is especially relevant here because the prototype displays runtime a
 Shared Blackboard comes from blackboard-style collaboration patterns in which several agents share a common workspace. It is closely related to shared memory, but is more often used when the focus is on coordination between several roles writing to the same shared context.
 
 In this project, the concept is primarily relevant to the Hermes solution, where a root task functioned as a shared blackboard for the swarm. It should therefore be explained as a comparison concept linked to the external framework track rather than as the main term for the custom-built solution.
+
+## Synthesizer
+
+A Synthesizer is an agent role whose purpose is to combine and refine results from several earlier agent stages into a final consolidated artifact. Unlike a typical worker agent, it does not primarily produce a partial result from raw input. Instead, it receives multiple intermediate results and assembles them into a more complete deliverable.
+
+In the Hermes track, the Synthesizer was used as the final role after the verification stage. It received material from the earlier specialist roles and shaped the final test design. The concept is therefore relevant in this project as a description of the Hermes Agent solution, not as a central component of the custom HF QA agent service solution.
 
 ## Tool Calling
 
