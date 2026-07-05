@@ -2,52 +2,52 @@
 
 ## Syfte
 
-Detta dokument fungerar som projektets samlade POC-rapport och ska betraktas som slutrapporten för detta arbete. Syftet med POC:en är i första hand att skapa en praktisk förståelse för hur agenter och agentiska lösningar fungerar, särskilt i ett QA-perspektiv. Fokus ligger därför på att undersöka hur specialiserade agentroller, orkestrering, routing, minne, återkopplingsloopar och granskning kan användas för kravbaserad testdesign och testgenerering, samt att beskriva vilka agentiska egenskaper som redan har demonstrerats och vilka områden som fortfarande återstår att utvärdera.
+Detta dokument fungerar som projektets samlade Rapport öcer Litteratur studie och Bygge av en QA agentic prototyp Proof of Concept (POC). Syftet med POC:en är i första hand att skapa en praktisk förståelse för hur agenter och agentiska lösningar fungerar, särskilt i ett QA-perspektiv. Fokus ligger därför på att undersöka hur specialiserade agentroller, orkestrering, routing, minne, återkopplingsloopar och granskning kan användas för kravbaserad testdesign och testgenerering, samt att beskriva vilka agentiska egenskaper som redan har demonstrerats och vilka områden som fortfarande återstår att utvärdera.
 
 ## Projektets utvecklingsresa
 
-Arbetet började med att förstå hur AI-agenter fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk orkestrering, minne, routing, återkopplingsslingor och granskning i multi-agentmiljöer. Målet var inte enbart att använda ett färdigt ramverk, utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system.
+Arbetet började med att förstå hur AI-agenter fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk orkestrering, minne, routing, återkopplingsslingor och granskning i multi-agentmiljöer. Målet var inte enbart att använda ett färdigt ramverk, utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system. Detta finns beskrivet i Litteraturstudien.
 
-Därefter försökte vi bygga en egen agentisk lösning från grunden. Tidiga experiment kördes med lokala LLM:er, framför allt Llama-baserade modeller via lokal inferens. Detta gav praktisk förståelse för hur långt man kunde komma med egen orkestrering, men också vilka begränsningar som uppstod i kvalitet, stabilitet och exekveringstid.
+Därefter försökte vi bygga en egen agentisk lösning från grunden. Men inna dess behövde vi bygga agenter. Vi byggde tre agenter, en för att anaöysera et brett krav med titel  och förfina det till användbara krav. Nästa agent skrev sedan testdesign och testfall utifrån dessa krav. Men litteraturstudien sa att detta aldrig blir tillräckligt utan det allra bästa är att ha en exekveringsfas och i detta fall skulel det vara testfallen. Nu hade vi inget System Under Test (SUT) så istället skapades en oberoende granskningsagent som hade som uppgift att approva testfallen utifrån kraven. Dessa Agenter skapade med vibe kodning AI assisterad kodning, och kördes först lokalt men är nu publicerade publikt på Huggingface med en dockerlösning. Varje Agent var egentligen en LLM med en prompt med ett direktiv som beskrev den uppgift och vilken leverabel den skulle generera.
+
+När vi nu hade agenter klara var det dags att börja skapa en multiagent lösning. Först skapades en skevenstionss lösning där vi Designade Krav, skapade testfall och sedan granskade.
+Dessa tidiga experiment kördes med lokala LLM:er, framför allt Llama-baserade modeller via lokal inferens. Detta gav praktisk förståelse för hur långt man kunde komma med egen sekventiell orkestrering, men också vilka begränsningar som uppstod i kvalitet, stabilitet och exekveringstid.
 
 Nästa steg blev att gå över till Hugging Face-baserad körning för de live-LLM:er som användes i arbetsflödet. Därigenom kunde vi få tillgång till starkare och mer flexibla modeller, samtidigt som vi behöll kontrollen över vår egen agentlogik och vår egen experimentmiljö.
 
 ## Från sekventiellt flöde till agentisk routing
 
-En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen requirements -> design -> review som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten.
+En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen requirements -> design -> review som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten. Då infördes En Orkestrering med smartare hantering.
 
-För att stödja detta behövdes tre centrala mekanismer:
+För att stödja detta behövdes tre centrala mekanismer för att hantera att för myclet bru reducerade agenternas förmåga och fick för mycket irrelevant information:
 
 - privat agentminne för lokala anteckningar och mellanresultat
 - delat minne för gemensam kontext mellan agenterna
-- icke-fix routing där nästa steg bestäms dynamiskt i stället för hårdkodas fullt ut
+- icke-fix routing där nästa steg bestäms dynamiskt i stället för hårdkodas fullt ut som till sist blev det en LLM baserad Orkestrering.
 
 Detta ledde fram till en lösning där orkestratorn blev den styrande komponenten. Routing kunde då avgöras utifrån resultat, brister, feedback och stopvillkor i stället för från en helt statisk stegordning.
+Men fortfarande var det hårdkodat vilka steg som fick hoppas mellan. tex om Testdesign agenten tyckte kraven var undermåliga kunde den skicka tillbaka till krav agenten att gör om följande krav eller om gransknings agenten inte kunde approva så kunde den skicka tillbaka till Tewtdesign att förbättra testfallen för ett eller flera krav.
 
-En viktig förfining i denna orkestrering är att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som `quality sufficient`. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt verifieringsmål, skarpare routingbeslut och bättre spårbarhet i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
+En viktig upptäckt som blev en förfining i denna orkestrering är att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som försöktes med i början `quality sufficient`, Good enough!. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt verifieringsmål, skarpare routingbeslut och bättre spårbarhet i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
+
+För att få ännu bättre Orkestrering byggdes därefter en LLM baserad Orkestrator. Detta gav en hel del förbättringar framförallt då vi innan kunde se problem med loopar mellan agenter precis som även många forskningsrapporter ifrån litteraturstudierna påvisade och väldigt token krävande att agenterna pga de hårtkodade orkestreringsdefinitionerna kom i loopande disskusioner med varandra. Vi fick helt enkelt införa maximala antal cyckler att ta om samt hur många feedback en agent fick säga till en annan agent.
 
 ## Nuvarande AI Agents-sida och arkitektur
 
-Den nuvarande AI Agents-lösningen ska beskrivas tydligt som en hybrid:
+Den nuvarande AI Agents-lösningen ska beskrivas i olika delar:
 
-- den publika lösningen använder Hugging Face-hostade modeller och agentnära körning
-- orkestreringshanteringen i appen är egenutvecklad
-- appen innehåller fortfarande den egna agentlogiken och den egna körmodellen som grund för experiment och jämförelser
+- den publika agent lösningen använder Hugging Face-hostade modeller och agentnära körning via MCP och även REST.
+- orkestreringshanteringen i appen är egenutvecklad och innehåller en LLM baserad orkestreringsAgent
+- Det är ett GUI byggt i Gradio som hostas på huggingface som man kan använda. Appen innehåller denna HF orkestrerings tjänsten men man kan också välja att köra egna agent modeller med egna direktiv.
 
-Själva AI Agents-delen byggdes i Gradio. Ett viktigt skäl var att det redan fanns viss tidigare kännedom om Gradio, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö. LangGraph-delen kom däremot att köras i Streamlit. Skälet var inte att Streamlit nödvändigtvis var förstahandsvalet i sig, utan att Gradio medförde flera praktiska begränsningar i just den delen av arbetet, vilket gjorde Streamlit till ett mer fungerande alternativ för LangGraph-spåret.
+Själva AI Agents-delen byggdes alltså i Gradio. Ett viktigt skäl var att det redan fanns viss tidigare kännedom om Gradio, vilket gjorde det till ett pragmatiskt val för att snabbt få fram en fungerande publik experimentmiljö. Nästa expreiment med LangGraph som orkestrator kom däremot att köras i Streamlit. Skälet var inte att Streamlit nödvändigtvis var förstahandsvalet i sig, utan att Gradio medförde flera praktiska begränsningar i just den delen av arbetet, vilket gjorde Streamlit till ett mer fungerande alternativ för LangGraph-spåret.
 
-Det viktiga här är att Hugging Face inte ersätter projektets arkitektur. Det är fortfarande vår egen app som styr konfiguration, routing, minne, feedbackbegränsningar, observability och presentation av resultat. Hugging Face används som exekverings- och publiceringsmiljö för modeller och agentnära tjänster, medan den agentiska styrningen är projektets egen.
-
-Vi vill också att det ska framgå att kodbasen fortfarande bevarar möjligheten att köra agenterna i den egna appen. Därför bör nästa UI-steg vara ett tydligt lägesval, exempelvis en knapp eller toggle, där användaren kan välja mellan:
-
-- egna agenter i appen
-- HF-hostade agenter/modeller
 
 ## HF-publicering, endpoints och MCP
 
-Som en del av utvecklingen publicerades agenterna på Hugging Face så att de blev tillgängliga via publika endpoints och MCP-relaterade integrationsmönster. Detta gjorde att arkitekturen kunde flyttas från enbart lokal experimentkörning till en mer öppen och integrerbar lösning där agenterna kunde användas utanför den lokala appmiljön.
+Som en del av utvecklingen publicerades alltså agenterna på Hugging Face så att de blev tillgängliga via publika endpoints och MCP-relaterade integrationsmönster. Detta gjorde att arkitekturen kunde flyttas från enbart lokal experimentkörning till en mer öppen och integrerbar lösning där agenterna kunde användas utanför den lokala appmiljön.
 
-Tidigt i arbetet var tanken att `qa-agent-service` främst skulle användas via Hugging Face-nycklar. När Hermes Agent senare skulle användas som jämförelse- och integrationsspår blev det dock tydligare att en bättre lösning var att göra tjänstens REST- och MCP-endpoints publika. På så sätt blev agentservicen enklare att återanvända mellan olika klienter och ramverk, i stället för att vara kopplad till ett mer slutet nyckelberoende upplägg.
+Tidigt i arbetet var tanken att `qa-agent-service` som blev arbetsnamnet för agentlösningen, 3 sparata agenter som kunde anropas via REST och MCP, främst skulle användas via Hugging Face-nycklar. När Hermes Agent senare skulle användas som jämförelse- och integrationsspår blev det dock tydligare att en bättre lösning var att göra tjänstens REST- och MCP-endpoints publika. På så sätt blev agentservicen enklare att återanvända mellan olika klienter och ramverk, i stället för att vara kopplad till ett mer slutet nyckelberoende upplägg. Detta gjordes med en Dockerlösning.
 
 Detta var en viktig övergång eftersom det gjorde det möjligt att kombinera:
 
@@ -61,14 +61,12 @@ Efter detta byggdes också en LangGraph-baserad lösning. LangGraph kan beskriva
 
 Den lösningen blev i viss mån lik en MBT-inspirerad struktur, där noder, övergångar och tillstånd blev tydliga. Samtidigt visade arbetet att LangGraph inte på egen hand gav samma enkla agentiska frihet som den egenbyggda lösningen. Jämfört med vår egen arkitektur blev LangGraph-lösningen mer hårdkodad, medan vår egen lösning i högre grad kunde använda en LLM-baserad orkestrator för att styra routingen dynamiskt.
 
-Detta är en viktig jämförelsepunkt i rapporten:
-
 - LangGraph är starkt för explicit grafstruktur och kontroll
 - den egenbyggda agentiska lösningen är starkare i dynamisk routing och orkestratorledd flexibilitet
 
 ## Observability, direktiv och minnesinsyn
 
-En central designprincip genom hela arbetet var att användaren skulle kunna se vad som skickades in till varje agent, vad som kom ut från varje agent och hur agenten resonerade. Därför byggdes lösningen med tydlig observability i fokus.
+En central designprincip genom hela arbetet var att användaren skulle kunna se vad som skickades in till varje agent, vad som kom ut från varje agent och hur agenten resonerade. Därför byggdes lösningen med tydlig observability i fokus. Men så jättestor vikt har inte lagt på GUI delarna utan detta får betraktas som sekundart i denna POC.
 
 Varje agent fick direktiv som beskrev hur den skulle resonera, vilken roll den hade och vilken kvalitetsnivå som förväntades. Samtidigt exponerades både shared memory och agent-private memory i gränssnittet så att det gick att följa inte bara slutresultatet utan även den interna arbetskontexten under körning.
 
@@ -79,9 +77,13 @@ Detta var viktigt av två skäl:
 
 ## Agentdirektiv
 
-I den nuvarande `qa-agent-service` ligger agentbeteendet deklarativt i agentregistret och byggs sedan in i prompten tillsammans med scenario, agentinput, shared memory, agent-private memory, modellkonfiguration, output-kontrakt och strikta JSON-regler. Direktiven nedan är därför hämtade från den aktuella kodbasen i [registry.py](/Users/tomashelmfridsson/workspace/qa-agent-service/src/qa_agent_service/registry.py:1) och modellkopplingarna från [agent_runtime_config.json](/Users/tomashelmfridsson/workspace/qa-agent-service/config/agent_runtime_config.json:1).
+I den nuvarande `qa-agent-service` ligger agentbeteendet deklarativt i agentregistret och byggs sedan in i prompten tillsammans med scenario, agentinput, shared memory, agent-private memory, modellkonfiguration, output-kontrakt och strikta JSON-regler. 
+
+Dessa direktiv förfinades på vägen hela tiden och tanken kom om det skulle vara möjligt att justera dem under en körning. Det finnns forskningslitteratur som tar upp detta ämne men också vilka svårighetsgrader
+t.ex. Standard Operational Procedures (SOP) nämner att agenternas instruktioner bör vara stabila och väldefinierade, annars kan inte bara token kostnaderna skena utan också bias och felen hallucinationerna ökar och späs på av nästa agent.
 
 I den aktuella HF QA agent service-konfigurationen körs samtliga tre agenter normalt med `Qwen/Qwen2.5-7B-Instruct`, med temperatur `0.2` för Requirements Analyst och Test Designer samt `0.1` för Review Agent.
+detta främst för att den var gratis, snabb och tillräckligt bra, men långt ifrån bäst när vi sedan testgörde mot GPT 5.5 med hjälp av Hermes Agent framework.
 
 ### Requirements Analyst Agent
 
@@ -180,10 +182,11 @@ Detta blev centralt i arkitekturen eftersom målet var att Review Agent i slutä
 En viktig del av arbetet blev därför frågan om hur output från Test Design Agent faktiskt ska utvärderas. Det räcker inte att agenten producerar många testfall; den avgörande frågan är hur relevanta, testbara, spårbara och granskningsbara dessa testfall är. På samma sätt uppstod frågan om hur starkt review-steget egentligen är: hur bra är Review Agent på att skilja mellan ytliga och verkligt robusta testdesigner?
 
 Denna utvärderingsfråga är en av de mest centrala slutsatserna hittills. Systemet kan producera artefakter, men det är betydligt svårare att med hög tillförlitlighet avgöra när kvaliteten verkligen är tillräcklig.
+I både den interna och i Langgraph lösningarna är testfallen nedladdningsbara för att eutvärderas, tanken var att använda t.ex. DeepEval som är ett program för detta men även min seniora QA expertis efter många år i rollen som QA expert.
 
 ## Standardscenarier för jämförelse
 
-För att kunna jämföra lösningar mer systematiskt skapades sex standardscenarier i [src/qa_platform/sample_scenarios.py](/Users/tomashelmfridsson/workspace/ai_agents/src/qa_platform/sample_scenarios.py:1):
+För att kunna jämföra lösningar mer systematiskt skapades sex standardscenarier:
 
 - Scenario 1 - login and registration
 - Scenario 2 - e-commerce checkout
@@ -324,19 +327,7 @@ Samtidigt återstår viktiga steg innan lösningen kan beskrivas som ett mer gen
 - tool-runtime och MCP-baserad integration är ännu inte en central del av arkitekturen
 - persistence och checkpointing är inte generiska på ramverksnivå
 - jämförelsen mot externa agentramverk är ännu inte genomförd empiriskt i samma detalj som den interna POC:n
+- resultaten av testcase genereringarna av scenarios för de olika lösningarna har inte granskats i detalj så vi vet inte hur bra lösningen är.
 
-Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas.
+Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas. Men det vore väldigt intressant att prova detta i praktiken hos ett företag.
 
-## Sammanfattande bedömning
-
-POC:n bör i nuläget beskrivas som en stark forsknings- och demonstrationsplattform för agentisk QA snarare än som ett färdigt generellt agentramverk. Den har nått långt vad gäller orkestrering, spårbarhet, minneshantering, modellflexibilitet och experimentstöd, men behöver fortfarande kompletteras med bredare ramverksjämförelser, mer generisk tool-integration och tydligare empirisk utvärdering.
-
-## Rekommenderade nästa steg
-
-- tydliggöra i UI att nuvarande publik sida använder HF-hostade agent-/modellkörningar men egen orkestreringshantering
-- exponera ett tydligt val i appen mellan egna agenter i appen och HF-hostade agenter/modeller
-- genomföra empirisk jämförelse mot utvalda externa agentramverk
-- definiera tydliga kvalitets- och effektivitetsmått för experiment
-- utöka persistens, checkpointing och återupptagning på ramverksnivå
-- analysera lokal kontra molnbaserad modellkörning mer systematiskt
-- fördjupa tool-runtime och eventuella MCP-baserade integrationsmönster

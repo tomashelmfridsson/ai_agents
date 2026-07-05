@@ -1,8 +1,8 @@
 # Litteraturstudie om AI-agenter för Software Quality Assurance
 
-> **Status:** Under utveckling (Version 0.2)  
+> **Status:** Under utveckling (Version 0.3)  
 > **Språk:** Svenska  
-> **Senast uppdaterad:** 2026-07-03
+> **Senast uppdaterad:** 2026-07-05
 
 ---
 
@@ -11,10 +11,6 @@
 Detta dokument utgör litteraturstudien för projektet **AI-agenter för Software Quality Assurance**.
 
 Syftet med litteraturstudien är att skapa en grundläggande förståelse för AI-agenter, agentiska system och deras användning inom Software Engineering och Software Quality Assurance. Resultatet används som kunskapsunderlag inför den fortsatta utvecklingen av projektets forskningsprototyp.
-
-Litteraturstudien är **inte** en systematisk litteraturöversikt (SLR), utan en riktad litteraturstudie där ett begränsat antal forskningsartiklar valts ut utifrån deras relevans för projektets syfte.
-
-Dokumentet utvecklas successivt under projektets gång.
 
 ---
 
@@ -29,9 +25,8 @@ AI används som stöd för:
 - strukturering av litteraturstudien
 - begreppsförklaringar
 - språkgranskning
-- diskussion kring forskningsluckor
 
-Samtliga sammanfattningar och slutsatser granskas och verifieras av författaren innan de inkluderas i dokumentet.
+Samtliga sammanfattningar och slutsatser granskas och verifieras innan de inkluderas i dokumentet.
 
 ---
 
@@ -63,40 +58,17 @@ Syftet har inte varit att genomföra en fullständig systematisk litteraturöver
 
 Urvalet har fokuserat på tre typer av publikationer:
 
-- översiktsartiklar (Survey Papers)
+- översiktsartiklar
 - forskningsartiklar om agentiska system
 - forskningsartiklar inom AI-assisterad Software Quality Assurance
 
 Tyngdpunkten ligger på publikationer från **2023–2026**, då utvecklingen inom Agentic AI varit särskilt snabb.
-
-Artiklarna har valts utifrån:
-
-- vetenskaplig relevans
-- aktualitet
-- koppling till projektets forskningsfråga
-- betydelse för utformningen av den planerade forskningsprototypen
 
 ---
 
 # 3. Genomgång av forskningsartiklar
 
 Följande forskningsartiklar utgör grunden för litteraturstudien.
-
-# Val av forskningsartiklar
-
-Denna litteraturstudie är en **riktad litteraturstudie** och inte en systematisk litteraturöversikt (SLR).
-
-Syftet är att skapa en god förståelse för forskningsområdet kring AI-agenter, agentiska system och Software Quality Assurance, samt att använda resultaten som kunskapsunderlag inför den separata forskningsprototypen.
-
-Artiklarna har valts utifrån följande kriterier:
-
-- hög vetenskaplig relevans
-- aktualitet
-- betydelse inom forskningsområdet
-- koppling till AI-agenter och Software Engineering
-- relevans för kravanalys, testdesign och testgenerering inom Software Quality Assurance
-
-Tyngdpunkten ligger på publikationer från **2023–2026**, då utvecklingen inom Agentic AI har varit särskilt snabb.
 
 ---
 
@@ -126,19 +98,9 @@ Dessa artiklar ger en djupare förståelse för olika agentarkitekturer och mode
 
 ---
 
-# Kompletterande litteratur
-
-Denna artikel är intressant men bedöms inte vara nödvändig för att uppfylla målen med denna litteraturstudie.
-
-| Nr | Artikel | År | Kort beskrivning | Länk |
-|---:|----------|----|------------------|------|
-| 9 | **AI-driven Software Development: A Pragmatic Path to Agentic Development Processes** | 2026 | Diskuterar hur organisationer successivt kan gå från AI-assisterad utveckling till fullt agentiska utvecklingsprocesser. Fokus ligger på införande, styrning och organisatoriska aspekter. | https://arxiv.org/abs/2606.15283 |
-
----
-
 # Sammanfattning
 
-Denna läslista består av totalt **nio utvalda forskningsartiklar**.
+Denna läslista består av totalt **åtta utvalda forskningsartiklar**.
 
 Urvalet bedöms ge en god balans mellan:
 
@@ -153,13 +115,21 @@ Urvalet bedöms ge en god balans mellan:
 Målet är inte att ge en fullständig översikt över forskningsområdet, utan att skapa ett tillräckligt kunskapsunderlag för att förstå området och motivera de designval som senare görs i projektets forskningsprototyp.
 
 
-## 3.1 Large Language Model-Based Agents for Software Engineering: A Survey (2024)
+## 3.1 Publikation 1: Large Language Model-Based Agents for Software Engineering: A Survey (2024)
 
-*Sammanfattning skrivs efter genomgång.*
+Denna översiktsartikel ger en omfattande genomgång av forskningsområdet kring LLM-baserade AI-agenter inom Software Engineering. Författarna analyserar 124 vetenskapliga publikationer och sammanställer hur AI-agenter används genom olika delar av mjukvaruutvecklingsprocessen, exempelvis kravhantering, design, kodgenerering, testning, kodgranskning och underhåll. Syftet är att kartlägga forskningsläget, identifiera gemensamma arkitekturmönster och peka ut områden där ytterligare forskning behövs.
+
+Artikeln visar att utvecklingen av AI-agenter har gått från enkla språkmodeller till mer avancerade agentiska system som kombinerar planering, minne, verktygsanvändning och återkopplingsloopar. Samtidigt konstateras att de flesta lösningar fortfarande befinner sig på forsknings- eller prototypnivå och att det saknas etablerade arkitekturer för många tillämpningsområden.
+
+En viktig slutsats är att användningen av AI-agenter ökar inom hela Software Engineering, men att forskningen är ojämnt fördelad. Områden som kodgenerering och programmeringsassistans dominerar, medan exempelvis Software Quality Assurance, kravdriven testdesign och verifiering fortfarande är betydligt mindre utforskade. Författarna identifierar därför dessa områden som lovande riktningar för framtida forskning.
+
+Betydelse för denna studie
+
+Denna artikel fungerar främst som en översikt över forskningsområdet och ger en bred förståelse för hur AI-agenter används inom Software Engineering. Till skillnad från senare artiklar presenterar den ingen specifik agentarkitektur, utan sammanfattar det aktuella forskningsläget och identifierar återkommande designprinciper och forskningsluckor. För denna studie är artikeln viktig eftersom den motiverar varför agentiska QA-system är ett relevant forskningsområde och visar att det fortfarande finns begränsad forskning kring AI-agenter för kravanalys, testdesign och Software Quality Assurance.
 
 ---
 
-## 3.2 Agents in Software Engineering: Survey, Landscape and Vision (2025)
+## 3.2 Publikation 2: Agents in Software Engineering: Survey, Landscape and Vision (2025)
 
 Denna översiktsartikel syftar till att skapa en gemensam förståelse för vad en AI-agent är inom Software Engineering och hur moderna agentiska system kan beskrivas med ett enhetligt ramverk. Författarna konstaterar att begreppet AI-agent används på många olika sätt i litteraturen – från enkla språkmodeller med en prompt till avancerade system med planering, minne, verktygsanvändning och flera samverkande agenter. Artikelns främsta bidrag är därför en konceptuell modell som beskriver de centrala komponenterna i en modern AI-agent.
 
@@ -169,11 +139,11 @@ Artikeln lyfter även fram minne som en central komponent i agentarkitekturen. F
 
 En annan viktig slutsats är att moderna agentiska system i allt större utsträckning bygger på specialiserade agentroller snarare än en enda generell agent. Genom att dela upp arbetet mellan exempelvis en Requirements Agent, en Test Design Agent och en Review Agent kan varje agent fokusera på en avgränsad uppgift, vilket förbättrar både kvalitet, spårbarhet och möjligheten till återkoppling. Artikeln visar även att en orkestrator ofta används för att koordinera samarbetet mellan agenterna och styra arbetsflödet.
 
-För denna studie är artikeln särskilt relevant eftersom den ger en tydlig teoretisk modell för hur agentiska system kan byggas upp. De fyra pelarna och den beskrivna minnesarkitekturen utgör ett användbart ramverk för att analysera och jämföra olika agentlösningar. Samtidigt ligger artikelns beskrivning nära den agentarkitektur som senare används i projektets forskningsprototyp, där specialiserade QA-agenter samverkar under ledning av en orkestrator och delar information genom ett gemensamt arbetsminne. Jag skulle därför betrakta denna artikel som en av de viktigaste teoretiska referenserna i litteraturstudien.
+För denna studie är artikeln särskilt relevant eftersom den ger en tydlig teoretisk modell för hur agentiska system kan byggas upp. De fyra pelarna och den beskrivna minnesarkitekturen utgör ett användbart ramverk för att analysera och jämföra olika agentlösningar. Samtidigt ligger artikelns beskrivning nära den agentarkitektur som senare används i projektets forskningsprototyp, där specialiserade QA-agenter samverkar under ledning av en orkestrator och delar information genom ett gemensamt arbetsminne. Denna artikel utgör en av de viktigaste teoretiska referenserna i litteraturstudien.
 
 ---
 
-## 3.3 The Rise of Agentic Testing: Multi-Agent Systems for Robust Software Quality Assurance (2026)
+## 3.3 Publikation 3: The Rise of Agentic Testing: Multi-Agent Systems for Robust Software Quality Assurance (2026)
 
 Denna artikel undersöker hur agentiska AI-system kan användas för att automatisera och förbättra Software Quality Assurance. Till skillnad från traditionella AI-lösningar, där en enskild språkmodell används för att generera testfall eller besvara frågor, förespråkar författarna en multi-agentarkitektur där flera specialiserade agenter samarbetar genom hela testprocessen. Syftet är att skapa ett mer robust, spårbart och iterativt arbetssätt där olika agentroller ansvarar för olika delar av testprocessen.
 
@@ -185,7 +155,7 @@ Artikeln diskuterar även flera utmaningar med agentisk testning. Eftersom flera
 
 För denna studie är artikeln särskilt relevant eftersom den beskriver en agentarkitektur som ligger nära projektets övergripande idé. Även om den föreslagna lösningen främst fokuserar på testgenerering och testexekvering, medan den planerade forskningsprototypen utgår från kravanalys och testdesign, bygger båda lösningarna på samma grundprinciper: specialiserade agentroller, en central orkestrator och iterativa återkopplingsloopar. Artikeln visar också att Review Agenten har en central roll i att förbättra kvaliteten på de genererade testartefakterna, vilket stärker idén om att kvalitetsgranskning bör vara en egen agentfunktion och inte endast ett avslutande steg i processen.
 
-Egna reflektioner
+Betydelse för denna studie
 
 En viktig lärdom från artikeln är att fler agenter inte automatiskt leder till bättre resultat. Varje ny agent ökar komplexiteten genom fler överlämningar, mer kommunikation och större krav på orkestrering. Samtidigt visar artikeln att vissa agentroller tillför ett tydligt mervärde och därför är motiverade.
 
@@ -195,36 +165,69 @@ Detta resonemang ger ett tydligt stöd för att använda en separat Review Agent
 
 ---
 
-## 3.4 AgentCoder: Multi-Agent-based Code Generation with Iterative Testing and Optimisation (2023)
+## 3.4 Publikation 4: AgentCoder: Multi-Agent-based Code Generation with Iterative Testing and Optimisation (2023)
 
-*Sammanfattning skrivs efter genomgång.*
+AgentCoder presenterar ett multi-agentramverk för automatisk kodgenerering med hjälp av stora språkmodeller. Till skillnad från traditionella lösningar, där en enskild modell ansvarar för både kodgenerering och testning, bygger AgentCoder på tre specialiserade agentroller: en Programmer Agent, som genererar programkoden, en Test Designer Agent, som självständigt konstruerar testfall utifrån problemformuleringen, samt en Test Executor Agent, som exekverar testerna och återkopplar resultatet till de övriga agenterna.
+
+En central idé i artikeln är att separera kodgenerering och testdesign. Genom att låta en oberoende agent skapa testfallen minskar risken att samma resonemang eller felaktiga antaganden återkommer i både koden och testerna. Detta ökar sannolikheten att logiska fel, gränsfall och andra brister upptäcks innan lösningen accepteras.
+
+Agenterna arbetar iterativt genom en återkopplingsloop där resultaten från testexekveringen används för att förbättra den genererade koden. Om tester misslyckas får Programmer Agent återkoppling och kan generera en förbättrad version av lösningen. Processen upprepas tills testerna passerar eller ett fördefinierat stoppvillkor uppnås.
+
+Experimenten visar att AgentCoder uppnår bättre resultat än flera tidigare metoder för automatisk kodgenerering. Författarna visar att kombinationen av specialiserade agentroller och iterativ återkoppling både förbättrar kodkvaliteten och minskar behovet av beräkningsresurser jämfört med flera alternativa lösningar.
+
+Betydelse för denna studie
+
+AgentCoder är särskilt relevant eftersom den visar hur specialiserade AI-agenter kan samarbeta för att lösa en komplex mjukvaruutvecklingsuppgift. Även om ramverket fokuserar på kodgenerering snarare än Software Quality Assurance, är flera av dess grundprinciper direkt överförbara till denna studie. Framför allt betonar artikeln värdet av tydliga agentroller, oberoende testdesign och iterativa återkopplingsloopar. Dessa principer ligger nära den planerade QA-arkitekturen där en orkestrator samordnar specialiserade agenter för kravanalys, testdesign och kvalitetsgranskning.
+
+För denna studie har AgentCoder haft stor betydelse eftersom den visar hur specialiserade agenter kan samverka genom iterativa återkopplingsloopar.
+Inte för att vi vill bygga en kodgenerator, utan för att den visar två viktiga principer:
+
+1. Specialisering fungerar. En agent ska ha ett tydligt ansvar istället för att försöka göra allt.
+2. Den som producerar ett resultat ska inte ensam verifiera det. En oberoende test- eller granskningsagent ger högre kvalitet.
+
+Både AgentCoder och The Rise of Agentic Testing visar att specialiserade agentroller i kombination med iterativa återkopplingsloopar ger bättre kvalitet och robusthet än en ensam generell agent. Trots att artiklarna fokuserar på olika tillämpningsområden bygger de på samma grundläggande arkitekturprinciper.
 
 ---
 
-## 3.5 MetaGPT: Meta Programming for Multi-Agent Collaborative Framework (2023)
-
-*Sammanfattning skrivs efter genomgång.*
-
----
-
-## 3.6 SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering (2024)
-
-*Sammanfattning skrivs efter genomgång.*
-
----
-
-## 3.7 Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)
-
-*Sammanfattning skrivs efter genomgång.*
-
----
-## 3.8 Automatic High-Level Test Case Generation using Large Language Models (2025)
+## 3.5 Publikation 5: Automatic High-Level Test Case Generation using Large Language Models (2025)
 
 En avslutande artikel väljs inom området AI-assisterad testning eller Requirements Engineering beroende på vilket område som visar sig mest relevant för den fortsatta forskningsprototypen.
 
 ---
 
-# 4.  Reflektioner från litteraturstudien
+## 3.6 Publikation 6: MetaGPT: Meta Programming for Multi-Agent Collaborative Framework (2023)
+
+MetaGPT presenterar ett multi-agentramverk där utvecklingsprocessen modelleras efter hur ett verkligt mjukvaruutvecklingsteam arbetar. I stället för att låta en enda språkmodell utföra alla uppgifter delas arbetet upp mellan flera specialiserade agentroller, exempelvis Product Manager, Architect, Project Manager, Engineer och QA Engineer. Varje agent ansvarar för ett tydligt avgränsat arbetsområde och producerar artefakter som används av efterföljande agenter.
+
+En central idé i MetaGPT är att mjukvaruutveckling kan beskrivas som en kedja av väldefinierade arbetsprodukter. Varje agent arbetar därför mot en specifik artefakt, exempelvis kravspecifikation, systemdesign eller kod, vilket skapar en tydlig struktur och spårbarhet genom hela utvecklingsprocessen.
+
+Artikeln lägger stor vikt vid kommunikation mellan agenter. Författarna visar att fri dialog mellan många agenter snabbt leder till stora mängder text, vilket både ökar kostnaden och försämrar effektiviteten. För att minska detta introduceras principen “Code = SOP (Standard Operating Procedure)”, där kommunikationen standardiseras genom tydliga arbetsflöden och fördefinierade informationsformat. På så sätt överförs endast den information som nästa agent faktiskt behöver.
+
+En annan viktig slutsats är att tokenförbrukningen blir en kritisk faktor i större multi-agentsystem. Om varje agent skickar hela konversationshistoriken vidare till nästa agent uppstår snabbt ett stort informationsbrus. MetaGPT visar därför hur sammanfattningar, strukturerade artefakter och selektiv informationsöverföring kan minska antalet använda tokens utan att försämra resultatet. Detta gör systemet både snabbare och billigare att köra.
+
+Artikeln betonar också vikten av specialisering. Genom att ge varje agent ett tydligt ansvarsområde minskar komplexiteten i varje enskilt steg samtidigt som lösningen blir enklare att förstå, vidareutveckla och felsöka.
+
+Betydelse för denna studie
+
+MetaGPT är särskilt relevant eftersom den visar hur ett större agentiskt system kan organiseras på ett strukturerat och resurssnålt sätt. För denna studie är de viktigaste bidragen inte de specifika agentrollerna utan de arkitekturprinciper som presenteras. Framför allt betonar artikeln vikten av tydliga agentroller, standardiserad kommunikation mellan agenter och att endast överföra den information som är nödvändig för nästa steg. Dessa principer är direkt tillämpbara vid utvecklingen av ett agentiskt QA-system där flera agenter samarbetar kring kravanalys, testdesign och kvalitetsgranskning.
+
+Egna reflektioner
+
+Den viktigaste lärdomen från MetaGPT är att kommunikationen mellan agenter är minst lika viktig som själva agenternas intelligens. Ett väl fungerande multi-agentsystem handlar därför inte bara om att välja rätt språkmodell, utan också om att utforma effektiva informationsflöden. Genom att överföra strukturerade artefakter istället för hela konversationer kan både tokenförbrukning och exekveringstid minskas samtidigt som spårbarheten förbättras. För ett QA-system innebär detta att agenter bör kommunicera genom väldefinierade objekt, exempelvis kravlistor, testdesign eller granskningsrapporter, snarare än genom långa fria dialoger.
+
+---
+
+## 3.7 Publikation 7: SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering (2024)
+
+*Sammanfattning skrivs efter genomgång.*
+
+---
+
+## 3.8 Publikation 8: Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)
+
+*Sammanfattning skrivs efter genomgång.*
+
+# 4. Reflektioner från litteraturstudien
 
 Efter genomgång av de utvalda forskningsartiklarna sammanfattas de viktigaste slutsatserna kring:
 
@@ -255,20 +258,17 @@ Resultatet från litteraturstudien används som kunskapsunderlag inför projekte
 4. **AgentCoder: Multi-Agent-based Code Generation with Iterative Testing and Optimisation (2023)**  
    https://arxiv.org/abs/2312.13010
 
-5. **MetaGPT: Meta Programming for Multi-Agent Collaborative Framework (2023)**  
+5. **Automatic High-Level Test Case Generation using Large Language Models (2025)**  
+   https://arxiv.org/abs/2503.17998
+
+6. **MetaGPT: Meta Programming for Multi-Agent Collaborative Framework (2023)**  
    https://arxiv.org/abs/2308.00352
 
-6. **SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering (2024)**  
+7. **SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering (2024)**  
    https://arxiv.org/abs/2405.15793
 
-7. **Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)**  
+8. **Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)**  
    https://arxiv.org/abs/2604.26275
-
-8. **AI-driven Software Development: A Pragmatic Path to Agentic Development Processes (2026)**  
-   https://arxiv.org/abs/2606.15283
 
 ---
 
-**Kommentar**
-
-Litteraturstudien bygger på ett begränsat urval av forskningsartiklar som bedömts ge en god överblick över forskningsområdet. Målet är att skapa en stabil teoretisk grund för projektets fortsatta arbete snarare än att genomföra en fullständig systematisk litteraturöversikt.

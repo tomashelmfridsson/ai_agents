@@ -1,0 +1,43 @@
+name: Keep Hugging Face Space Awake
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keep-huggingface-space-awake
+  cancel-in-progress: true
+
+jobs:
+  ping-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HF_SPACE_URL: https://helmfridsson-ai-agents.hf.space
+      HF_SPACE_FALLBACK_URL: https://huggingface.co/spaces/helmfridsson/ai_agents
+
+    steps:
+      - name: Ping Hugging Face Space
+        run: |
+          set -eu
+
+          urls=(
+            "$HF_SPACE_URL"
+            "$HF_SPACE_FALLBACK_URL"
+          )
+
+          for url in "${urls[@]}"; do
+            echo "Pinging ${url}"
+
+            if curl --fail --silent --show-error --location --max-time 30 \
+              --output /dev/null \
+              --user-agent "github-actions-keepalive" \
+              "$url"; then
+              echo "Ping succeeded for ${url}"
+              exit 0
+            fi
+          done
+
+          echo "All keepalive requests failed."
+          exit 1

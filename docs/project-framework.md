@@ -10,7 +10,7 @@
 - Verification and Validation
 - Test-Driven Development
 
-## Analysfrågor per tema
+## Analysfrågor att besvara under Studien.
 
 ### AI Agents
 
@@ -61,24 +61,16 @@ Bedöm varje plattform utifrån följande kriterier:
 | Molnstöd | Hur väl stöds kommersiella modell-API:er? |
 | QA-lämplighet | Hur väl passar plattformen kravanalys och testdesign? |
 
-## Plattformar att jämföra
+## Möjliga plattformar att jämföra
 
-| Plattform | Förväntade styrkor | Frågor att undersöka |
-|---|---|---|
-| OpenClaw | Kandidat för experimentell agentautomation | Mognad, dokumentation, observability |
-| Hermes Agent Framework | Fokus på agentstruktur | Hur väl lämpar den sig för QA-pipelines? |
-| CrewAI | Tydlig rollbaserad multi-agentmodell | Hur styrbar är iteration och state? |
-| LangGraph | Explicit grafbaserad orkestrering | Hur mycket boilerplate krävs? |
-| AutoGen | Stark agent-till-agent-dialog | Hur robust blir deterministisk processkontroll? |
-| OpenAI Agents SDK | Bra verktygs- och modellintegration | Hur väl stödjer den komplex flerstegsorkestrering? |
-
-## AI Agents POC Rapport
-
-Statusbedömningen mot projektmålet har brutits ut till en egen rapport:
-
-- [AI Agents POC Rapport](../ai-agents-poc-report/)
-
-Denna rapport fungerar som underlag för slutrapporten och samlar nulägesbild, uppnådda egenskaper, begränsningar och nästa steg för den aktuella QA Agent POC:n.
+| Plattform | Kort beskrivning |
+|---|---|
+| OpenClaw | Experimentell plattform för agentautomation med fokus på snabb prototypframtagning och flexibla agentflöden. |
+| Hermes Agent Framework | Ramverk för att strukturera agentroller, ansvar och samspel i mer kontrollerade agentbaserade system. |
+| CrewAI | Rollbaserat multi-agentramverk där flera specialiserade agenter samarbetar i definierade arbetsflöden. |
+| LangGraph | Grafbaserat orkestreringsramverk för att bygga agentflöden med tydliga tillstånd, övergångar och återkopplingsloopar. |
+| AutoGen | Ramverk för konversationsdrivna multi-agentsystem med starkt stöd för samarbete mellan agenter och verktyg. |
+| OpenAI Agents SDK | SDK för att bygga AI-agenter med nära integration till modeller, verktyg, guardrails och körbar orkestrering. |
 
 ## Lokal vs molnbaserad modellkörning
 
@@ -99,3 +91,11 @@ Analysera:
 - kostnad per körning
 - skalbarhet och integrationsstöd
 - risker kring sekretess och leverantörsberoende
+
+## AI Agents POC Rapport
+
+Statusbedömningen mot projektmålet har brutits ut till en egen rapport:
+
+- [AI Agents POC Rapport](../ai-agents-poc-report/)
+
+Denna rapport fungerar som underlag för slutrapporten och samlar nulägesbild, uppnådda egenskaper, begränsningar och nästa steg för den aktuella QA Agent POC:n.

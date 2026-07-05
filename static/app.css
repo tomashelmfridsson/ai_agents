@@ -56,11 +56,50 @@ body {
   font-weight: 700;
 }
 
-.doc-actions {
+.doc-library {
+  display: grid;
+  gap: 12px;
+}
+
+.doc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 245, 0.72);
+}
+
+.doc-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.doc-copy strong {
+  font-size: 1rem;
+}
+
+.doc-copy span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.doc-actions,
+.doc-tail {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.doc-actions {
   justify-content: flex-end;
+}
+
+.doc-tail {
+  justify-content: flex-start;
 }
 
 .doc-link {
@@ -467,6 +506,10 @@ button:hover {
   .stage-head {
     flex-direction: column;
     align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .doc-row {
     grid-template-columns: 1fr;
   }
 

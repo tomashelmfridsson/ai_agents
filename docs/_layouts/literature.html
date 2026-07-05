@@ -41,22 +41,58 @@
       }
 
       .doc-nav {
+        display: grid;
+        gap: 12px;
+        margin: 18px 0 0;
+      }
+
+      .doc-nav-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 251, 245, 0.72);
+      }
+
+      .doc-nav-label {
+        display: grid;
+        gap: 3px;
+      }
+
+      .doc-nav-title {
+        color: var(--ink);
+        font-size: 1rem;
+        font-weight: 700;
+      }
+
+      .doc-nav-subtitle {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+
+      .doc-nav-actions,
+      .doc-nav-tail {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin: 18px 0 0;
+        gap: 8px;
       }
 
       .doc-nav a {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
+        min-width: 54px;
         padding: 9px 14px;
         border: 1px solid var(--line);
         border-radius: 999px;
-        background: rgba(255, 251, 245, 0.72);
+        background: rgba(255, 251, 245, 0.96);
         color: var(--ink);
         text-decoration: none;
-        font-size: 0.94rem;
+        font-size: 0.9rem;
         font-weight: 700;
       }
 
@@ -175,6 +211,10 @@
           padding-top: 24px;
         }
 
+        .doc-nav-row {
+          grid-template-columns: 1fr;
+        }
+
         article {
           padding: 18px;
         }
@@ -186,12 +226,50 @@
       <header class="masthead">
         <p class="eyebrow">Dokumentation</p>
         <nav class="doc-nav" aria-label="Dokumentsidor">
-          <a href="/ai_agents/project-brief/">Projektbrief</a>
-          <a href="/ai_agents/theoretical-background-and-central-concepts/">Teoretisk bakgrund och centrala begrepp</a>
-          <a href="/ai_agents/literature-study/">Litteraturstudie</a>
-          <a href="/ai_agents/ai-agents-poc-report/">AI Agents POC Rapport</a>
-          <a href="/ai_agents/ai-developing-guidelines/">AI Developing Guidelines</a>
-          <a href="/ai_agents/qa-agent-developing-requirements/">QA Agent Developing Requirements</a>
+          <div class="doc-nav-row">
+            <div class="doc-nav-label">
+              <span class="doc-nav-title">Project Brief</span>
+              <span class="doc-nav-subtitle">Projektbrief</span>
+            </div>
+            <div class="doc-nav-actions">
+              <a href="/ai_agents/project-brief/">SV</a>
+              <a href="/ai_agents/project-brief-en/">EN</a>
+            </div>
+          </div>
+          <div class="doc-nav-row">
+            <div class="doc-nav-label">
+              <span class="doc-nav-title">Theoretical Background</span>
+              <span class="doc-nav-subtitle">Teoretisk bakgrund och centrala begrepp</span>
+            </div>
+            <div class="doc-nav-actions">
+              <a href="/ai_agents/theoretical-background-and-central-concepts/">SV</a>
+              <a href="/ai_agents/theoretical-background-and-central-concepts-en/">EN</a>
+            </div>
+          </div>
+          <div class="doc-nav-row">
+            <div class="doc-nav-label">
+              <span class="doc-nav-title">Literature Study</span>
+              <span class="doc-nav-subtitle">Litteraturstudie</span>
+            </div>
+            <div class="doc-nav-actions">
+              <a href="/ai_agents/literature-study/">SV</a>
+              <a href="/ai_agents/literature-study-en/">EN</a>
+            </div>
+          </div>
+          <div class="doc-nav-row">
+            <div class="doc-nav-label">
+              <span class="doc-nav-title">AI Agents POC Report</span>
+              <span class="doc-nav-subtitle">AI Agents POC Rapport</span>
+            </div>
+            <div class="doc-nav-actions">
+              <a href="/ai_agents/ai-agents-poc-report/">SV</a>
+              <a href="/ai_agents/ai-agents-poc-report-en/">EN</a>
+            </div>
+          </div>
+          <div class="doc-nav-tail">
+            <a href="/ai_agents/qa-agent-developing-requirements/">QA Agent Developing Requirements</a>
+            <a href="/ai_agents/ai-developing-guidelines/">AI Developing Guidelines</a>
+          </div>
         </nav>
       </header>
       <article>

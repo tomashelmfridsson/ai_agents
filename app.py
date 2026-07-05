@@ -55,6 +55,10 @@ LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 THEORETICAL_BACKGROUND_URL = "https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts/"
 AI_AGENTS_POC_REPORT_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report/"
+LITERATURE_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study-en/"
+PROJECT_BRIEF_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief-en/"
+THEORETICAL_BACKGROUND_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts-en/"
+AI_AGENTS_POC_REPORT_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report-en/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
 QA_AGENT_DEVELOPING_REQUIREMENTS_URL = "https://tomashelmfridsson.github.io/ai_agents/qa-agent-developing-requirements/"
 DEFAULT_OLLAMA_MODEL_CHOICES = [
@@ -1736,11 +1740,45 @@ CUSTOM_CSS = """
       background: linear-gradient(180deg, #9f4220, #7f2b10) !important;
       border-color: rgba(86, 27, 8, 1);
     }
-    .doc-actions {
+    .doc-library {
+      display: grid;
+      gap: 12px;
+    }
+    .doc-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(29, 20, 13, 0.12);
+      background: rgba(255, 251, 245, 0.72);
+    }
+    .doc-copy {
+      display: grid;
+      gap: 4px;
+    }
+    .doc-copy strong {
+      color: #160e09 !important;
+      font-size: 1rem;
+    }
+    .doc-copy span {
+      color: #4a3b31 !important;
+      font-size: 0.92rem;
+      line-height: 1.4;
+      font-weight: 600;
+    }
+    .doc-actions,
+    .doc-tail {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+    }
+    .doc-actions {
       justify-content: flex-end;
+    }
+    .doc-tail {
+      justify-content: flex-start;
     }
     .app-tabs [role="tablist"] {
       gap: 8px;
@@ -2370,6 +2408,7 @@ CUSTOM_CSS = """
     @media (max-width: 820px) {
       .stage-head { grid-template-columns: 1fr; }
       .stage-chevron { justify-self: start; }
+      .doc-row { grid-template-columns: 1fr; }
       .doc-actions { justify-content: flex-start; }
     }
     """
@@ -2404,13 +2443,51 @@ def build_demo() -> gr.Blocks:
                 )
                 gr.HTML(
                     f"""
-                    <div class="doc-actions">
-                      <a class="doc-pill-button" href="{PROJECT_BRIEF_URL}" target="_blank" rel="noreferrer">Project brief</a>
-                      <a class="doc-pill-button" href="{THEORETICAL_BACKGROUND_URL}" target="_blank" rel="noreferrer">Theoretical background</a>
-                      <a class="doc-pill-button" href="{LITERATURE_URL}" target="_blank" rel="noreferrer">Literature study</a>
-                      <a class="doc-pill-button" href="{AI_AGENTS_POC_REPORT_URL}" target="_blank" rel="noreferrer">AI agents POC report</a>
-                      <a class="doc-pill-button" href="{QA_AGENT_DEVELOPING_REQUIREMENTS_URL}" target="_blank" rel="noreferrer">QA agent requirements</a>
-                      <a class="doc-pill-button" href="{AI_DEVELOPING_GUIDELINES_URL}" target="_blank" rel="noreferrer">AI developing guidelines</a>
+                    <div class="doc-library">
+                      <div class="doc-row">
+                        <div class="doc-copy">
+                          <strong>Project Brief</strong>
+                          <span>Projektbrief</span>
+                        </div>
+                        <div class="doc-actions">
+                          <a class="doc-pill-button" href="{PROJECT_BRIEF_URL}" target="_blank" rel="noreferrer">SV</a>
+                          <a class="doc-pill-button" href="{PROJECT_BRIEF_EN_URL}" target="_blank" rel="noreferrer">EN</a>
+                        </div>
+                      </div>
+                      <div class="doc-row">
+                        <div class="doc-copy">
+                          <strong>Theoretical Background</strong>
+                          <span>Teoretisk bakgrund och centrala begrepp</span>
+                        </div>
+                        <div class="doc-actions">
+                          <a class="doc-pill-button" href="{THEORETICAL_BACKGROUND_URL}" target="_blank" rel="noreferrer">SV</a>
+                          <a class="doc-pill-button" href="{THEORETICAL_BACKGROUND_EN_URL}" target="_blank" rel="noreferrer">EN</a>
+                        </div>
+                      </div>
+                      <div class="doc-row">
+                        <div class="doc-copy">
+                          <strong>Literature Study</strong>
+                          <span>Litteraturstudie</span>
+                        </div>
+                        <div class="doc-actions">
+                          <a class="doc-pill-button" href="{LITERATURE_URL}" target="_blank" rel="noreferrer">SV</a>
+                          <a class="doc-pill-button" href="{LITERATURE_EN_URL}" target="_blank" rel="noreferrer">EN</a>
+                        </div>
+                      </div>
+                      <div class="doc-row">
+                        <div class="doc-copy">
+                          <strong>AI Agents POC Report</strong>
+                          <span>AI Agents POC Rapport</span>
+                        </div>
+                        <div class="doc-actions">
+                          <a class="doc-pill-button" href="{AI_AGENTS_POC_REPORT_URL}" target="_blank" rel="noreferrer">SV</a>
+                          <a class="doc-pill-button" href="{AI_AGENTS_POC_REPORT_EN_URL}" target="_blank" rel="noreferrer">EN</a>
+                        </div>
+                      </div>
+                      <div class="doc-tail">
+                        <a class="doc-pill-button" href="{QA_AGENT_DEVELOPING_REQUIREMENTS_URL}" target="_blank" rel="noreferrer">QA agent requirements</a>
+                        <a class="doc-pill-button" href="{AI_DEVELOPING_GUIDELINES_URL}" target="_blank" rel="noreferrer">AI developing guidelines</a>
+                      </div>
                     </div>
                     """
                 )
