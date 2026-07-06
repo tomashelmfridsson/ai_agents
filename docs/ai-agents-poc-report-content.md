@@ -8,11 +8,13 @@ Fokus ligger därför på att undersöka hur specialiserade agentroller, [orkest
 
 ## Projektets utvecklingsresa
 
-Arbetet började med att förstå hur [AI-agenter](../theoretical-background-and-central-concepts/#ai-agent) fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), [minne](../theoretical-background-and-central-concepts/#agent-memory), routing, återkopplingsslingor och granskning i [multi-agentmiljöer](../theoretical-background-and-central-concepts/#multi-agent-system). Målet var inte enbart att använda ett färdigt [agentramverk](../theoretical-background-and-central-concepts/#agent-framework), utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system. Detta finns beskrivet i litteraturstudien.
+Arbetet började med att förstå hur [AI-agenter](../theoretical-background-and-central-concepts/#ai-agent) fungerar i teori och praktik. Den första fasen handlade därför om att läsa in oss på agentbegreppet, agentisk [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), [minne](../theoretical-background-and-central-concepts/#agent-memory), routing, återkopplingsslingor och granskning i [multi-agentmiljöer](../theoretical-background-and-central-concepts/#multi-agent-system). Målet var inte enbart att använda ett färdigt [agentramverk](../theoretical-background-and-central-concepts/#agent-framework), utan att först förstå vad som faktiskt krävs för att bygga ett agentiskt QA-system. Detta arbetssätt stöds av översiktsartiklarna Large Language Model-Based Agents for Software Engineering och Agents in Software Engineering, som visar att förståelsen för agenternas arkitektur, minne, planering och samarbete är en förutsättning för att kunna konstruera effektiva agentiska system.
 
-Därefter försökte vi bygga en egen agentisk lösning från grunden. Innan detta var möjligt behövde vi först bygga själva agenterna. Vi tog fram tre agenter: en agent för att analysera ett övergripande krav och förfina det till användbara krav, en agent för att skapa [testdesign](../theoretical-background-and-central-concepts/#test-design) och testfall utifrån dessa krav, samt en oberoende granskningsagent.
+Därefter försökte vi bygga en egen agentisk lösning från grunden. Innan detta var möjligt behövde vi först bygga själva agenterna. Vi tog fram tre agenter: en agent för att analysera ett övergripande krav och förfina det till användbara krav, en agent för att skapa [testdesign](../theoretical-background-and-central-concepts/#test-design) och testfall utifrån dessa krav, samt en oberoende granskningsagent. Valet att dela upp arbetet mellan specialiserade agentroller stöds av flera studier, bland annat AgentCoder, MetaGPT och The Rise of Agentic Testing. Samtliga visar att rollspecialisering kan förbättra kvalitet, spårbarhet och möjligheten till återkoppling jämfört med en ensam generell agent.
 
-Litteraturstudien pekade tydligt på att en lösning utan någon form av exekverings- eller granskningsfas sällan blir tillräcklig. Eftersom vi inte hade något System Under Test (SUT) valde vi därför att låta en oberoende granskningsagent bedöma testfallen mot kraven. Dessa agenter togs fram med AI-assisterad kodning, kördes först lokalt och publicerades senare publikt på [Hugging Face](../theoretical-background-and-central-concepts/#hugging-face) genom en Docker-baserad lösning. Varje agent var i praktiken en [LLM](../theoretical-background-and-central-concepts/#large-language-models) med en [prompt](../theoretical-background-and-central-concepts/#prompt-engineering) och ett direktiv som beskrev uppgiften och vilken [artefakt](../theoretical-background-and-central-concepts/#artefakt) som skulle produceras.
+Litteraturstudien pekade tydligt på att en lösning utan någon form av exekverings- eller granskningsfas sällan blir tillräcklig. Eftersom vi inte hade något System Under Test (SUT) valde vi därför att låta en oberoende granskningsagent bedöma testfallen mot kraven. Detta ligger i linje med AgentCoder, där en separat testagent används för att verifiera den genererade lösningen. Även The Rise of Agentic Testing betonar vikten av en oberoende granskningsfunktion för att minska risken att samma agent både producerar och godkänner sitt eget resultat. 
+
+Dessa agenter togs fram med AI-assisterad kodning, kördes först lokalt och publicerades senare publikt på [Hugging Face](../theoretical-background-and-central-concepts/#hugging-face) genom en Docker-baserad lösning. Varje agent var i praktiken en [LLM](../theoretical-background-and-central-concepts/#large-language-models) med en [prompt](../theoretical-background-and-central-concepts/#prompt-engineering) och ett direktiv som beskrev uppgiften och vilken [artefakt](../theoretical-background-and-central-concepts/#artefakt) som skulle produceras.
 
 När de enskilda agenterna var klara blev nästa steg att skapa en fleragentlösning. Den första versionen var sekventiell: krav analyserades, testfall skapades och resultatet granskades därefter. Dessa tidiga experiment kördes med lokala [LLM:er](../theoretical-background-and-central-concepts/#large-language-models), framför allt Llama-baserade modeller via lokal inferens. Det gav praktisk förståelse för hur långt man kunde komma med egen sekventiell [orkestrering](../theoretical-background-and-central-concepts/#orchestrator), men också vilka begränsningar som uppstod i kvalitet, stabilitet och [exekveringstid](../theoretical-background-and-central-concepts/#exekveringstid).
 
@@ -20,7 +22,7 @@ Nästa steg blev att gå över till Hugging Face-baserad körning för de live-L
 
 ## Från sekventiellt flöde till agentisk routing
 
-En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen `requirements -> design -> review` som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten. Det ledde till en mer flexibel orkestrering.
+En viktig insikt var att arbetsflödet inte borde vara strikt synkront i formen `requirements -> design -> review` som ett fast sekventiellt rör. I praktiken visade det sig att agenterna behövde kunna hoppa mellan noder på ett smartare sätt beroende på kvaliteten i mellanresultaten. Det ledde till en mer flexibel orkestrering. Litteraturstudien visar att moderna agentiska system sällan bygger på strikt sekventiella arbetsflöden. I stället används orkestratorer, dynamisk routing och iterativa återkopplingsloopar för att styra samarbetet mellan specialiserade agenter.
 
 För att stödja detta behövdes tre centrala mekanismer:
 
@@ -28,11 +30,13 @@ För att stödja detta behövdes tre centrala mekanismer:
 - [delat minne](../theoretical-background-and-central-concepts/#shared-working-memory) för gemensam kontext mellan agenterna
 - dynamisk routing där nästa steg bestäms utifrån resultat och inte enbart genom hårdkodad stegordning
 
+Uppdelningen mellan privat och delat minne överensstämmer med den minnesmodell som beskrivs i Agents in Software Engineering, där Short-Term Memory, Working Memory, Long-Term Memory och External Memory används för olika delar av agentens resonemang.
+
 Detta ledde fram till en lösning där orkestratorn blev den styrande komponenten. Routing kunde då avgöras utifrån resultat, brister, feedback och stopvillkor i stället för utifrån en helt statisk stegordning. Samtidigt var vissa övergångar fortfarande begränsade. Om Test Design Agent till exempel bedömde att kraven var svaga kunde arbetet skickas tillbaka till Requirements Analyst Agent, och om granskningsagenten inte kunde godkänna resultatet kunde arbetet skickas tillbaka till Test Design Agent för förbättring.
 
 En viktig förfining i denna orkestrering var att formulera målet explicit som att nå `approved=true` från Review Agent, i stället för att använda ett vagare uttryck som `quality sufficient`. Det senare lämnar större tolkningsutrymme för när körningen faktiskt ska stoppas, medan `approved=true` ger ett tydligt [verifieringsmål](../theoretical-background-and-central-concepts/#verification-and-validation), skarpare routingbeslut och bättre [spårbarhet](../theoretical-background-and-central-concepts/#requirement-traceability) i efterhand. För denna POC är därför `approved=true` ett bättre styrmål än ett allmänt kvalitetsuttryck, eftersom orkestratorn då kan arbeta mot en konkret granskningssignal snarare än en diffus kvalitetskänsla.
 
-För att få ännu bättre orkestrering byggdes därefter en [LLM](../theoretical-background-and-central-concepts/#large-language-models)-baserad [orkestrator](../theoretical-background-and-central-concepts/#orchestrator). Detta gav flera förbättringar, framför allt eftersom vi tidigare såg problem med loopar mellan agenter, något som även flera forskningsrapporter i litteraturstudien lyfter. De hårdkodade orkestreringsdefinitionerna ledde ibland till loopande diskussioner mellan agenterna och hög tokenförbrukning. Vi behövde därför införa maxgränser för antal cykler och för hur många återkopplingsmeddelanden en agent fick skicka till en annan.
+För att få ännu bättre orkestrering byggdes därefter en [LLM](../theoretical-background-and-central-concepts/#large-language-models)-baserad [orkestrator](../theoretical-background-and-central-concepts/#orchestrator). Detta gav flera förbättringar, framför allt eftersom vi tidigare såg problem med loopar mellan agenter. Liknande problem beskrivs även i MetaGPT, där författarna visar att okontrollerad kommunikation mellan många agenter snabbt leder till ökad tokenförbrukning och mer informationsbrus. Därför används standardiserade arbetsflöden och strukturerad kommunikation mellan agenterna.. De hårdkodade orkestreringsdefinitionerna ledde ibland till loopande diskussioner mellan agenterna och hög tokenförbrukning. Vi behövde därför införa maxgränser för antal cykler och för hur många återkopplingsmeddelanden en agent fick skicka till en annan.
 
 ## Nuvarande AI-agent-sida och arkitektur
 
@@ -83,6 +87,8 @@ I den nuvarande `qa-agent-service` ligger agentbeteendet deklarativt i agentregi
 Dessa direktiv förfinades löpande under arbetet. En viktig fråga var om de skulle kunna justeras under en körning. Forskningslitteraturen tar upp detta, men pekar också på svårigheterna. Exempelvis lyfter Standard Operational Procedures (SOP) att agentinstruktioner bör vara stabila och väldefinierade. Annars riskerar inte bara tokenkostnaderna att öka, utan också bias, fel och hallucinationer att förstärkas mellan agenter.
 
 I den aktuella HF QA agent service-konfigurationen körs samtliga tre agenter normalt med `Qwen/Qwen2.5-7B-Instruct`, med temperatur `0.2` för Requirements Analyst och Test Designer samt `0.1` för Review Agent. Det valet gjordes främst eftersom modellen var gratis, snabb och tillräckligt bra, men den var långt ifrån bäst när vi senare testade mot GPT-5.5 med hjälp av [Hermes Agent Framework](../theoretical-background-and-central-concepts/#hermes-agent-framework).
+
+Litteraturstudien visar att högkvalitativ testdesign kräver mer än generering av välformulerade testfall. Studien Automatic High-Level Test Case Generation using Large Language Models visar att generativa modeller ofta kan skapa testfall som ser strukturerade och rimliga ut, men att de fortfarande kan missa viktiga edge cases, använda för generell testdata eller sakna tillräcklig domänförankring. Detta motiverar att Test Design Agent i POC:en har ett tydligt kvalitetskontrakt med krav på konkreta preconditions, testdata, steg, förväntade resultat, oracle-logik och spårbarhet till krav-ID.
 
 ### Requirements Analyst Agent
 
@@ -166,6 +172,8 @@ Quality bar: The review must explain exactly why quality passes or fails with co
 
 Direktiven visar också en viktig del av projektets inriktning: målet var inte bara att få modellerna att generera text, utan att ge dem tydliga kvalitetskontrakt per roll och ett strikt output-kontrakt. På så sätt blev direktiven en central del av hur agentbeteende, spårbarhet, granskningsbarhet och strukturerad JSON-output kunde studeras i POC:en.
 
+Flera forskningsartiklar betonar vikten av tydliga och stabila agentinstruktioner. MetaGPT beskriver detta genom konceptet Standard Operating Procedures (SOP), där varje agent arbetar efter tydligt definierade arbetsuppgifter och producerar standardiserade artefakter. Detta minskar både informationsbrus och risken för att felaktiga antaganden sprids mellan agenterna.
+
 ## Loopar, begränsningar och approve true
 
 Ett återkommande problem var att agenterna ibland hamnade i loopar där de skickade feedback fram och tillbaka utan att faktiskt nå ett tillräckligt bra slutresultat. För att hantera detta infördes begränsningar i:
@@ -178,7 +186,7 @@ Detta blev centralt i arkitekturen eftersom målet var att Review Agent i slutä
 
 ## Utvärderingsfrågan
 
-En viktig del av arbetet blev därför frågan om hur output från Test Design Agent faktiskt ska utvärderas. Det räcker inte att agenten producerar många testfall; den avgörande frågan är hur relevanta, testbara, spårbara och granskningsbara dessa testfall är. På samma sätt uppstod frågan om hur starkt review-steget egentligen är: hur bra är Review Agent på att skilja mellan ytliga och verkligt robusta testdesigner?
+En viktig del av arbetet blev därför frågan om hur output från Test Design Agent faktiskt ska utvärderas. Denna utmaning beskrivs också i Automatic High-Level Test Case Generation using Large Language Models. Författarna visar att automatiska kvalitetsmått, såsom F1-score och BERTScore, endast ger en del av bilden. För att bedöma om testfall verkligen är användbara krävs även mänsklig expertgranskning, särskilt när det gäller domänkunskap, edge cases och relevansen hos testdata. Det räcker inte att agenten producerar många testfall, den avgörande frågan är hur relevanta, testbara, spårbara och granskningsbara dessa testfall är. På samma sätt uppstod frågan om hur starkt review-steget egentligen är: hur bra är Review Agent på att skilja mellan ytliga och verkligt robusta testdesigner? Detta ligger i linje med Automatic High-Level Test Case Generation using Large Language Models, där författarna visar att den svåraste delen vid AI-genererad testdesign inte bara är att producera testfall, utan att förstå domänkontexten och avgöra vad som faktiskt bör testas. Studien visar också att automatiska mått som F1-score, BERTScore och semantiska likhetsmått kan ge viss information om likhet och språklig kvalitet, men att de inte fullt ut fångar testfallens praktiska värde. Därför behöver automatiska mått kompletteras med expertgranskning, särskilt för att bedöma edge cases, testdata och domänspecifika scenarier.
 
 Denna utvärderingsfråga är en av de mest centrala slutsatserna hittills. Systemet kan producera artefakter, men det är betydligt svårare att med hög tillförlitlighet avgöra när kvaliteten verkligen är tillräcklig. I både den interna lösningen och LangGraph-lösningen är testfallen nedladdningsbara för vidare utvärdering. Tanken var att använda exempelvis [DeepEval](../theoretical-background-and-central-concepts/#deepeval), men också senior QA-erfarenhet från praktiskt arbete i rollen som QA-expert.
 
@@ -195,7 +203,7 @@ För att kunna jämföra lösningar mer systematiskt skapades sex standardscenar
 
 Dessa används som återkommande testfall i de olika lösningarna för att kunna jämföra routing, kravanalys, testdesign, reviewbeteende, observability och sannolikheten att nå ett godkänt resultat.
 
-## Hermes som nästa undersökningsspår
+## Hermes
 
 Nästa steg i arbetet blev att undersöka om [Hermes Agent Framework](../theoretical-background-and-central-concepts/#hermes-agent-framework) kunde tillföra något som saknades i de tidigare lösningarna. Det gör Hermes relevant både som jämförelseobjekt och som möjlig inspirationskälla för hur agentstruktur, kommunikation och styrning kan organiseras framåt.
 
@@ -242,9 +250,11 @@ Verifier-steget rapporterade dessutom ett passerat gate-resultat och en omfattan
 
 ## Viktig jämförelsebegränsning
 
-Samtidigt måste jämförelsen beskrivas ärligt: Hermes-lösningen kördes med en betydligt starkare modellmiljö, i detta fall GPT-5.5, medan den nuvarande HF QA agent service-lösningen i stor utsträckning har byggt på mindre modeller som Qwen eller Qwen2.5-7B-Instruct.
+Samtidigt måste jämförelsen beskrivas ärligt: Hermes-lösningen kördes med en betydligt starkare modellmiljö, i detta fall GPT-5.5, medan den nuvarande HF QA agent service-lösningen i stor utsträckning har byggt på mindre modeller som Qwen eller Qwen2.5-7B-Instruct. Detta stöds även av litteraturen om kravbaserad testfallsgenerering. Studien Automatic High-Level Test Case Generation using Large Language Models visar att modelljämförelser inte enbart bör tolkas utifrån modellstorlek. Mindre modeller kan prestera väl om de är domänanpassade, medan större generella modeller kan ge bättre språk och struktur men ändå missa domänspecifika edge cases. Därför bör skillnaderna mellan Hermes och HF QA agent service förstås som en kombination av modellkapacitet, domänkontext, promptning och agentarkitektur.
 
-Det betyder att en direkt kvalitetsjämförelse mellan resultaten inte utan vidare är rättvis. Skillnader i output kan bero på minst tre saker:
+Det betyder att en direkt kvalitetsjämförelse mellan resultaten inte utan vidare är rättvis. Resultaten i litteraturstudien visar också att modellstorlek inte ensamt avgör kvaliteten. Automatic High-Level Test Case Generation using Large Language Models visar att mindre modeller kan prestera mycket väl om de är anpassade till rätt domän och har tillgång till relevant kontext. Skillnaderna mellan Hermes och den egna lösningen bör därför inte enbart tillskrivas modellkapacitet utan även skillnader i domänkontext, promptning och agentarkitektur. 
+
+Skillnader i output kan bero på minst tre saker:
 
 - skillnader i ramverk och orkestreringsmodell
 - skillnader i promptning, verifiering och artefaktstruktur
@@ -278,7 +288,7 @@ När Hermes jämförs med den egna HF QA agent service-lösningen bör fokus dä
 
 I Hermes-fallet var orkestreringen tydligt uttryckt genom Kanban tasks, [shared blackboard](../theoretical-background-and-central-concepts/#shared-blackboard) och en avslutande [synthesizer](../theoretical-background-and-central-concepts/#synthesizer)-roll. I HF-lösningen ligger motsvarande styrka mer i den egenbyggda orkestratorn, det delade minnet, agentprivat minne, feedbackbegränsningarna och den tydliga runtime-insynen i appen.
 
-### Jämförelse mellan tre lösningar
+### Jämförelse mellan lösningarna
 
 I jämförelsen är det viktigt att skilja på själva agentramverket och den underliggande agentservicen. Både den egenbyggda `ai_agent`-lösningen och LangGraph-lösningen använder HF QA agent service som agentbackend, medan Hermes Agent Kanban-lösningen kördes som en separat swarm-struktur.
 
@@ -306,9 +316,9 @@ Delar av Hermes-resultatet bör därför finnas med i POC-rapporten som stöd f�
 
 En korrekt tolkning är därför att Hermes visade hög praktisk produktivitet och snabb väg till ett fungerande QA-flöde, medan den egna lösningen fortfarande är starkare som forskningsplattform för att studera routing, minne, observability, feedbackloopar och agentiskt beteende på mer detaljerad nivå.
 
-## Aktuell statusbedömning mot projektmålet
+## Slutsatser
 
-Den nuvarande QA-agent-POC:n har nu nått en nivå där den ger en praktisk förståelse för flera centrala agentbegrepp som tidigare endast fanns som teori i projektbriefen. POC:n visar i körbar form hur ett fleragentsystem kan organiseras kring specialiserade roller, styras av en orkestrator och kombineras med både strukturerad baslinjekörning och LLM-backed körning.
+Den nuvarande QA-agent-POC:n har nu nått en nivå där den ger en praktisk förståelse för flera centrala agentbegrepp som tidigare endast fanns som teori i projektbriefen. Flera av de designval som implementerats i POC:en återkommer också i den genomgångna litteraturen. Exempel är användningen av specialiserade agentroller, en central orkestrator, gemensamt arbetsminne, iterativa återkopplingsloopar och en oberoende granskningsfunktion. Detta stärker att den utvecklade lösningen ligger nära de arkitekturprinciper som idag dominerar forskningen inom agentiska system för Software Engineering och Software Quality Assurance. POC:n visar i körbar form hur ett fleragentsystem kan organiseras kring specialiserade roller, styras av en orkestrator och kombineras med både strukturerad baslinjekörning och LLM-backed körning.
 
 Det som nu tydligt är uppnått är:
 

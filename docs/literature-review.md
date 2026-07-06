@@ -35,8 +35,7 @@ Samtliga sammanfattningar och slutsatser granskas och verifieras innan de inklud
 1. Introduktion
 2. Metod
 3. Genomgång av forskningsartiklar
-4. Sammanfattning
-5. Referenser
+4. Referenser
 
 ---
 
@@ -94,13 +93,12 @@ Dessa artiklar ger en djupare förståelse för olika agentarkitekturer och mode
 |---:|----------|----|------------------|------|
 | 6 | **MetaGPT: Meta Programming for Multi-Agent Collaborative Framework** | 2023 | Beskriver ett rollbaserat multi-agent-system där olika AI-agenter motsvarar klassiska roller inom mjukvaruutveckling, exempelvis Product Manager, Architect, Engineer och QA. | https://arxiv.org/abs/2308.00352 |
 | 7 | **SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering** | 2024 | Visar hur AI-agenter kan arbeta direkt mot verkliga kodbaser, terminaler, Git-repositorier och utvecklingsverktyg. | https://arxiv.org/abs/2405.15793 |
-| 8 | **Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering** | 2026 | Beskriver hur agentiska arbetssätt påverkar hela mjukvaruutvecklingsprocessen och presenterar en modern referensarkitektur för Agentic Software Engineering. | https://arxiv.org/abs/2604.26275 |
 
 ---
 
 ## Sammanfattning
 
-Denna läslista består av totalt **åtta utvalda forskningsartiklar**.
+Denna läslista består av totalt **sju utvalda forskningsartiklar**.
 
 Urvalet bedöms ge en god balans mellan:
 
@@ -191,8 +189,27 @@ Både AgentCoder och The Rise of Agentic Testing visar att specialiserade agentr
 
 ## 3.5 Publikation 5: Automatic High-Level Test Case Generation using Large Language Models (2025)
 
-En avslutande artikel väljs inom området AI-assisterad testning eller Requirements Engineering beroende på vilket område som visar sig mest relevant för den fortsatta forskningsprototypen.
+Artikeln undersöker hur stora språkmodeller kan användas för att automatiskt generera hög-nivå testfall direkt från kravspecifikationer och användarscenarier. Fokus ligger inte på färdig testkod utan på testdesign, där modellen genererar testfall med beskrivningar av syfte, förutsättningar, teststeg och förväntade resultat. Detta ligger nära hur testdesign vanligtvis utförs av testanalytiker i praktiken.
 
+En central slutsats är att domänkunskap är avgörande för testkvaliteten. Författarna visar att den största utmaningen inte är att generera testfall i sig, utan att förstå verksamhetsdomänen och identifiera vad som faktiskt bör testas. Modeller som har tillgång till relevant domänkontext producerar betydligt mer träffsäkra och användbara testfall än generella modeller utan sådan information.
+
+Artikeln visar också att mindre domänanpassade modeller i vissa fall kan prestera bättre än större generella språkmodeller. Genom finjustering mot ett specifikt problemområde kan en mindre modell generera mer relevanta testfall samtidigt som beräkningskostnaden minskar. Detta visar att modellstorlek inte ensam avgör kvaliteten, utan att träning och domänanpassning har stor betydelse.
+
+För att utvärdera kvaliteten på de genererade testfallen används flera olika metoder. Författarna kombinerar automatiska mått, såsom F1-score, BERTScore och semantiska likhetsmått, med manuell bedömning av erfarna testexperter. Resultaten visar att generativ AI ofta kan producera testfall med hög språklig kvalitet och god täckning av de huvudsakliga funktionella kraven. Samtidigt identifieras flera återkommande svagheter.
+
+Modellerna har exempelvis en tendens att:
+
+* generera alltför generella testfall,
+* föreslå irrelevanta eller överflödiga tester,
+* missa viktiga gränsfall (edge cases),
+* använda otydliga eller ofullständiga testdata,
+* ibland skapa testfall som verkar rimliga men saknar praktiskt värde.
+
+Artikeln visar därför att mänsklig granskning fortfarande är viktig, särskilt för att säkerställa att ovanliga scenarier och domänspecifika undantag hanteras korrekt.
+
+Betydelse för denna studie
+
+Denna artikel är den som ligger närmast projektets forskningsfråga. Till skillnad från flera andra publikationer fokuserar den direkt på kravbaserad testdesign, vilket också är utgångspunkten för den utvecklade QA-prototypen. Resultaten visar att generativ AI kan ge ett värdefullt stöd vid framtagning av testfall, men att kvaliteten i hög grad beror på tillgången till domänkunskap och en väl definierad kravspecifikation. Studien visar också att automatiska kvalitetsmått bör kompletteras med expertgranskning, eftersom semantiska likhetsmått inte alltid fångar om testfallen verkligen är användbara eller om viktiga edge cases saknas.
 ---
 
 ## 3.6 Publikation 6: MetaGPT: Meta Programming for Multi-Agent Collaborative Framework (2023)
@@ -219,30 +236,26 @@ Den viktigaste lärdomen från MetaGPT är att kommunikationen mellan agenter ä
 
 ## 3.7 Publikation 7: SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering (2024)
 
-*Sammanfattning skrivs efter genomgång.*
+SWE-agent presenterar ett ramverk där en AI-agent kan arbeta direkt mot en verklig utvecklingsmiljö genom ett Agent-Computer Interface (ACI). Ett ACI fungerar som ett gränssnitt mellan AI-agenten och datorn och ger agenten möjlighet att använda samma verktyg som en mänsklig utvecklare. I stället för att enbart generera text kan agenten exempelvis navigera i ett Git-repository, läsa och redigera filer, använda terminalkommandon, köra tester och analysera resultatet av dessa. Agenten kan därmed utföra en hel arbetsprocess, från att analysera ett problem till att föreslå och verifiera en lösning.
+
+Artikelns huvudsakliga bidrag är introduktionen av Agent-Computer Interface (ACI) som ett strukturerat sätt att låta AI-agenter interagera med sin omgivning. Författarna visar att agentens tillgång till relevanta verktyg ofta är minst lika viktig som valet av språkmodell. En kraftfull språkmodell blir begränsad om den inte kan läsa projektets filer, köra tester eller hämta ytterligare information från utvecklingsmiljön. Ett väl utformat ACI gör det däremot möjligt för agenten att arbeta mer självständigt och att använda externa verktyg som en naturlig del av sitt resonemang.
+
+Betydelse för denna studie
+
+För denna studie är framför allt begreppet Agent-Computer Interface intressant. Även om projektets QA-agenter i första hand fokuserar på kravanalys och testdesign, visar artikeln hur framtida agentiska system skulle kunna integreras med externa verktyg. Exempelvis skulle en QA-agent via ett ACI kunna hämta krav från Jira, läsa dokumentation i Confluence, analysera källkod i ett Git-repository, köra automatiserade tester med Playwright eller Pytest och sammanställa resultaten i en rapport. Artikeln ligger därför något utanför studiens huvudsakliga fokus, men introducerar ett viktigt koncept för hur AI-agenter kan samverka med den omgivande utvecklingsmiljön.
 
 ---
 
-## 3.8 Publikation 8: Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)
+## 3.8  Kompletterande Publikationer 
 
-*Sammanfattning skrivs efter genomgång.*
+Utöver de artiklar som aktivt har analyserats i litteraturstudien har ytterligare två färska och relevanta arbeten identifierats sent i processen. Dessa behandlar bland annat agentiska arbetssätt och benchmark-baserad utvärdering av testgenerering och testuppdatering. Eftersom de identifierades nära inpå redovisningen har de inte inkluderats i den huvudsakliga analysen, utan placeras som kompletterande läsning.
 
-## 4. Reflektioner från litteraturstudien
-
-Efter genomgång av de utvalda forskningsartiklarna sammanfattas de viktigaste slutsatserna kring:
-
-- AI-agenter
-- Multi-Agent Systems
-- Agentic Software Engineering
-- AI för Software Quality Assurance
-- forskningsluckor
-- konsekvenser för framtida agentiska QA-system
-
-Resultatet från litteraturstudien används som kunskapsunderlag inför projektets fortsatta designarbete.
+- Publikation 8: Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)
+- Publikation 9: TestEvo-Bench: An Executable and Live Benchmark for Test and Code Co-Evolution
 
 ---
 
-## 5. Referenser
+## 4. Referenser
 
 
 1. **Large Language Model-Based Agents for Software Engineering: A Survey (2024)**  
@@ -270,5 +283,7 @@ Resultatet från litteraturstudien används som kunskapsunderlag inför projekte
 8. **Agentic AI in the Software Development Lifecycle: Architecture, Empirical Evidence, and the Reshaping of Software Engineering (2026)**  
    https://arxiv.org/abs/2604.26275
 
----
+9. **TestEvo-Bench: An Executable and Live Benchmark for Test and Code Co-Evolution**
+   https://arxiv.org/abs/2607.02469
 
+---
