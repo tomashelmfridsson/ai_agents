@@ -1,6 +1,6 @@
 ---
 layout: literature
-title: Bilaga: Tokenjämförelse mellan Hermes och vår egen QA agent service
+title: "Bilaga: Tokenjämförelse mellan Hermes och vår egen QA agent service"
 permalink: /token-jamforelse-hermes-vs-qa-agent-service-sv/
 ---
 
