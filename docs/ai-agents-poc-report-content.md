@@ -291,7 +291,7 @@ Mätningen visar därför tre viktiga saker:
 
 Detta ger i sin tur en praktisk slutsats för fortsatt utveckling. Om målet är att minska kostnaden räcker det inte i första hand att byta modell eller sänka temperatur. Det viktigaste är sannolikt att minska mängden kontext som skickas in igen i varje design- och review-loop, eller att höja kvaliteten i första designomgången så att färre backtracking-cykler behövs. Det kan exempelvis handla om bättre selektion av vilka krav och vilka reviewfynd som verkligen måste skickas vidare, tydligare komprimering av tidigare artefakter eller ett mer begränsat återkopplingsformat mellan Review Agent och Test Design Agent.
 
-För att göra detta spår transparent finns en separat bilaga med tabeller över scenario 1 till 6, inklusive jämförelse mot Hermes mätbara tokenanvändning och en uppdelning av vad som utgör grundrunda respektive extra cykler. Se [token-jamforelse-hermes-vs-qa-agent-service-sv.md](../token-jamforelse-hermes-vs-qa-agent-service-sv/).
+För att göra detta spår transparent finns en separat bilaga med tabeller över scenario 1 till 6, inklusive jämförelse mot Hermes mätbara tokenanvändning och en uppdelning av vad som utgör grundrunda respektive extra cykler. Se [Bilaga: Tokenjämförelse mellan Hermes och vår egen QA agent service](../token-jamforelse-hermes-vs-qa-agent-service-sv/).
 
 ## Jämförelse mot HF QA agent service
 

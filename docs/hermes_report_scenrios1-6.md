@@ -1,3 +1,9 @@
+---
+layout: literature
+title: Hermes-rapport scenario 1-6
+permalink: /hermes-report-scenarios-1-6/
+---
+
 # QA compare final report — HF QA Agent Service vs Hermes Swarm/internal baseline
 
 Task: `t_197d5326`

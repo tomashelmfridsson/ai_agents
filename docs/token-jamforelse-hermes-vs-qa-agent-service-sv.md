@@ -1,3 +1,9 @@
+---
+layout: literature
+title: Bilaga: Tokenjämförelse mellan Hermes och vår egen QA agent service
+permalink: /token-jamforelse-hermes-vs-qa-agent-service-sv/
+---
+
 # Bilaga: Tokenjämförelse mellan Hermes och vår egen QA agent service
 
 ## Syfte
@@ -8,11 +14,11 @@ Denna bilaga sammanfattar de sex jämförelsekörningar där:
 - vår egen lösning kördes via `ai_agents` med `qa-agent-service` som agentbackend
 - tokenförbrukningen för vår egen lösning hämtades från exporterade JSON-filer per scenario
 
-Bilagan ska läsas tillsammans med [hermes_report_scenrios1-6.md](../hermes_report_scenrios1-6/), som lämnas oförändrad och fungerar som källfil för Hermes-delen av jämförelsen.
+Bilagan ska läsas tillsammans med [Hermes-rapport scenario 1-6](../hermes-report-scenarios-1-6/), som lämnas oförändrad och fungerar som källfil för Hermes-delen av jämförelsen.
 
 ## Datagrund och avgränsning
 
-För Hermes används de mätbara siffror som redan sammanställts i [hermes_report_scenrios1-6.md](../hermes_report_scenrios1-6/):
+För Hermes används de mätbara siffror som redan sammanställts i [Hermes-rapport scenario 1-6](../hermes-report-scenarios-1-6/):
 
 - `Input tokens`
 - `Output tokens`
