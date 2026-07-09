@@ -273,6 +273,26 @@ Despite this limitation, the Hermes run shows several things that are valuable f
 
 This is therefore not only an alternative experiment, but also an argument for why external framework comparison is relevant: some frameworks can provide a faster path to functioning agent flows, while the custom-built solution instead provides greater control over routing, memory, observability, and future extension.
 
+## Token consumption in the custom-built solution
+
+An important new observation in the work is that token consumption can now also be tracked for the custom-built solution when `qa-agent-service` is used as the agent backend. This means that the comparison with Hermes no longer needs to focus only on final quality, but also on how much model work is actually required to reach a given result.
+
+The most central result is that token cost in our six scenario runs does not primarily seem to be driven by general "agent chat" between roles. In these runs, the orchestrator steps handle routing and stop signals, but they have no token values in the exports. Instead, almost the entire token consumption lies in the steps where the Requirements Analyst, Test Design Agent, and Review Agent call the model backend.
+
+It is also clear that the cost is not primarily in the first requirements analysis. That phase is relatively cheap and stable across scenarios. The major cost instead emerges in the repeated loop between the Test Design Agent and the Review Agent. When the Review Agent does not approve the result, feedback is sent back to the Test Design Agent, which must reread requirements, prior test design, feedback, and other working context. The Review Agent then performs a corresponding new pass with a larger input basis than in the previous cycle. This means that each extra cycle normally costs significantly more than the initial base round.
+
+In the six collected runs, the same default limits were used: `max_rounds = 10`, `max_feedback_messages = 12`, and `max_feedback_per_agent_pair = 4`. Even so, all runs stopped in practice at five iterations and four feedback rounds, with all feedback flowing from the Review Agent to the Test Design Agent. That means that it was not the total round limit that practically controlled the stop, but rather the more specific limit for how many times the same agent pair was allowed to loop.
+
+The measurement therefore shows three important things:
+
+- the largest token cost lies in recurring design and review loops, not in the orchestrator's routing
+- each extra cycle becomes progressively more expensive, which indicates that more context and more previous artifacts are carried forward in the prompts
+- the Requirements Analyst accounts for only a small part of the total cost, while the Test Design Agent and Review Agent together dominate almost the entire token consumption
+
+This in turn leads to a practical conclusion for further development. If the goal is to reduce cost, it is not primarily enough to swap model or reduce temperature. The most important step is probably to reduce the amount of context that is sent in again in every design and review loop, or to improve the quality of the first design round so that fewer backtracking cycles are needed. This could involve, for example, better selection of which requirements and which review findings actually need to be forwarded, clearer compression of prior artifacts, or a more constrained feedback format between the Review Agent and the Test Design Agent.
+
+To make this line of analysis transparent, there is a separate appendix with tables for scenarios 1 to 6, including comparison against Hermes measurable token usage and a breakdown of what constitutes the base round versus extra cycles. See [Appendix: Token comparison between Hermes and our own QA agent service](../token-comparison-hermes-vs-qa-agent-service-en/).
+
 ## Comparison with the HF QA agent service
 
 When Hermes is compared with the custom HF QA agent service solution, the focus should therefore be on several dimensions at once, not just final quality:
