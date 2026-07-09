@@ -273,6 +273,26 @@ Trots denna begränsning visar Hermes-körningen flera saker som är värdefulla
 
 Detta är därför inte bara ett alternativt experiment, utan också ett argument för att extern ramverksjämförelse är relevant: vissa ramverk kan ge snabbare väg till fungerande agentflöden, medan den egenbyggda lösningen i stället ger större kontroll över routing, minne, observability och framtida utbyggnad.
 
+## Tokenförbrukning i den egenbyggda lösningen
+
+En viktig ny observation i arbetet är att tokenförbrukningen nu går att följa även för den egenbyggda lösningen när `qa-agent-service` används som agentbackend. Det gör att jämförelsen mot Hermes inte längre enbart kan handla om slutkvalitet, utan också om hur mycket modellarbete som faktiskt krävs för att nå ett visst resultat.
+
+Det mest centrala resultatet är att tokenkostnaden i våra sex scenariokörningar inte främst verkar drivas av någon allmän "agentchatt" mellan rollerna. Orchestrator-stegen står i dessa körningar för routing och stoppsignaler, men har inga egna tokenvärden i exporterna. I stället ligger nästan hela tokenförbrukningen i de steg där Requirements Analyst, Test Design Agent och Review Agent anropar modellbackend.
+
+Det går också att se att kostnaden inte främst ligger i den första requirementsanalysen. Den är relativt billig och stabil mellan scenarierna. Den stora kostnaden uppstår i stället i den upprepade loopen mellan Test Design Agent och Review Agent. När Review Agent inte godkänner resultatet skickas feedback tillbaka till Test Design Agent, som måste läsa in krav, tidigare testdesign, feedback och övrig arbetskontext på nytt. Därefter gör Review Agent motsvarande omtag med ett större underlag än i föregående cykel. Detta innebär att varje extra cykel normalt kostar betydligt mer än den första grundrundan.
+
+I de sex insamlade körningarna användes samma defaultgränser: `max_rounds = 10`, `max_feedback_messages = 12` och `max_feedback_per_agent_pair = 4`. Trots detta stannade samtliga körningar praktiskt på fem iterationer och fyra feedbackomgångar, där all feedback gick från Review Agent till Test Design Agent. Det betyder att det inte var den totala round-gränsen som i praktiken styrde stoppet, utan den mer specifika begränsningen för hur många gånger samma agentpar fick loopa.
+
+Mätningen visar därför tre viktiga saker:
+
+- den största tokenkostnaden ligger i återkommande design- och review-loopar, inte i orkestratorns routing
+- varje extra cykel blir successivt dyrare, vilket tyder på att mer kontext och fler tidigare artefakter förs vidare i promptarna
+- Requirements Analyst står bara för en liten del av den totala kostnaden, medan Test Design Agent och Review Agent tillsammans dominerar nästan hela tokenförbrukningen
+
+Detta ger i sin tur en praktisk slutsats för fortsatt utveckling. Om målet är att minska kostnaden räcker det inte i första hand att byta modell eller sänka temperatur. Det viktigaste är sannolikt att minska mängden kontext som skickas in igen i varje design- och review-loop, eller att höja kvaliteten i första designomgången så att färre backtracking-cykler behövs. Det kan exempelvis handla om bättre selektion av vilka krav och vilka reviewfynd som verkligen måste skickas vidare, tydligare komprimering av tidigare artefakter eller ett mer begränsat återkopplingsformat mellan Review Agent och Test Design Agent.
+
+För att göra detta spår transparent finns en separat bilaga med tabeller över scenario 1 till 6, inklusive jämförelse mot Hermes mätbara tokenanvändning och en uppdelning av vad som utgör grundrunda respektive extra cykler. Se [token-jamforelse-hermes-vs-qa-agent-service-sv.md](../token-jamforelse-hermes-vs-qa-agent-service-sv/).
+
 ## Jämförelse mot HF QA agent service
 
 När Hermes jämförs med den egna HF QA agent service-lösningen bör fokus därför ligga på flera dimensioner samtidigt, inte bara slutkvalitet:
