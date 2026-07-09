@@ -55,10 +55,12 @@ LITERATURE_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study
 PROJECT_BRIEF_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief/"
 THEORETICAL_BACKGROUND_URL = "https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts/"
 AI_AGENTS_POC_REPORT_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report/"
+TOKEN_COMPARISON_APPENDIX_URL = "https://tomashelmfridsson.github.io/ai_agents/token-jamforelse-hermes-vs-qa-agent-service-sv/"
 LITERATURE_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/literature-study-en/"
 PROJECT_BRIEF_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/project-brief-en/"
 THEORETICAL_BACKGROUND_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/theoretical-background-and-central-concepts-en/"
 AI_AGENTS_POC_REPORT_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-agents-poc-report-en/"
+TOKEN_COMPARISON_APPENDIX_EN_URL = "https://tomashelmfridsson.github.io/ai_agents/token-comparison-hermes-vs-qa-agent-service-en/"
 AI_DEVELOPING_GUIDELINES_URL = "https://tomashelmfridsson.github.io/ai_agents/ai-developing-guidelines/"
 QA_AGENT_DEVELOPING_REQUIREMENTS_URL = "https://tomashelmfridsson.github.io/ai_agents/qa-agent-developing-requirements/"
 DEFAULT_OLLAMA_MODEL_CHOICES = [
@@ -2545,6 +2547,16 @@ def build_demo() -> gr.Blocks:
                           <a class="doc-pill-button" href="{AI_AGENTS_POC_REPORT_EN_URL}" target="_blank" rel="noreferrer">EN</a>
                         </div>
                       </div>
+                      <div class="doc-row">
+                        <div class="doc-copy">
+                          <strong>Token Comparison Appendix</strong>
+                          <span>Tokenjämförelse bilaga</span>
+                        </div>
+                        <div class="doc-actions">
+                          <a class="doc-pill-button" href="{TOKEN_COMPARISON_APPENDIX_URL}" target="_blank" rel="noreferrer">SV</a>
+                          <a class="doc-pill-button" href="{TOKEN_COMPARISON_APPENDIX_EN_URL}" target="_blank" rel="noreferrer">EN</a>
+                        </div>
+                      </div>
                       <div class="doc-tail">
                         <a class="doc-pill-button" href="{QA_AGENT_DEVELOPING_REQUIREMENTS_URL}" target="_blank" rel="noreferrer">QA agent requirements</a>
                         <a class="doc-pill-button" href="{AI_DEVELOPING_GUIDELINES_URL}" target="_blank" rel="noreferrer">AI developing guidelines</a>
@@ -2559,6 +2571,25 @@ def build_demo() -> gr.Blocks:
                 agent_config_inputs = []
                 agent_bulk_outputs = []
                 with gr.Tabs(elem_classes=["app-tabs", "config-tabs"]):
+                    with gr.Tab("Scenarios"):
+                        scenario_picker = gr.Dropdown(
+                            label="Preset scenario",
+                            choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
+                            value=DEFAULT_SCENARIO,
+                        )
+                        title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
+                        requirements_input = gr.Textbox(
+                            label="Requirements",
+                            value=DEFAULT_REQUIREMENTS,
+                            lines=12,
+                        )
+                        with gr.Row():
+                            run_button = gr.Button("Run workflow", variant="primary")
+                            stop_button = gr.Button("Stop workflow")
+                        interaction_feedback_output = gr.HTML(
+                            value=build_interaction_feedback("Ready."),
+                            elem_classes=["interaction-feedback-shell"],
+                        )
                     with gr.Tab("Execution mode"):
                         gr.HTML(
                             """
@@ -2957,26 +2988,6 @@ def build_demo() -> gr.Blocks:
                                                     directives_input,
                                                 ]
                                             )
-                    with gr.Tab("Scenario"):
-                        scenario_picker = gr.Dropdown(
-                            label="Preset scenario",
-                            choices=["Custom scenario", *SAMPLE_SCENARIOS.keys()],
-                            value=DEFAULT_SCENARIO,
-                        )
-                        title_input = gr.Textbox(label="Scenario", value=DEFAULT_TITLE)
-                        requirements_input = gr.Textbox(
-                            label="Requirements",
-                            value=DEFAULT_REQUIREMENTS,
-                            lines=12,
-                        )
-                        with gr.Row():
-                            run_button = gr.Button("Run workflow", variant="primary")
-                            stop_button = gr.Button("Stop workflow")
-                        interaction_feedback_output = gr.HTML(
-                            value=build_interaction_feedback("Ready."),
-                            elem_classes=["interaction-feedback-shell"],
-                        )
-
             with gr.Group(elem_classes=["panel-card"]):
                 gr.Markdown("## Result")
                 with gr.Tabs(elem_classes=["app-tabs", "result-tabs"]):

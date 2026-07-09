@@ -136,6 +136,18 @@
         backdrop-filter: blur(8px);
       }
 
+      .document-note {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 251, 245, 0.82);
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        font-weight: 500;
+      }
+
       article > :first-child {
         margin-top: 0;
       }
@@ -266,9 +278,17 @@
               <a href="/ai_agents/ai-agents-poc-report-en/">EN</a>
             </div>
           </div>
+          <div class="doc-nav-row">
+            <div class="doc-nav-label">
+              <span class="doc-nav-title">Token Comparison Appendix</span>
+              <span class="doc-nav-subtitle">Tokenjämförelse bilaga</span>
+            </div>
+            <div class="doc-nav-actions">
+              <a href="/ai_agents/token-jamforelse-hermes-vs-qa-agent-service-sv/">SV</a>
+              <a href="/ai_agents/token-comparison-hermes-vs-qa-agent-service-en/">EN</a>
+            </div>
+          </div>
           <div class="doc-nav-tail">
-            <a href="/ai_agents/token-jamforelse-hermes-vs-qa-agent-service-sv/">Tokenjämförelse bilaga</a>
-            <a href="/ai_agents/token-comparison-hermes-vs-qa-agent-service-en/">Token comparison appendix</a>
             <a href="/ai_agents/hermes-report-scenarios-1-6/">Hermes scenario 1-6</a>
             <a href="/ai_agents/qa-agent-developing-requirements/">QA Agent Developing Requirements</a>
             <a href="/ai_agents/ai-developing-guidelines/">AI Developing Guidelines</a>
@@ -281,6 +301,10 @@
       <article>
         {{ content }}
       </article>
+      <div class="document-note">
+        Detta dokument har tagits fram med stöd av Generativ AI och har därefter granskats och bearbetats i projektet.
+        This document was developed with Generative AI assistance and was then reviewed and adapted in the project.
+      </div>
     </main>
   </body>
 </html>

@@ -254,6 +254,8 @@ At the same time, the comparison must be described honestly: the Hermes solution
 
 This means that a direct quality comparison between the results is not automatically fair. The findings in the literature study also show that model size alone does not determine quality. Automatic High-Level Test Case Generation using Large Language Models shows that smaller models can perform very well if they are adapted to the right domain and have access to relevant context. The differences between Hermes and the custom solution should therefore not be attributed only to model capacity, but also to differences in domain context, prompting, and agent architecture.
 
+At the same time, the results indicate that very large general models do not always have to be the most relevant choice for this type of task. In this project, we are not primarily looking for a model that can do "everything", but for a model that is good at interpreting requirements, reasoning about testability, and producing useful test artifacts. The literature also points to smaller models working very well when they are adapted to the right domain or given the right context.
+
 Differences in output may be due to at least three things:
 
 - differences in framework and orchestration model
@@ -360,5 +362,7 @@ At the same time, important steps remain before the solution can be described as
 - persistence and checkpointing are not generic at the framework level
 - the comparison with external agent frameworks has not yet been carried out empirically in the same level of detail as the internal POC
 - the results of the test-case generations for the scenarios in the different solutions have not yet been reviewed in detail
+
+An interesting continuation would therefore be to investigate how easy it would be to train or fine-tune a smaller model for exactly this type of QA-oriented task. If a smaller and more specialized model can deliver comparable quality in requirement interpretation and test design, that could provide lower cost, faster execution, and greater control over the solution.
 
 The most accurate interpretation at this stage is therefore that the project has reached the goal of understanding and demonstrating central agent capabilities, but that the next step is to compare this POC more systematically with established agent platforms and determine which parts should be retained, generalized, or replaced. It would also be very interesting to try this in practice at a company.

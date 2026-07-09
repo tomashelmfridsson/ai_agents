@@ -254,6 +254,8 @@ Samtidigt måste jämförelsen beskrivas ärligt: Hermes-lösningen kördes med 
 
 Det betyder att en direkt kvalitetsjämförelse mellan resultaten inte utan vidare är rättvis. Resultaten i litteraturstudien visar också att modellstorlek inte ensamt avgör kvaliteten. Automatic High-Level Test Case Generation using Large Language Models visar att mindre modeller kan prestera mycket väl om de är anpassade till rätt domän och har tillgång till relevant kontext. Skillnaderna mellan Hermes och den egna lösningen bör därför inte enbart tillskrivas modellkapacitet utan även skillnader i domänkontext, promptning och agentarkitektur. 
 
+Samtidigt pekar resultaten på att mycket stora generella modeller inte alltid måste vara det mest relevanta valet för just den här typen av uppgift. I det här projektet är vi inte ute efter en modell som kan göra "allt", utan efter en modell som är bra på att tolka krav, resonera om testbarhet och ta fram användbara testartefakter. Litteraturen pekar också på att mindre modeller kan fungera mycket bra när de är anpassade till rätt domän eller får rätt kontext.
+
 Skillnader i output kan bero på minst tre saker:
 
 - skillnader i ramverk och orkestreringsmodell
@@ -360,5 +362,7 @@ Samtidigt återstår viktiga steg innan lösningen kan beskrivas som ett mer gen
 - persistence och checkpointing är inte generiska på ramverksnivå
 - jämförelsen mot externa agentramverk är ännu inte genomförd empiriskt i samma detalj som den interna POC:n
 - resultaten av testcase-genereringarna för scenarierna i de olika lösningarna har ännu inte granskats i detalj
+
+En intressant fortsättning vore därför att undersöka hur enkelt det skulle vara att träna eller finjustera en mindre modell för just den här typen av QA-orienterade uppgifter. Om en mindre och mer nischad modell kan ge jämförbar kvalitet i kravtolkning och testdesign skulle det kunna ge lägre kostnad, snabbare körning och större kontroll över lösningen.
 
 Den mest korrekta tolkningen i detta läge är därför att projektet har nått målet att förstå och demonstrera centrala agentegenskaper, men att nästa steg är att jämföra denna POC mer systematiskt mot etablerade agentplattformar och att avgöra vilka delar som bör behållas, generaliseras eller ersättas. Det vore också mycket intressant att prova detta i praktiken hos ett företag.
