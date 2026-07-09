@@ -582,6 +582,7 @@ class OrchestratorAgent:
     ) -> StageTrace:
         detailed_reasoning = []
         execution = self.requirements_analyst.last_execution
+        token_usage = execution.get("token_usage") if isinstance(execution, dict) else {}
         llm_active = bool(execution.get("llm_used"))
         validation_findings = execution.get("validation_findings") or []
         if llm_active:
@@ -665,6 +666,9 @@ class OrchestratorAgent:
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
             duration_ms=duration_ms,
+            prompt_tokens=self._read_token_metric(token_usage, "prompt_tokens"),
+            completion_tokens=self._read_token_metric(token_usage, "completion_tokens"),
+            total_tokens=self._read_token_metric(token_usage, "total_tokens"),
         )
 
     def _summarize_feedback_reason(self, feedback_messages: list[str]) -> str:
@@ -686,6 +690,7 @@ class OrchestratorAgent:
         duration_ms: int = 0,
     ) -> StageTrace:
         execution = self.test_designer.last_execution
+        token_usage = execution.get("token_usage") if isinstance(execution, dict) else {}
         llm_active = bool(execution.get("llm_used"))
         return StageTrace(
             iteration=iteration,
@@ -767,6 +772,9 @@ class OrchestratorAgent:
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
             duration_ms=duration_ms,
+            prompt_tokens=self._read_token_metric(token_usage, "prompt_tokens"),
+            completion_tokens=self._read_token_metric(token_usage, "completion_tokens"),
+            total_tokens=self._read_token_metric(token_usage, "total_tokens"),
         )
 
     def _build_review_trace(
@@ -779,6 +787,7 @@ class OrchestratorAgent:
         duration_ms: int = 0,
     ) -> StageTrace:
         execution = self.reviewer.last_execution
+        token_usage = execution.get("token_usage") if isinstance(execution, dict) else {}
         llm_active = bool(execution.get("llm_used"))
         review_reasoning = (
             execution.get("notes") or self._build_review_reasoning(requirements, designs, review)
@@ -845,7 +854,17 @@ class OrchestratorAgent:
             ),
             reasoning_source=execution.get("reasoning_source", "structured_trace"),
             duration_ms=duration_ms,
+            prompt_tokens=self._read_token_metric(token_usage, "prompt_tokens"),
+            completion_tokens=self._read_token_metric(token_usage, "completion_tokens"),
+            total_tokens=self._read_token_metric(token_usage, "total_tokens"),
         )
+
+    @staticmethod
+    def _read_token_metric(token_usage: object, field_name: str) -> int | None:
+        if not isinstance(token_usage, dict):
+            return None
+        value = token_usage.get(field_name)
+        return value if isinstance(value, int) else None
 
     def _can_send_feedback(
         self,

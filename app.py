@@ -488,6 +488,37 @@ def _build_feedback_usage_lines(metrics: dict[str, object]) -> list[str]:
     return lines
 
 
+def _read_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+def _extract_runtime_token_totals(runtime_events: list[dict[str, object]]) -> dict[str, int]:
+    totals = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    found = False
+    for event in runtime_events:
+        if event.get("event_type") != "stage_completed":
+            continue
+        trace = event.get("trace")
+        if not isinstance(trace, dict):
+            continue
+        prompt_tokens = _read_int(trace.get("prompt_tokens"))
+        completion_tokens = _read_int(trace.get("completion_tokens"))
+        total_tokens = _read_int(trace.get("total_tokens"))
+        if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+            continue
+        if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+            total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+        totals["prompt_tokens"] += prompt_tokens or 0
+        totals["completion_tokens"] += completion_tokens or 0
+        totals["total_tokens"] += total_tokens or 0
+        found = True
+    return totals if found else {}
+
+
 def build_running_summary_panel(runtime_events: list[dict[str, object]], log_path: str | None = None) -> str:
     last_message = (
         str(runtime_events[-1].get("message", "Workflow is running."))
@@ -510,6 +541,7 @@ def build_running_summary_panel(runtime_events: list[dict[str, object]], log_pat
     last_event = str(runtime_events[-1].get("event_type", "-")) if runtime_events else "-"
     last_timestamp = _format_clock_time(runtime_events[-1].get("timestamp")) if runtime_events else "-"
     active_timing = _get_active_agent_timing(runtime_events)
+    token_totals = _extract_runtime_token_totals(runtime_events)
     items = [
         f"<li>Latest agent: {html.escape(last_agent)}</li>",
         f"<li>Latest event: {html.escape(last_event)}</li>",
@@ -532,6 +564,16 @@ def build_running_summary_panel(runtime_events: list[dict[str, object]], log_pat
             "<p class='agent-config-text'>Live workflow limits and usage.</p>"
             f"<ul class='summary-list'>{''.join(usage_lines)}</ul>"
             if usage_lines
+            else ""
+        )
+        + (
+            "<p class='agent-config-text'>Accumulated model tokens from completed qa-agent-service worker calls.</p>"
+            f"<ul class='summary-list'>"
+            f"<li>Prompt tokens: {html.escape(str(token_totals['prompt_tokens']))}</li>"
+            f"<li>Completion tokens: {html.escape(str(token_totals['completion_tokens']))}</li>"
+            f"<li>Total tokens: {html.escape(str(token_totals['total_tokens']))}</li>"
+            "</ul>"
+            if token_totals
             else ""
         )
         + "<p class='agent-config-text'>Workflow is in progress. This panel updates as agents start, complete, or route work.</p>"
@@ -782,6 +824,22 @@ def _apply_service_memory_updates(run_session, service_agent_key: str, memory_up
             run_session.working_memory.add_note(str(item))
 
 
+def _extract_service_token_usage(response: dict[str, object]) -> dict[str, int | None]:
+    token_usage = response.get("token_usage")
+    if not isinstance(token_usage, dict):
+        return {}
+    prompt_tokens = _read_int(token_usage.get("prompt_tokens"))
+    completion_tokens = _read_int(token_usage.get("completion_tokens"))
+    total_tokens = _read_int(token_usage.get("total_tokens"))
+    if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+        total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 def _format_service_review_finding(finding: dict[str, object]) -> str:
     severity = str(finding.get("severity", ""))
     target_type = str(finding.get("target_type", ""))
@@ -857,6 +915,7 @@ class QAAgentServiceRequirementsAdapter:
             "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
             "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
             "contract_version": "requirements_analyst.v1",
+            "token_usage": _extract_service_token_usage(response),
         }
         return items
 
@@ -932,6 +991,7 @@ class QAAgentServiceTestDesignAdapter:
             "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
             "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
             "contract_version": "test_designer.v1",
+            "token_usage": _extract_service_token_usage(response),
         }
         return designs
 
@@ -993,6 +1053,7 @@ class QAAgentServiceReviewAdapter:
             "metadata": {"base_url": _normalize_service_base_url(self.base_url)},
             "validation_findings": [str(item.get("message", "")) for item in response.get("errors", [])],
             "contract_version": "reviewer.v1",
+            "token_usage": _extract_service_token_usage(response),
         }
         return review
 
@@ -3349,6 +3410,9 @@ def _build_trace_section_panel(
                     output_summary=trace["output_summary"],
                     agent_explanation=trace.get("agent_explanation", ""),
                     decision_explanation=trace.get("decision_explanation", ""),
+                    prompt_tokens=_read_int(trace.get("prompt_tokens")),
+                    completion_tokens=_read_int(trace.get("completion_tokens")),
+                    total_tokens=_read_int(trace.get("total_tokens")),
                 )
             )
             run_index += 1
@@ -3378,6 +3442,9 @@ def build_stage_card(
     output_summary: list[str],
     agent_explanation: str,
     decision_explanation: str,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
 ) -> str:
     input_lead = input_summary[0] if input_summary else "No input recorded."
     reasoning_lead = reasoning_trace[0] if reasoning_trace else "No reasoning trace recorded."
@@ -3431,6 +3498,22 @@ def build_stage_card(
         if agent_explanation or decision_explanation
         else ""
     )
+    total_token_label = total_tokens
+    if total_token_label is None and (prompt_tokens is not None or completion_tokens is not None):
+        total_token_label = (prompt_tokens or 0) + (completion_tokens or 0)
+    token_block = (
+        "<div class='io-section'>"
+        "<div class='log-title'>Token usage</div>"
+        f"<p class='io-summary'>Total tokens: {html.escape(str(total_token_label))}</p>"
+        "<ul class='log-list'>"
+        f"<li>Prompt tokens: {html.escape(str(prompt_tokens if prompt_tokens is not None else 0))}</li>"
+        f"<li>Completion tokens: {html.escape(str(completion_tokens if completion_tokens is not None else 0))}</li>"
+        f"<li>Total tokens: {html.escape(str(total_token_label if total_token_label is not None else 0))}</li>"
+        "</ul>"
+        "</div>"
+        if prompt_tokens is not None or completion_tokens is not None or total_tokens is not None
+        else ""
+    )
     return (
         "<section class='stage-card'>"
         "<details class='stage-toggle'>"
@@ -3465,6 +3548,7 @@ def build_stage_card(
         f"<p class='io-summary'>{html.escape(output_lead)}</p>"
         f"{output_details}"
         "</div>"
+        f"{token_block}"
         "</div>"
         "</div>"
         "</details>"

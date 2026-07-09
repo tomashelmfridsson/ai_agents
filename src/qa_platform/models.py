@@ -113,6 +113,9 @@ class StageTrace:
     agent_explanation: str = ""
     decision_explanation: str = ""
     duration_ms: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 @dataclass
