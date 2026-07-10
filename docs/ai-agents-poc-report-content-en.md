@@ -1,5 +1,35 @@
 # AI Agent POC Report
 
+## Document Information
+
+- Date: July 10, 2026
+- Author: Tomas Helmfridsson
+- Organizations: QESTIT and Blekinge Institute of Technology (BTH)
+
+## Table of Contents
+
+1. Purpose
+2. The project's development journey
+3. From sequential flow to agentic routing
+4. Current AI agent page and architecture
+5. HF publication, endpoints, and MCP
+6. LangGraph as the next step
+7. Observability, directives, and memory visibility
+8. Agent directives
+9. Loops, limits, and approve true
+10. The evaluation question
+11. Standard scenarios for comparison
+12. Hermes
+13. Hermes results as a comparison point
+14. What the Hermes solution produced
+15. Important comparison limitation
+16. What the comparison still shows
+17. Token consumption in the custom-built solution
+18. Comparison with the HF QA agent service
+19. Conclusion about Hermes in the report
+20. Practical comparison: Codex as an agentic test automation solution
+21. Conclusions
+
 ## Purpose
 
 This document serves as the project's consolidated report on the literature study and the development of a QA-oriented agentic Proof of Concept (POC). The primary purpose of the POC is to build a practical understanding of how [AI agents](../theoretical-background-and-central-concepts-en/#ai-agent) and [agentic solutions](../theoretical-background-and-central-concepts-en/#agentic-ai) work, particularly from a [Software Quality Assurance](../theoretical-background-and-central-concepts-en/#software-quality-assurance) perspective.
@@ -337,6 +367,16 @@ Parts of the Hermes result should therefore be included in the POC report in sup
 - the comparison against the custom HF QA agent service solution must be made with a clear reservation that the models are not equivalent
 
 A correct interpretation is therefore that Hermes demonstrated high practical productivity and a fast path to a functioning QA flow, while the custom solution is still stronger as a research platform for studying routing, memory, observability, feedback loops, and agentic behavior at a more detailed level.
+
+## Practical comparison: Codex as an agentic test automation solution
+
+Just before this agentic QA evaluation, in early June 2026, a separate practical assignment was carried out in which Codex was used as an AI coding agent to automate tests against an existing app. The subsequent agentic QA POC was carried out during June and July 2026.
+
+In the Codex case, the agent was given screenshots from the app's pages, short scenarios such as login and interaction with a news feed, and instructions to create test cases, run them, and correct the code until the tests passed. Among other things, the agent used XML dumps from the app's views to find selectors, rewrote test code, ran tests locally, and was then able to commit code and verify the tests in GitHub Actions.
+
+This experience became an important comparison point for the custom-built agentic QA solution. In the Codex case, the test automation was verified against a real system with actual execution, error messages, and CI feedback. This differs from a more isolated form of agentic test generation, where the system risks primarily evaluating its own artifacts. An important conclusion, in line with the literature on AI-based software testing and agentic systems, is therefore that a QA solution should be evaluated against a real system under test. Otherwise, there is a risk that the solution in practice "tests its own math exam", meaning that it generates test cases and then evaluates them without sufficient external execution-based verification.
+
+At the same time, the Codex case showed that agentic loops need clear constraints. When the agent got stuck, it could continue trying to solve the same problem and thereby consume many tokens. An AI Guidelines file was therefore introduced with instructions to stop after a certain number of failed attempts. This experience therefore reinforces the conclusion that agentic QA systems need clear goals, execution feedback, stop conditions, and human guidance when blocked by difficult problems.
 
 ## Conclusions
 

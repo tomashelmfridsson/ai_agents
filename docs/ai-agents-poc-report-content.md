@@ -1,5 +1,35 @@
 # AI-agent POC-rapport
 
+## Dokumentinformation
+
+- Datum: 10 juli 2026
+- Författare: Tomas Helmfridsson
+- Organisationer: QESTIT och Blekinge Tekniska Högskola (BTH)
+
+## Innehållsförteckning
+
+1. Syfte
+2. Projektets utvecklingsresa
+3. Från sekventiellt flöde till agentisk routing
+4. Nuvarande AI-agent-sida och arkitektur
+5. HF-publicering, endpoints och MCP
+6. LangGraph som nästa steg
+7. Observability, direktiv och minnesinsyn
+8. Agentdirektiv
+9. Loopar, begränsningar och approve true
+10. Utvärderingsfrågan
+11. Standardscenarier för jämförelse
+12. Hermes
+13. Hermes-resultat som jämförelsepunkt
+14. Vad Hermes-lösningen producerade
+15. Viktig jämförelsebegränsning
+16. Vad jämförelsen ändå visar
+17. Tokenförbrukning i den egenbyggda lösningen
+18. Jämförelse mot HF QA agent service
+19. Slutsats om Hermes i rapporten
+20. Praktisk jämförelse: Codex som agentisk testautomatiseringslösning
+21. Slutsatser
+
 ## Syfte
 
 Detta dokument fungerar som projektets samlade rapport över litteraturstudien och utvecklingen av en QA-orienterad agentisk Proof of Concept (POC). Syftet med POC:en är i första hand att skapa en praktisk förståelse för hur [AI-agenter](../theoretical-background-and-central-concepts/#ai-agent) och [agentiska lösningar](../theoretical-background-and-central-concepts/#agentic-ai) fungerar, särskilt ur ett [Software Quality Assurance](../theoretical-background-and-central-concepts/#software-quality-assurance)-perspektiv.
@@ -337,6 +367,16 @@ Delar av Hermes-resultatet bör därför finnas med i POC-rapporten som stöd f�
 - jämförelsen mot den egna HF QA agent service-lösningen måste göras med tydlig reservation för att modellerna inte är likvärdiga
 
 En korrekt tolkning är därför att Hermes visade hög praktisk produktivitet och snabb väg till ett fungerande QA-flöde, medan den egna lösningen fortfarande är starkare som forskningsplattform för att studera routing, minne, observability, feedbackloopar och agentiskt beteende på mer detaljerad nivå.
+
+## Praktisk jämförelse: Codex som agentisk testautomatiseringslösning
+
+Precis innan denna agentiska QA-utvärdering, i början av juni 2026, genomfördes ett separat praktiskt uppdrag där Codex användes som en AI coding agent för att automatisera tester mot en befintlig app. Den efterföljande agentiska QA-POC:en genomfördes under juni och juli 2026.
+
+I Codex-fallet gavs agenten skärmdumpar från appens sidor, korta scenarier såsom inloggning och interaktion med nyhetsflöde, samt instruktioner om att skapa testfall, köra dem och korrigera koden tills testerna passerade. Agenten använde bland annat XML-dumpar från appens vyer för att hitta selectors, skrev om testkod, körde tester lokalt och kunde därefter checka in kod och verifiera testerna i GitHub Actions.
+
+Erfarenheten blev en viktig jämförelsepunkt till den egenbyggda agentiska QA-lösningen. I Codex-fallet verifierades testautomationen mot ett verkligt system med faktisk körning, felmeddelanden och CI-feedback. Detta skiljer sig från en mer isolerad agentisk testgenerering där systemet riskerar att främst bedöma sina egna artefakter. En viktig slutsats, i linje med litteraturen om AI-baserad mjukvarutestning och agentiska system, är därför att en QA-lösning bör utvärderas mot ett verkligt system under test. Annars finns en risk att lösningen i praktiken "testar sitt eget matteprov", det vill säga genererar testfall och sedan bedömer dem utan tillräcklig extern exekveringsbaserad verifiering.
+
+Samtidigt visade Codex-fallet att agentiska loopar behöver tydliga begränsningar. När agenten fastnade kunde den fortsätta försöka lösa samma problem och därmed förbruka mycket tokens. Därför infördes en AI Guidelines-fil med instruktioner om att avbryta efter ett visst antal misslyckade försök. Erfarenheten stärker därmed slutsatsen att agentiska QA-system behöver tydliga mål, exekveringsfeedback, stopvillkor och mänsklig styrning vid blockerande problem.
 
 ## Slutsatser
 
